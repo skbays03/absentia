@@ -14,14 +14,18 @@ import sys
 import time
 from pathlib import Path
 
+import hashlib
+import json
+
 from . import __version__
 from .config import Config, find_config
 from .entities import Entity, FeatureSet
 from .features import extract_python_functions
 from .mining import mine
 from .output import format_gaps, format_gaps_json
-from .parsing import find_python_files, parse_file
+from .parsing import find_python_files, parse_source
 from .selectors import decorator_groups, directory_groups
+from .storage import Storage
 
 
 _INIT_TEMPLATE = """\
@@ -159,63 +163,69 @@ def cmd_check(
 ) -> int:
     if not root.is_dir():
         if as_json:
-            import json
             print(json.dumps({"error": f"not a directory: {root}"}))
         else:
             print(f"lacuna: not a directory: {root}", file=sys.stderr)
         return 2
 
+    from datetime import datetime, timezone
     started = time.perf_counter()
-    entities: dict[str, Entity] = {}
-    feature_index: dict[str, FeatureSet] = {}
+    started_iso = datetime.now(timezone.utc).isoformat()
+    state_dir = root / ".lacuna"
 
-    for path in find_python_files(root):
-        tree_root = parse_file(path)
-        if tree_root is None:
-            continue
-        try:
-            rel = path.relative_to(root).as_posix()
-        except ValueError:
-            rel = path.as_posix()
-        for entity, features in extract_python_functions(tree_root, rel):
-            entities[entity.id] = entity
-            feature_index[entity.id] = features
+    with Storage(state_dir) as storage:
+        run_id = storage.begin_run()
+        files_seen, files_unchanged = _scan_incremental(root, storage, run_id)
+        entities, feature_index = storage.load_all()
+        storage.commit()
 
-    items = [(e, feature_index[e.id]) for e in entities.values()]
-    groups: list = []
-    if config.selectors.directory.enabled:
-        groups.extend(directory_groups(
-            items,
-            min_members=config.selectors.directory.min_members,
-            kind_filter=config.selectors.directory.kind_filter,
-        ))
-    if config.selectors.decorator.enabled:
-        groups.extend(decorator_groups(
-            items,
-            min_members=config.selectors.decorator.min_members,
-            exclude=config.selectors.decorator.exclude,
-        ))
+        items = [(e, feature_index[e.id]) for e in entities.values()]
+        groups: list = []
+        if config.selectors.directory.enabled:
+            groups.extend(directory_groups(
+                items,
+                min_members=config.selectors.directory.min_members,
+                kind_filter=config.selectors.directory.kind_filter,
+            ))
+        if config.selectors.decorator.enabled:
+            groups.extend(decorator_groups(
+                items,
+                min_members=config.selectors.decorator.min_members,
+                exclude=config.selectors.decorator.exclude,
+            ))
 
-    rules: list = []
-    gaps: list = []
-    for kind in ("decorator", "calls"):
-        rs, gs = mine(groups, feature_index,
-                      min_confidence=config.mining.min_confidence,
-                      feature_kind=kind)
-        rules.extend(rs)
-        gaps.extend(gs)
-    elapsed = time.perf_counter() - started
+        rules: list = []
+        gaps: list = []
+        for kind in ("decorator", "calls"):
+            rs, gs = mine(groups, feature_index,
+                          min_confidence=config.mining.min_confidence,
+                          feature_kind=kind)
+            rules.extend(rs)
+            gaps.extend(gs)
+        elapsed = time.perf_counter() - started
+
+        storage.end_run(
+            run_id,
+            duration_ms=round(elapsed * 1000, 2),
+            entities_scanned=len(entities),
+            rules_discovered=len(rules),
+            gaps_found=len(gaps),
+        )
 
     rules_by_id = {r.id: r for r in rules}
     scan_stats = {
         "root": str(root),
+        "started_at": started_iso,
         "duration_ms": round(elapsed * 1000, 2),
         "entities_scanned": len(entities),
+        "files_seen": files_seen,
+        "files_unchanged": files_unchanged,
         "groups": len(groups),
         "rules": len(rules),
         "min_confidence": config.mining.min_confidence,
         "min_group_size": config.mining.min_group_size,
     }
+    _write_last_run(state_dir, scan_stats, run_id, len(gaps))
 
     if as_json:
         print(format_gaps_json(gaps, rules_by_id, entities, scan_stats=scan_stats))
@@ -223,8 +233,78 @@ def cmd_check(
         print(format_gaps(gaps, rules_by_id, entities,
                           min_confidence=config.mining.min_confidence))
         if not quiet:
+            cache_note = (
+                f" ({files_unchanged} unchanged)" if files_unchanged else ""
+            )
             print(f"  {len(entities)} entities scanned, "
-                  f"{len(groups)} groups, {len(rules)} rules in {elapsed:.2f}s")
+                  f"{len(groups)} groups, {len(rules)} rules in "
+                  f"{elapsed:.2f}s{cache_note}")
             print()
 
     return 1 if gaps else 0
+
+
+def _scan_incremental(
+    root: Path, storage: Storage, run_id: int
+) -> tuple[int, int]:
+    """Walk the corpus, reusing cached entities/features for unchanged files.
+
+    Returns ``(files_seen, files_unchanged)`` for the run summary.
+    """
+    cached = storage.all_file_hashes()
+    seen_paths: set[str] = set()
+    files_unchanged = 0
+
+    for path in find_python_files(root):
+        try:
+            rel = path.relative_to(root).as_posix()
+        except ValueError:
+            rel = path.as_posix()
+        seen_paths.add(rel)
+
+        try:
+            content = path.read_bytes()
+        except OSError:
+            continue
+
+        current_hash = hashlib.sha256(content).hexdigest()
+
+        if cached.get(rel) == current_hash:
+            storage.upsert_file(rel, current_hash, run_id)
+            files_unchanged += 1
+            continue
+
+        # Changed or new — re-parse and replace this file's rows.
+        storage.delete_entities_for_file(rel)
+        tree_root = parse_source(content)
+        new_entities: dict[str, Entity] = {}
+        new_features: dict[str, FeatureSet] = {}
+        for entity, features in extract_python_functions(tree_root, rel):
+            new_entities[entity.id] = entity
+            new_features[entity.id] = features
+        storage.save_entities_and_features(new_entities, new_features)
+        storage.upsert_file(rel, current_hash, run_id)
+
+    # Tombstone files that disappeared from disk since the last run.
+    for stale in set(cached) - seen_paths:
+        storage.delete_file(stale)
+
+    return len(seen_paths), files_unchanged
+
+
+def _write_last_run(
+    state_dir: Path, scan_stats: dict, run_id: int, gaps_found: int
+) -> None:
+    summary = {
+        "run_id": run_id,
+        "started_at": scan_stats.get("started_at"),  # populated by caller if desired
+        "duration_ms": scan_stats["duration_ms"],
+        "entities_scanned": scan_stats["entities_scanned"],
+        "files_seen": scan_stats["files_seen"],
+        "files_unchanged": scan_stats["files_unchanged"],
+        "rules_discovered": scan_stats["rules"],
+        "gaps_found": gaps_found,
+    }
+    (state_dir / "last_run.json").write_text(
+        json.dumps(summary, indent=2) + "\n"
+    )

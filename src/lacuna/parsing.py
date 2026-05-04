@@ -24,14 +24,22 @@ _NOISE_DIR_NAMES = frozenset({
 })
 
 
+def parse_source(source: bytes) -> Node:
+    """Parse Python source bytes; return the root AST node.
+
+    Use this when you've already read the file (e.g. for content hashing)
+    so we don't read the same bytes twice.
+    """
+    return _parser.parse(source).root_node
+
+
 def parse_file(path: Path) -> Node | None:
     """Parse a Python file; return the root AST node, or None on read failure."""
     try:
         source = path.read_bytes()
     except OSError:
         return None
-    tree = _parser.parse(source)
-    return tree.root_node
+    return parse_source(source)
 
 
 def find_python_files(root: Path) -> Iterator[Path]:
