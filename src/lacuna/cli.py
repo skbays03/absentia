@@ -1,8 +1,11 @@
 """Command-line entry point.
 
-MVP: only the `check` subcommand exists. Bare `lacuna` prints help. The
-TUI (default-when-no-subcommand) and `init`, `explain`, `suppress`,
-`rules`, `groups`, `stats`, `watch` subcommands land in later passes.
+Subcommands:
+  init    create lacuna.toml + .lacuna/ in the current directory
+  check   scan a project and print gaps (text or JSON)
+
+The TUI (default-when-no-subcommand) and `explain`, `suppress`, `rules`,
+`groups`, `stats`, `watch` land in later passes.
 """
 from __future__ import annotations
 
@@ -12,12 +15,38 @@ import time
 from pathlib import Path
 
 from . import __version__
+from .config import Config, find_config
 from .entities import Entity, FeatureSet
 from .features import extract_python_functions
 from .mining import mine
 from .output import format_gaps, format_gaps_json
 from .parsing import find_python_files, parse_file
 from .selectors import decorator_groups, directory_groups
+
+
+_INIT_TEMPLATE = """\
+# lacuna configuration. Run `lacuna check` from this directory.
+# Every section is optional; defaults are sensible.
+
+[scan]
+include   = ["."]
+exclude   = []
+languages = ["python"]
+
+[mining]
+min_confidence = 0.8
+min_group_size = 3
+
+[selectors.directory]
+enabled     = true
+min_members = 3
+kind_filter = ["function"]
+
+[selectors.decorator]
+enabled     = true
+min_members = 3
+exclude     = ["@property", "@staticmethod", "@classmethod"]
+"""
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -28,12 +57,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", action="version", version=f"lacuna {__version__}")
     sub = parser.add_subparsers(dest="cmd")
 
+    init = sub.add_parser("init", help="Create lacuna.toml + .lacuna/ in the current dir.")
+    init.add_argument("path", nargs="?", default=".", help="Where to init (default: cwd)")
+    init.add_argument("--force", action="store_true",
+                      help="Overwrite an existing lacuna.toml")
+
     check = sub.add_parser("check", help="Scan a project and print gaps.")
     check.add_argument("path", nargs="?", default=".", help="Project root (default: cwd)")
-    check.add_argument("--min-confidence", type=float, default=0.8,
-                       help="Minimum confidence for a rule (default: 0.8)")
-    check.add_argument("--min-group-size", type=int, default=3,
-                       help="Skip groups with fewer members (default: 3)")
+    check.add_argument("--config", type=Path, default=None,
+                       help="Path to lacuna.toml (default: search root upward)")
+    check.add_argument("--min-confidence", type=float, default=None,
+                       help="Override mining.min_confidence")
+    check.add_argument("--min-group-size", type=int, default=None,
+                       help="Override mining.min_group_size")
     check.add_argument("--json", action="store_true", dest="as_json",
                        help="Emit machine-readable JSON instead of human text")
     check.add_argument("--quiet", action="store_true",
@@ -45,11 +81,24 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
 
+    if args.cmd == "init":
+        return cmd_init(root=Path(args.path).resolve(), force=args.force)
+
     if args.cmd == "check":
+        root = Path(args.path).resolve()
+        config = _load_config(root, args.config)
+        # CLI flags override config values for the mining knobs.
+        from dataclasses import replace
+        mining = config.mining
+        if args.min_confidence is not None:
+            mining = replace(mining, min_confidence=args.min_confidence)
+        if args.min_group_size is not None:
+            mining = replace(mining, min_group_size=args.min_group_size)
+        config = replace(config, mining=mining)
+
         return cmd_check(
-            root=Path(args.path).resolve(),
-            min_confidence=args.min_confidence,
-            min_group_size=args.min_group_size,
+            root=root,
+            config=config,
             quiet=args.quiet,
             as_json=args.as_json,
         )
@@ -57,12 +106,55 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _load_config(root: Path, explicit: Path | None) -> Config:
+    if explicit is not None:
+        return Config.from_file(explicit)
+    discovered = find_config(root)
+    if discovered is not None:
+        return Config.from_file(discovered)
+    return Config()
+
+
+def cmd_init(*, root: Path, force: bool) -> int:
+    if not root.is_dir():
+        print(f"lacuna: not a directory: {root}", file=sys.stderr)
+        return 2
+
+    config_path = root / "lacuna.toml"
+    state_dir = root / ".lacuna"
+
+    if config_path.exists() and not force:
+        print(f"lacuna: {config_path} already exists. Use --force to overwrite.",
+              file=sys.stderr)
+        return 1
+
+    config_path.write_text(_INIT_TEMPLATE)
+    state_dir.mkdir(exist_ok=True)
+    (state_dir / ".gitignore").write_text("*\n")
+    (state_dir / "version").write_text("1\n")
+
+    gitignore = root / ".gitignore"
+    if gitignore.exists():
+        existing_lines = gitignore.read_text().splitlines()
+        if ".lacuna/" not in existing_lines and ".lacuna" not in existing_lines:
+            with gitignore.open("a") as fh:
+                if existing_lines and existing_lines[-1] != "":
+                    fh.write("\n")
+                fh.write(".lacuna/\n")
+
+    print(f"Initialized lacuna in {root}")
+    print(f"  - Wrote lacuna.toml")
+    print(f"  - Created .lacuna/ (gitignored)")
+    print()
+    print("Run `lacuna check` to start exploring.")
+    return 0
+
+
 def cmd_check(
     *,
     root: Path,
-    min_confidence: float,
-    min_group_size: int,
-    quiet: bool,
+    config: Config,
+    quiet: bool = False,
     as_json: bool = False,
 ) -> int:
     if not root.is_dir():
@@ -91,16 +183,25 @@ def cmd_check(
 
     items = [(e, feature_index[e.id]) for e in entities.values()]
     groups: list = []
-    groups.extend(directory_groups(items, min_members=min_group_size))
-    groups.extend(decorator_groups(items, min_members=min_group_size))
+    if config.selectors.directory.enabled:
+        groups.extend(directory_groups(
+            items,
+            min_members=config.selectors.directory.min_members,
+            kind_filter=config.selectors.directory.kind_filter,
+        ))
+    if config.selectors.decorator.enabled:
+        groups.extend(decorator_groups(
+            items,
+            min_members=config.selectors.decorator.min_members,
+            exclude=config.selectors.decorator.exclude,
+        ))
 
-    # Mine each feature kind independently. Compound (cross-kind)
-    # predicates land later via FP-growth.
     rules: list = []
     gaps: list = []
     for kind in ("decorator", "calls"):
         rs, gs = mine(groups, feature_index,
-                      min_confidence=min_confidence, feature_kind=kind)
+                      min_confidence=config.mining.min_confidence,
+                      feature_kind=kind)
         rules.extend(rs)
         gaps.extend(gs)
     elapsed = time.perf_counter() - started
@@ -112,14 +213,15 @@ def cmd_check(
         "entities_scanned": len(entities),
         "groups": len(groups),
         "rules": len(rules),
-        "min_confidence": min_confidence,
-        "min_group_size": min_group_size,
+        "min_confidence": config.mining.min_confidence,
+        "min_group_size": config.mining.min_group_size,
     }
 
     if as_json:
         print(format_gaps_json(gaps, rules_by_id, entities, scan_stats=scan_stats))
     else:
-        print(format_gaps(gaps, rules_by_id, entities, min_confidence=min_confidence))
+        print(format_gaps(gaps, rules_by_id, entities,
+                          min_confidence=config.mining.min_confidence))
         if not quiet:
             print(f"  {len(entities)} entities scanned, "
                   f"{len(groups)} groups, {len(rules)} rules in {elapsed:.2f}s")
