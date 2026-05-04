@@ -25,7 +25,7 @@ from .mining import mine
 from .output import format_gaps, format_gaps_json
 from .parsing import find_python_files, parse_source
 from .selectors import decorator_groups, directory_groups
-from .storage import Storage
+from .storage import StateLock, StateLockError, Storage
 
 
 _INIT_TEMPLATE = """\
@@ -173,6 +173,39 @@ def cmd_check(
     started_iso = datetime.now(timezone.utc).isoformat()
     state_dir = root / ".lacuna"
 
+    try:
+        lock_ctx = StateLock(state_dir / "lockfile").__enter__()
+    except StateLockError as exc:
+        if as_json:
+            print(json.dumps({"error": str(exc)}))
+        else:
+            print(f"lacuna: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        return _run_check(
+            root=root,
+            state_dir=state_dir,
+            config=config,
+            quiet=quiet,
+            as_json=as_json,
+            started=started,
+            started_iso=started_iso,
+        )
+    finally:
+        lock_ctx.__exit__(None, None, None)
+
+
+def _run_check(
+    *,
+    root: Path,
+    state_dir: Path,
+    config: Config,
+    quiet: bool,
+    as_json: bool,
+    started: float,
+    started_iso: str,
+) -> int:
     with Storage(state_dir) as storage:
         run_id = storage.begin_run()
         files_seen, files_unchanged = _scan_incremental(root, storage, run_id)

@@ -4,7 +4,13 @@ from __future__ import annotations
 import pytest
 
 from lacuna.entities import Entity, FeatureSet
-from lacuna.storage import SCHEMA_VERSION, Storage, StorageVersionError
+from lacuna.storage import (
+    SCHEMA_VERSION,
+    StateLock,
+    StateLockError,
+    Storage,
+    StorageVersionError,
+)
 
 
 def _e(name: str, file_path: str = "x.py", line: int = 1) -> Entity:
@@ -134,3 +140,37 @@ def test_all_file_hashes_returns_dict(tmp_path):
         storage.upsert_file("b.py", "h2", run_id)
         storage.commit()
         assert storage.all_file_hashes() == {"a.py": "h1", "b.py": "h2"}
+
+
+# ── StateLock ────────────────────────────────────────────────────────
+
+
+def test_state_lock_acquires_and_releases(tmp_path):
+    lockfile = tmp_path / ".lacuna" / "lockfile"
+    with StateLock(lockfile):
+        assert lockfile.exists()
+    # After release, can acquire again
+    with StateLock(lockfile):
+        pass
+
+
+def test_state_lock_rejects_concurrent_acquire(tmp_path):
+    lockfile = tmp_path / ".lacuna" / "lockfile"
+    outer = StateLock(lockfile)
+    outer.__enter__()
+    try:
+        with pytest.raises(StateLockError):
+            with StateLock(lockfile):
+                pass
+    finally:
+        outer.__exit__(None, None, None)
+
+
+def test_state_lock_can_be_reacquired_after_release(tmp_path):
+    lockfile = tmp_path / ".lacuna" / "lockfile"
+    with StateLock(lockfile):
+        pass
+    with StateLock(lockfile):
+        pass
+    with StateLock(lockfile):
+        pass

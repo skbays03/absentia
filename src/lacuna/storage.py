@@ -5,17 +5,21 @@ content hashes (the basis for incremental mining), entities, features,
 and run history. Rules and gaps are *not* persisted — mining is fast
 enough to recompute every run. That keeps the schema small.
 
+StateLock guards concurrent invocations via fcntl on a sentinel file
+in the state directory.
+
 The state directory also contains:
 
 - ``version`` — schema version (plain text, redundant with PRAGMA
   user_version inside state.db)
 - ``last_run.json`` — quick-read summary of the most recent run
-- ``lockfile`` — fcntl-locked while a lacuna instance is active (lives
-  in ``state.py``, not here, to keep the storage layer pure)
+- ``lockfile`` — fcntl-locked while a lacuna instance is active
 """
 from __future__ import annotations
 
+import fcntl
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -235,3 +239,46 @@ class Storage:
             (duration_ms, entities_scanned, rules_discovered, gaps_found, run_id),
         )
         self.conn.commit()
+
+
+# ── Lockfile ─────────────────────────────────────────────────────────
+
+
+class StateLockError(Exception):
+    """Raised when another process holds the state lock."""
+
+
+class StateLock:
+    """Cross-process exclusion via ``fcntl.flock`` on a sentinel file.
+
+    Use as a context manager. Non-blocking acquire — if another lacuna
+    instance is already holding the lock, raises ``StateLockError``
+    immediately rather than waiting.
+
+    Unix-only. Windows support (portalocker) is post-MVP.
+    """
+
+    def __init__(self, lockfile_path: Path):
+        self.lockfile_path = lockfile_path
+        self._fd: int | None = None
+
+    def __enter__(self) -> "StateLock":
+        self.lockfile_path.parent.mkdir(exist_ok=True)
+        self.lockfile_path.touch()
+        self._fd = os.open(self.lockfile_path, os.O_RDWR)
+        try:
+            fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            os.close(self._fd)
+            self._fd = None
+            raise StateLockError(
+                f"another lacuna instance is running on this repo "
+                f"(lockfile: {self.lockfile_path})"
+            ) from exc
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        if self._fd is not None:
+            fcntl.flock(self._fd, fcntl.LOCK_UN)
+            os.close(self._fd)
+            self._fd = None
