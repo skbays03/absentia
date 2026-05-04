@@ -14,12 +14,7 @@ and the latest point it must be resolved.
 
 ## Hard blockers (cannot publish v1.0 without resolving)
 
-### License
-- **Status:** Undecided.
-- **Options:** MIT, Apache 2.0, AGPL, or dual-license (community AGPL + paid commercial).
-- **Why deferred:** Choice depends on commercial direction (free-for-all vs. SaaS protection vs. enterprise-friendly dual-license). Not a blocker for development.
-- **Resolution:** Pick one, add `LICENSE` file at repo root, update README "License" section, update `pyproject.toml` `[project] license` field.
-- **Latest by:** Before any public push of the repo, even alpha.
+_None currently._
 
 ---
 
@@ -75,5 +70,8 @@ and the latest point it must be resolved.
 
 ## Resolved
 
-_Move struck-through items here when resolved, with date + commit reference._
+### ~~License~~ → Apache 2.0
+**Resolved 2026-05-04.**
+
+Original consideration: MIT, Apache 2.0, AGPL, or dual-license (community AGPL + paid commercial). Chose **Apache 2.0** for adoption priority over protection — lacuna isn't readily hostable as a SaaS so AGPL's network protection doesn't apply; the patent grant matters for corporate adoption; and an Apache-licensed core doesn't preclude future commercial tier-2/tier-3 offerings layered on top.
 

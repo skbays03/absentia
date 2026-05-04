@@ -197,4 +197,4 @@ change before 1.0. Pin to an exact version if you depend on the output format.
 
 ## License
 
-TBD — MIT, Apache 2.0, or AGPL depending on commercial direction.
+Licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE) for attribution.
