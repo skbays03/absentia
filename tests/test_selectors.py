@@ -1,5 +1,5 @@
 from lacuna.entities import Entity, FeatureSet
-from lacuna.selectors import directory_groups
+from lacuna.selectors import decorator_groups, directory_groups
 
 
 def _entity(path: str, name: str) -> Entity:
@@ -53,3 +53,49 @@ def test_root_directory_is_labeled_root():
     items = [(_entity("foo.py", "bar"), FeatureSet())]
     [g] = directory_groups(items, min_members=1)
     assert g.name == "<root>"
+
+
+def _features(*decs: str) -> FeatureSet:
+    return FeatureSet(by_kind={"decorator": frozenset(decs)})
+
+
+def test_decorator_groups_one_per_unique_decorator():
+    items = [
+        (_entity("a.py", "x"), _features("@audit")),
+        (_entity("a.py", "y"), _features("@audit", "@route")),
+        (_entity("a.py", "z"), _features("@audit", "@route")),
+        (_entity("a.py", "w"), _features("@route")),
+    ]
+    by_name = {g.name: g for g in decorator_groups(items, min_members=1)}
+    assert set(by_name) == {"@audit", "@route"}
+    assert len(by_name["@audit"].members) == 3
+    assert len(by_name["@route"].members) == 3
+
+
+def test_decorator_groups_excludes_defaults():
+    items = [
+        (_entity("a.py", "x"), _features("@property")),
+        (_entity("a.py", "y"), _features("@property", "@audit")),
+        (_entity("a.py", "z"), _features("@audit")),
+    ]
+    groups = decorator_groups(items, min_members=1)
+    assert {g.name for g in groups} == {"@audit"}
+
+
+def test_decorator_groups_respects_min_members():
+    items = [
+        (_entity("a.py", "x"), _features("@audit")),
+        (_entity("a.py", "y"), _features("@once")),
+    ]
+    groups = decorator_groups(items, min_members=2)
+    assert groups == []
+
+
+def test_decorator_selector_emits_group_with_correct_type():
+    items = [
+        (_entity("a.py", "x"), _features("@audit")),
+        (_entity("a.py", "y"), _features("@audit")),
+    ]
+    [g] = decorator_groups(items, min_members=1)
+    assert g.selector_type == "decorator"
+    assert g.id == "decorator::@audit"

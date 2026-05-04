@@ -69,7 +69,10 @@ def mine(
         if total == 0:
             continue
 
+        identity = group.identity_feature
         for value, count in counter.items():
+            if identity == (feature_kind, value):
+                continue  # trivial self-rule, true by construction
             confidence = count / total
             if confidence < min_confidence:
                 continue

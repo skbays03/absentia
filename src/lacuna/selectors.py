@@ -19,13 +19,26 @@ from .entities import Entity, FeatureSet
 
 @dataclass(frozen=True)
 class Group:
-    name: str                       # human-readable: "src/api" or "<root>"
-    selector_type: str              # "directory" for now
+    name: str                       # human-readable: "src/api" or "@audit"
+    selector_type: str              # "directory" | "decorator" | ...
     members: tuple[str, ...]        # entity ids
 
     @property
     def id(self) -> str:
         return f"{self.selector_type}::{self.name}"
+
+    @property
+    def identity_feature(self) -> tuple[str, str] | None:
+        """The (feature_kind, value) pair this group is defined by, if any.
+
+        Mining skips rules whose predicate matches this — they would be
+        trivially true by construction (a group of @audit-decorated fns
+        unsurprisingly has 100% @audit decoration) and produce no gaps.
+        Returns None for selectors not defined by a single feature value
+        (e.g. directory)."""
+        if self.selector_type == "decorator":
+            return ("decorator", self.name)
+        return None
 
 
 def directory_groups(
@@ -46,5 +59,34 @@ def directory_groups(
     return [
         Group(name=name, selector_type="directory", members=tuple(ids))
         for name, ids in sorted(by_dir.items())
+        if len(ids) >= min_members
+    ]
+
+
+_DEFAULT_DECORATOR_EXCLUDES: tuple[str, ...] = (
+    "@property", "@staticmethod", "@classmethod",
+)
+
+
+def decorator_groups(
+    items: Iterable[tuple[Entity, FeatureSet]],
+    *,
+    min_members: int = 3,
+    exclude: tuple[str, ...] = _DEFAULT_DECORATOR_EXCLUDES,
+) -> list[Group]:
+    """One group per unique decorator. An entity carrying multiple
+    decorators is a member of every corresponding group, which is what
+    enables co-occurrence rules (e.g. ``@app.route`` handlers usually
+    also have ``@audit``)."""
+    by_decorator: dict[str, list[str]] = defaultdict(list)
+    excluded = frozenset(exclude)
+    for entity, features in items:
+        for dec in features.get_set("decorator"):
+            if dec in excluded:
+                continue
+            by_decorator[dec].append(entity.id)
+    return [
+        Group(name=name, selector_type="decorator", members=tuple(ids))
+        for name, ids in sorted(by_decorator.items())
         if len(ids) >= min_members
     ]

@@ -17,7 +17,7 @@ from .features import extract_python_functions
 from .mining import mine
 from .output import format_gaps, format_gaps_json
 from .parsing import find_python_files, parse_file
-from .selectors import directory_groups
+from .selectors import decorator_groups, directory_groups
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -89,10 +89,10 @@ def cmd_check(
             entities[entity.id] = entity
             feature_index[entity.id] = features
 
-    groups = directory_groups(
-        ((e, feature_index[e.id]) for e in entities.values()),
-        min_members=min_group_size,
-    )
+    items = [(e, feature_index[e.id]) for e in entities.values()]
+    groups: list = []
+    groups.extend(directory_groups(items, min_members=min_group_size))
+    groups.extend(decorator_groups(items, min_members=min_group_size))
 
     # Mine each feature kind independently. Compound (cross-kind)
     # predicates land later via FP-growth.

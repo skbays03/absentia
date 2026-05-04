@@ -77,3 +77,33 @@ def test_empty_group_yields_no_rules():
     rules, gaps = mine([group], {}, min_confidence=0.8)
     assert rules == []
     assert gaps == []
+
+
+def test_decorator_group_skips_trivial_self_rule():
+    """A decorator group of @audit fns trivially has @audit at 100%.
+    That's noise; mining should skip it."""
+    members = ["a", "b", "c"]
+    group = Group(name="@audit", selector_type="decorator", members=tuple(members))
+    feature_index = {n: _features("@audit") for n in members}
+    rules, gaps = mine([group], feature_index, min_confidence=0.8,
+                       feature_kind="decorator")
+    assert rules == []  # trivial self-rule filtered
+    assert gaps == []
+
+
+def test_decorator_group_finds_co_occurring_decorator():
+    """In an @audit group, if 4/5 also have @route, that's a useful rule."""
+    members = ["a", "b", "c", "d", "e"]
+    group = Group(name="@audit", selector_type="decorator", members=tuple(members))
+    feature_index = {
+        "a": _features("@audit", "@route"),
+        "b": _features("@audit", "@route"),
+        "c": _features("@audit", "@route"),
+        "d": _features("@audit", "@route"),
+        "e": _features("@audit"),  # missing @route
+    }
+    rules, gaps = mine([group], feature_index, min_confidence=0.8,
+                       feature_kind="decorator")
+    assert len(rules) == 1
+    assert rules[0].feature_value == "@route"
+    assert {g.entity_id for g in gaps} == {"e"}
