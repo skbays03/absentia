@@ -1,0 +1,70 @@
+# Example lacuna.toml — copy to your project root and customize.
+# Every section below is optional; defaults are sensible.
+
+[scan]
+include   = ["src/", "tests/"]
+exclude   = ["src/vendor/", "**/generated/"]
+languages = ["python"]                    # extractors to load
+
+[mining]
+min_confidence     = 0.8                  # ignore weak rules
+min_group_size     = 5                    # ignore tiny groups
+max_predicate_size = 2                    # 1 = single-feature; 2 = compound (AND of two)
+
+# ── Selectors ──────────────────────────────────────────────────────────────
+
+[selectors.directory]
+enabled     = true
+min_members = 5
+kind_filter = ["function", "class"]
+
+[selectors.decorator]
+enabled     = true
+min_members = 3
+include     = ["*"]                       # all decorators
+exclude     = ["@property", "@staticmethod"]
+match_args  = false                       # @app.route("/x") groups with @app.route("/y")
+
+[selectors.parent_class]
+enabled           = true
+min_members       = 3
+include_inherited = false                 # group only by direct parent
+
+[selectors.name_pattern]
+enabled  = true
+patterns = [
+  { pattern = "test_*",    kind = "function", name = "tests" },
+  { pattern = "*_handler", kind = "function", name = "handlers" },
+  { pattern = "*Panel",    kind = "class",    name = "panels" },
+]
+
+[selectors.cluster]
+enabled              = false              # off by default — expensive
+min_cluster_size     = 5
+similarity_threshold = 0.85
+features             = ["calls", "imports"]
+
+# Manual groups — array-of-tables, one per group:
+# [[selectors.manual]]
+# name    = "auth_endpoints"
+# members = [
+#   "src/api/login.py::login",
+#   "src/api/logout.py::logout",
+#   "src/api/refresh.py::refresh_token",
+# ]
+
+# ── Output ─────────────────────────────────────────────────────────────────
+
+[output]
+default = "interactive"                   # "interactive" | "compact" | "json"
+
+# ── Project-wide suppressions ──────────────────────────────────────────────
+# These are committed to version control and reviewable. Personal/ad-hoc
+# suppressions live in .lacuna/state.db (gitignored) instead.
+#
+# [[suppress]]
+# rule    = "r-a3f2"
+# entity  = "src/api/users.py::delete_user"
+# scope   = "gap"                          # "gap" | "rule_for_entity" | "rule_global" | "selector"
+# reason  = "delete_user is the audit endpoint itself; @audit would recurse"
+# created = "2026-05-04"

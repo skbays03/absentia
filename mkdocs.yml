@@ -1,0 +1,45 @@
+site_name: lacuna
+site_description: Find the holes your code already drew.
+# site_url: https://lacuna.dev   # Deferred — see DEFERRALS.md
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle: { icon: material/weather-night, name: Switch to dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle: { icon: material/weather-sunny, name: Switch to light mode }
+
+nav:
+  - Home: index.md
+  - Tutorial:
+      - Quickstart: tutorial/quickstart.md
+  - Reference:
+      - CLI: reference/cli.md
+      - TUI keybindings: reference/tui-keys.md
+      - Configuration: reference/lacuna-toml.md
+  - Explanation:
+      - What is negative-space search?: explanation/what-is-negative-space.md
+      - Why no LLM: explanation/why-no-llm.md
+      - How mining works: explanation/how-mining-works.md
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - toc:
+      permalink: true
