@@ -15,7 +15,7 @@ from . import __version__
 from .entities import Entity, FeatureSet
 from .features import extract_python_functions
 from .mining import mine
-from .output import format_gaps
+from .output import format_gaps, format_gaps_json
 from .parsing import find_python_files, parse_file
 from .selectors import directory_groups
 
@@ -34,8 +34,10 @@ def main(argv: list[str] | None = None) -> int:
                        help="Minimum confidence for a rule (default: 0.8)")
     check.add_argument("--min-group-size", type=int, default=3,
                        help="Skip groups with fewer members (default: 3)")
+    check.add_argument("--json", action="store_true", dest="as_json",
+                       help="Emit machine-readable JSON instead of human text")
     check.add_argument("--quiet", action="store_true",
-                       help="Suppress the stats footer")
+                       help="Suppress the stats footer (text mode only)")
 
     args = parser.parse_args(argv)
 
@@ -49,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
             min_confidence=args.min_confidence,
             min_group_size=args.min_group_size,
             quiet=args.quiet,
+            as_json=args.as_json,
         )
 
     return 0
@@ -60,9 +63,14 @@ def cmd_check(
     min_confidence: float,
     min_group_size: int,
     quiet: bool,
+    as_json: bool = False,
 ) -> int:
     if not root.is_dir():
-        print(f"lacuna: not a directory: {root}", file=sys.stderr)
+        if as_json:
+            import json
+            print(json.dumps({"error": f"not a directory: {root}"}))
+        else:
+            print(f"lacuna: not a directory: {root}", file=sys.stderr)
         return 2
 
     started = time.perf_counter()
@@ -89,11 +97,23 @@ def cmd_check(
     elapsed = time.perf_counter() - started
 
     rules_by_id = {r.id: r for r in rules}
-    print(format_gaps(gaps, rules_by_id, entities, min_confidence=min_confidence))
+    scan_stats = {
+        "root": str(root),
+        "duration_ms": round(elapsed * 1000, 2),
+        "entities_scanned": len(entities),
+        "groups": len(groups),
+        "rules": len(rules),
+        "min_confidence": min_confidence,
+        "min_group_size": min_group_size,
+    }
 
-    if not quiet:
-        print(f"  {len(entities)} entities scanned, "
-              f"{len(groups)} groups, {len(rules)} rules in {elapsed:.2f}s")
-        print()
+    if as_json:
+        print(format_gaps_json(gaps, rules_by_id, entities, scan_stats=scan_stats))
+    else:
+        print(format_gaps(gaps, rules_by_id, entities, min_confidence=min_confidence))
+        if not quiet:
+            print(f"  {len(entities)} entities scanned, "
+                  f"{len(groups)} groups, {len(rules)} rules in {elapsed:.2f}s")
+            print()
 
     return 1 if gaps else 0

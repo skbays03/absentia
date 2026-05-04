@@ -59,3 +59,24 @@ def test_check_on_nonexistent_path_returns_two(tmp_path, capsys):
         quiet=True,
     )
     assert code == 2
+
+
+def test_json_output_is_parseable_with_expected_shape(tmp_path, capsys):
+    import json as json_module
+
+    _write_corpus(tmp_path)
+    code = cmd_check(
+        root=tmp_path,
+        min_confidence=0.8,
+        min_group_size=3,
+        quiet=False,
+        as_json=True,
+    )
+    assert code == 1
+    payload = json_module.loads(capsys.readouterr().out)
+    assert payload["summary"] == {"gaps": 1, "rules": 1}
+    assert payload["scan"]["entities_scanned"] >= 5
+    [gap] = payload["gaps"]
+    assert gap["entity"]["qualified_name"].endswith("delete_user")
+    assert gap["rule"]["feature_value"] == "@audit"
+    assert gap["rule"]["confidence"] == 0.8

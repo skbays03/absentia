@@ -1,9 +1,13 @@
-"""Format gaps for human reading.
+"""Format gaps for output — human-readable text or JSON.
 
-MVP: plain text only. JSON output for `--json` and the eventual TUI
-renderer plug into the same data, just different presentation.
+The TUI (when it lands) will consume the same underlying data via the
+library API; ``format_gaps_json`` is also what editor plugins and the
+Dev-Dashboard panel will parse.
 """
 from __future__ import annotations
+
+import json
+from typing import Any
 
 from .entities import Entity
 from .mining import Gap, Rule
@@ -40,3 +44,48 @@ def format_gaps(
     lines.append("")
 
     return "\n".join(lines)
+
+
+def format_gaps_json(
+    gaps: list[Gap],
+    rules: dict[str, Rule],
+    entities: dict[str, Entity],
+    *,
+    scan_stats: dict[str, Any],
+) -> str:
+    """Stable JSON shape for editor plugins, CI consumers, and the
+    Dev-Dashboard panel. Each gap is self-contained: the rule and entity
+    are inlined so consumers don't need to join across collections.
+    """
+    payload = {
+        "scan": scan_stats,
+        "summary": {
+            "gaps": len(gaps),
+            "rules": len(rules),
+        },
+        "gaps": [
+            {
+                "id": gap.id,
+                "rule": {
+                    "id": rule.id,
+                    "group_id": rule.group_id,
+                    "feature_kind": rule.feature_kind,
+                    "feature_value": rule.feature_value,
+                    "support_n": rule.support_n,
+                    "support_total": rule.support_total,
+                    "confidence": round(rule.confidence, 4),
+                },
+                "entity": {
+                    "id": entity.id,
+                    "kind": entity.kind,
+                    "qualified_name": entity.qualified_name,
+                    "file_path": entity.file_path,
+                    "line": entity.line,
+                },
+            }
+            for gap in gaps
+            for rule in [rules[gap.rule_id]]
+            for entity in [entities[gap.entity_id]]
+        ],
+    }
+    return json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
