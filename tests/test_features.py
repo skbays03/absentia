@@ -50,3 +50,31 @@ def test_handles_multiple_top_level_functions():
     results = list(extract_python_functions(root, "x.py"))
     assert [e.qualified_name for e, _ in results] == ["x.py::a", "x.py::b", "x.py::c"]
     assert results[1][1].get_set("decorator") == frozenset({"@d"})
+
+
+def test_extracts_calls_inside_function_body():
+    src = (
+        "def foo():\n"
+        "    bar()\n"
+        "    baz.qux(1, 2)\n"
+        "    if True:\n"
+        "        nested()\n"
+    )
+    root = _parse(src)
+    [(_, features)] = list(extract_python_functions(root, "x.py"))
+    assert features.get_set("calls") == frozenset({"bar", "baz.qux", "nested"})
+
+
+def test_function_with_no_calls_has_empty_calls_set():
+    root = _parse("def foo():\n    pass\n")
+    [(_, features)] = list(extract_python_functions(root, "x.py"))
+    assert features.get_set("calls") == frozenset()
+
+
+def test_decorator_call_not_counted_as_function_body_call():
+    src = '@app.route("/x")\ndef handler():\n    bar()\n'
+    root = _parse(src)
+    [(_, features)] = list(extract_python_functions(root, "x.py"))
+    # `app.route("/x")` is a call inside the decorator, NOT inside the
+    # function body — only `bar` should appear.
+    assert features.get_set("calls") == frozenset({"bar"})

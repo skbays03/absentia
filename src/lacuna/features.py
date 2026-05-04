@@ -42,8 +42,30 @@ def _emit_function(
         file_path=file_path,
         line=line,
     )
-    features = FeatureSet(by_kind={"decorator": frozenset(decorators)})
+    features = FeatureSet(by_kind={
+        "decorator": frozenset(decorators),
+        "calls": frozenset(_calls_within(fn_node)),
+    })
     return entity, features
+
+
+def _calls_within(fn_node: Node) -> Iterator[str]:
+    """Yield the names of every call inside the function body.
+
+    Decorator-attached calls (e.g. inside ``@app.route("/x")``) are not in
+    fn_node's subtree — they live on the parent decorated_definition — so
+    they're naturally excluded.
+    """
+    yield from _walk_calls(fn_node)
+
+
+def _walk_calls(node: Node) -> Iterator[str]:
+    for child in node.children:
+        if child.type == "call":
+            target = child.child_by_field_name("function")
+            if target is not None:
+                yield target.text.decode("utf-8").strip()
+        yield from _walk_calls(child)
 
 
 def _decorators_of(decorated_node: Node) -> Iterator[str]:

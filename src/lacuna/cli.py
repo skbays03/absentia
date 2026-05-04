@@ -93,7 +93,16 @@ def cmd_check(
         ((e, feature_index[e.id]) for e in entities.values()),
         min_members=min_group_size,
     )
-    rules, gaps = mine(groups, feature_index, min_confidence=min_confidence)
+
+    # Mine each feature kind independently. Compound (cross-kind)
+    # predicates land later via FP-growth.
+    rules: list = []
+    gaps: list = []
+    for kind in ("decorator", "calls"):
+        rs, gs = mine(groups, feature_index,
+                      min_confidence=min_confidence, feature_kind=kind)
+        rules.extend(rs)
+        gaps.extend(gs)
     elapsed = time.perf_counter() - started
 
     rules_by_id = {r.id: r for r in rules}
