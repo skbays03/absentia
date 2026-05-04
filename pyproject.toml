@@ -18,10 +18,9 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-    # Engine deps will be added as implementation progresses:
-    # "tree-sitter >= 0.21",
-    # "tree-sitter-python >= 0.21",
-    # "textual >= 0.50",
+    "tree-sitter >= 0.21",
+    "tree-sitter-python >= 0.21",
+    # "textual >= 0.50",  # added when TUI lands
 ]
 
 [project.optional-dependencies]
