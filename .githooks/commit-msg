@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""commit-msg hook — enforce lacuna's commit message format.
+
+Rules:
+  1. Subject line ≤72 chars
+  2. If a body exists, line 2 must be blank (subject/body separator)
+  3. Body lines ≤100 chars (matches our ruff line-length)
+  4. At least one ``Authored-by:`` trailer must be present
+
+Install in a fresh clone with:
+    ln -sf ../../.githooks/commit-msg .git/hooks/commit-msg
+"""
+from __future__ import annotations
+
+import re
+import sys
+
+MAX_SUBJECT = 72
+MAX_BODY = 100
+TRAILER_RE = re.compile(r"^Authored-by:", re.IGNORECASE)
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 2:
+        print("usage: commit-msg <message-file>", file=sys.stderr)
+        return 2
+
+    with open(argv[1], encoding="utf-8") as fh:
+        raw = fh.read()
+
+    # Strip git-supplied comment lines and trailing blanks.
+    lines = [ln for ln in raw.splitlines() if not ln.startswith("#")]
+    while lines and lines[-1].strip() == "":
+        lines.pop()
+
+    if not lines:
+        return _fail("empty commit message")
+
+    subject = lines[0]
+    if len(subject) > MAX_SUBJECT:
+        return _fail(
+            f"Subject is {len(subject)} chars (max {MAX_SUBJECT}):",
+            f"  {subject}",
+        )
+
+    if len(lines) > 1 and lines[1] != "":
+        return _fail("Body must be separated from subject by a blank line.")
+
+    for ln in lines[1:]:
+        if len(ln) > MAX_BODY:
+            return _fail(
+                f"Body line exceeds {MAX_BODY} chars ({len(ln)}):",
+                f"  {ln}",
+            )
+
+    if not any(TRAILER_RE.match(ln) for ln in lines):
+        return _fail(
+            "Commit message must include an 'Authored-by:' trailer.",
+            "  Add: Authored-by: Your Name <your@email>",
+        )
+
+    return 0
+
+
+def _fail(*messages: str) -> int:
+    print("commit-msg hook rejected the message:", file=sys.stderr)
+    for m in messages:
+        print(f"  {m}", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

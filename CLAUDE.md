@@ -80,7 +80,39 @@ In **user projects** (not this repo):
 - ADRs go in `docs/explanation/decisions/` and are written **when the decision
   is made**, not retroactively.
 - Tutorial code blocks must be runnable and tested in CI.
-- Commit messages: short imperative subject; body explains *why*, not *what*.
 - Deferred publication-blockers go in `DEFERRALS.md`.
 - Resolved deferrals get struck through (not deleted) and moved to the
   Resolved section at the bottom of `DEFERRALS.md`.
+
+## Commit format
+
+Enforced by `.githooks/commit-msg` (Python). Rules:
+
+1. Subject ≤72 chars, imperative mood (the hook only checks length; mood is
+   on you).
+2. Blank line between subject and body if body exists.
+3. Body lines ≤100 chars.
+4. **Every commit must include an `Authored-by:` trailer** identifying the
+   human author. AI-assisted commits add `Co-Authored-By:` for the assistant.
+
+Example:
+
+```
+Add foo to bar
+
+Body explaining the *why* of the change. Body lines are wrapped at
+100 chars to match the ruff line-length.
+
+Authored-by: Shawn Bays <shawnbays2003@gmail.com>
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+### Enabling the hook in a fresh clone
+
+The hook is tracked in `.githooks/`. Wire it up with:
+
+```bash
+ln -sf ../../.githooks/commit-msg .git/hooks/commit-msg
+```
+
+(Or globally for all hooks: `git config core.hooksPath .githooks`.)
