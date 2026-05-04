@@ -38,10 +38,10 @@ _None currently._
 - **Resolution:** Acquire a domain (or commit to GitHub Pages at `username.github.io/lacuna/`), configure DNS, deploy mkdocs site. Update README + `mkdocs.yml` `site_url`.
 - **Latest by:** Before any public marketing push.
 
-### GitHub repo visibility
-- **Status:** Local-only; not on GitHub.
+### GitHub repo visibility (public timing)
+- **Status:** Repo exists at <https://github.com/skbays03/lacuna> as **private** since 2026-05-04.
 - **Why deferred:** Pre-alpha; not ready for public eyes.
-- **Resolution:** Decide private→public timing. Reasonable to make public when v0.1 is usable end-to-end.
+- **Resolution:** Flip to public when v0.1 is usable end-to-end and the marketing-leaning docs (what-is-negative-space, why-no-llm, how-mining-works) are written. Run `gh repo edit --visibility public --accept-visibility-change-consequences`.
 - **Latest by:** Before announcing the project anywhere.
 
 ---
