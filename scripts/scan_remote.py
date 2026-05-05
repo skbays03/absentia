@@ -101,6 +101,48 @@ KNOWN_CORPORA: dict[str, list[tuple[str, str]]] = {
         ("https://github.com/StackExchange/StackExchange.Redis",
          "Method-rich Redis client, real-world C# patterns"),
     ],
+    "c": [
+        ("https://github.com/curl/curl",
+         "Long-lived idiomatic C, well-conventioned function shapes"),
+        ("https://github.com/redis/redis",
+         "Real-world C, lots of function patterns"),
+    ],
+    "cpp": [
+        ("https://github.com/nlohmann/json",
+         "Header-mostly C++, popular and well-styled"),
+        ("https://github.com/google/leveldb",
+         "Class-rich C++ with clear hierarchies"),
+    ],
+    "php": [
+        ("https://github.com/slimphp/Slim",
+         "Micro-framework, idiomatic modern PHP with attributes"),
+        ("https://github.com/symfony/console",
+         "Symfony console component, attribute-heavy"),
+    ],
+    "kotlin": [
+        ("https://github.com/Kotlin/kotlinx.coroutines",
+         "Official Kotlin coroutines, idiomatic source"),
+        ("https://github.com/JetBrains/kotlin",
+         "Stdlib + compiler — very large, use --shallow"),
+    ],
+    "scala": [
+        ("https://github.com/playframework/playframework",
+         "Web framework, lots of class/trait/object patterns"),
+        ("https://github.com/akka/akka",
+         "Actor model framework, idiomatic Scala"),
+    ],
+    "lua": [
+        ("https://github.com/nvim-lua/plenary.nvim",
+         "Neovim plugin library, conventional table-of-functions style"),
+        ("https://github.com/LuaLS/lua-language-server",
+         "Mostly Lua, well-conventioned"),
+    ],
+    "bash": [
+        ("https://github.com/Bash-it/bash-it",
+         "Bash framework, hundreds of small functions"),
+        ("https://github.com/pyenv/pyenv",
+         "Mostly shell scripts, real-world conventions"),
+    ],
     "swift": [
         ("https://github.com/Alamofire/Alamofire",
          "Real Swift idioms, structs + protocols"),

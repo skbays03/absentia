@@ -27,6 +27,7 @@ class ScanConfig:
     languages: tuple[str, ...] = (
         "python", "javascript", "typescript", "tsx",
         "rust", "go", "java", "ruby", "csharp", "swift",
+        "c", "cpp", "php", "kotlin", "scala", "lua", "bash",
     )
 
 

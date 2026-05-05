@@ -15,13 +15,20 @@ from importlib.metadata import entry_points
 from typing import Iterable
 
 from .base import Extractor
+from .bash import BashExtractor
+from .c import CExtractor
+from .cpp import CPlusPlusExtractor
 from .csharp import CSharpExtractor
 from .go import GoExtractor
 from .java import JavaExtractor
 from .javascript import JavaScriptExtractor
+from .kotlin import KotlinExtractor
+from .lua import LuaExtractor
+from .php import PhpExtractor
 from .python import PythonExtractor
 from .ruby import RubyExtractor
 from .rust import RustExtractor
+from .scala import ScalaExtractor
 from .swift import SwiftExtractor
 from .typescript import TSXExtractor, TypeScriptExtractor
 
@@ -37,6 +44,13 @@ _BUILTIN_EXTRACTORS: tuple[type[Extractor], ...] = (
     RubyExtractor,
     CSharpExtractor,
     SwiftExtractor,
+    CExtractor,
+    CPlusPlusExtractor,
+    PhpExtractor,
+    KotlinExtractor,
+    ScalaExtractor,
+    LuaExtractor,
+    BashExtractor,
 )
 
 
@@ -80,14 +94,21 @@ def extension_dispatch(extractors: dict[str, Extractor]) -> dict[str, Extractor]
 
 
 __all__ = [
+    "BashExtractor",
+    "CExtractor",
+    "CPlusPlusExtractor",
     "CSharpExtractor",
     "Extractor",
     "GoExtractor",
     "JavaExtractor",
     "JavaScriptExtractor",
+    "KotlinExtractor",
+    "LuaExtractor",
+    "PhpExtractor",
     "PythonExtractor",
     "RubyExtractor",
     "RustExtractor",
+    "ScalaExtractor",
     "SwiftExtractor",
     "TSXExtractor",
     "TypeScriptExtractor",
