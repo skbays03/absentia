@@ -71,11 +71,13 @@ that import lacuna as a library.
 
 ## Performance benchmarks
 
-The following are scan times on a single MacBook (M-series, no
-multi-core fan-out — a single process per scan), each on a
-shallow-cloned (`--depth 1`) public repo. Times include
-parse + extract + group + mine. Storage was cold for each run
-(no incremental cache).
+The following are scan times on a single MacBook (M-series, single
+process per scan, `--jobs 1`), each on a shallow-cloned (`--depth 1`)
+public repo. Times include parse + extract + group + mine. Storage
+was cold for each run (no incremental cache). Multi-core scans (the
+default since `--jobs` defaults to half of detected cores) are
+substantially faster on the long-running ones; see *Parallel scans*
+below.
 
 | Language | Repo | Entities | Groups | Rules | Cold scan |
 |---|---|---:|---:|---:|---:|
@@ -147,6 +149,31 @@ content hash determines whether it needs re-parsing. On a typical
 "edit one file, re-run" loop, the warm scan completes in well under
 a second regardless of the project's total size.
 
+### Parallel scans
+
+Parse + extract is per-file independent, so we parallelize that
+stage across a worker pool of processes. `lacuna check --jobs N`
+controls the worker count; the default is half of detected CPU
+cores (a sensible default on a developer machine where an IDE,
+browser, and chat tools are also competing for cores). Storage
+writes stay on the main process — SQLite is single-writer, and
+sharing a connection across processes only serializes the writes.
+
+Workers are spawned lazily: projects with no changed files (warm
+rescans) and projects with very few changed files pay no overhead.
+The pool only kicks in when a chunk has at least four files per
+worker, which is the break-even point against process-startup cost
+(~150 ms per worker on M-series).
+
+Smaller repos see negligible improvement because the parse stage
+isn't long enough to amortize the worker pool's startup cost; the
+single-process numbers in the table above are the right guide for
+anything under ~10 seconds. Speedup tops out around 4× even on a
+beefier machine — the serial tail (group + mine + storage) becomes
+the bottleneck per Amdahl. On an 8-core M-series at the default
+half-cores, expect roughly 3–3.5× on the long-running corpora
+(Linux, dotnet/runtime, llvm-project, kotlin).
+
 ## What this architecture buys
 
 - **Single-machine first.** The largest target we publicly benchmark
@@ -172,7 +199,8 @@ a second regardless of the project's total size.
   the seam is at the storage layer (replace SQLite with a shared
   store).
 - Not GPU-accelerated. Counting doesn't benefit; tree-sitter is
-  already the bottleneck and it's CPU-bound C.
+  already the bottleneck and it's CPU-bound C. We do parallelize
+  parse + extract across CPU cores (see *Parallel scans* above).
 - Not a long-running service. Each scan is a process that starts,
   reads its `.lacuna/` cache, scans, writes back, exits. The TUI is
   the same scan loop wrapped in an interactive front-end.
@@ -187,7 +215,7 @@ python scripts/scan_remote.py URL                  # scan an arbitrary repo
 The `KNOWN_CORPORA` table at the top of `scripts/scan_remote.py`
 lists curated targets per language. The benchmark numbers above
 were generated with shallow clones (`--depth 1` is the script's
-default) and a cold `.lacuna/` directory each run. Hardware:
-M-series MacBook, single process, no multi-core parallelism —
-those are aspirations for the enterprise tier, not assumptions of
-the v1 engine.
+default), a cold `.lacuna/` directory each run, and `--jobs 1` to
+isolate single-process performance. Hardware: M-series MacBook.
+Production runs (default `--jobs`) are faster on the long-running
+corpora; see *Parallel scans* above.

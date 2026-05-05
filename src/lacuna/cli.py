@@ -13,6 +13,7 @@ import argparse
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import hashlib
 import json
@@ -78,6 +79,10 @@ def main(argv: list[str] | None = None) -> int:
                        help="Emit machine-readable JSON instead of human text")
     check.add_argument("--quiet", action="store_true",
                        help="Suppress the stats footer (text mode only)")
+    check.add_argument("--jobs", "-j", type=int, default=None,
+                       metavar="N",
+                       help="Parse files across N worker processes "
+                            "(default: half of CPU cores)")
 
     suppress = sub.add_parser(
         "suppress",
@@ -129,6 +134,7 @@ def main(argv: list[str] | None = None) -> int:
             config=config,
             quiet=args.quiet,
             as_json=args.as_json,
+            jobs=args.jobs,
         )
 
     if args.cmd == "suppress":
@@ -194,6 +200,7 @@ def cmd_check(
     config: Config,
     quiet: bool = False,
     as_json: bool = False,
+    jobs: int | None = None,
 ) -> int:
     if not root.is_dir():
         if as_json:
@@ -225,6 +232,7 @@ def cmd_check(
             as_json=as_json,
             started=started,
             started_iso=started_iso,
+            jobs=jobs,
         )
     finally:
         lock_ctx.__exit__(None, None, None)
@@ -239,6 +247,7 @@ def _run_check(
     as_json: bool,
     started: float,
     started_iso: str,
+    jobs: int | None = None,
 ) -> int:
     extractors = discover_extractors(config.scan.languages)
     if not extractors:
@@ -254,6 +263,7 @@ def _run_check(
     result = scan_corpus(
         root=root, state_dir=state_dir, config=config,
         started=started, started_iso=started_iso, extractors=extractors,
+        jobs=jobs,
     )
     gaps = result["gaps"]
     rules_by_id = result["rules_by_id"]
@@ -290,14 +300,20 @@ def scan_corpus(
     started: float | None = None,
     started_iso: str | None = None,
     extractors: dict | None = None,
+    jobs: int | None = None,
 ) -> dict:
     """Run a full scan + mine cycle and return the result.
 
     Used by both ``cmd_check`` (which formats and prints) and the TUI
     (which renders widgets). Caller is responsible for the StateLock —
     typically held for the surrounding cmd_check / TUI session.
+
+    ``jobs`` controls parse/extract parallelism. ``None`` means
+    auto-detect (half of available cores via :func:`parallel.default_jobs`).
     """
     from datetime import datetime, timezone
+
+    from .parallel import default_jobs
 
     if started is None:
         started = time.perf_counter()
@@ -305,13 +321,15 @@ def scan_corpus(
         started_iso = datetime.now(timezone.utc).isoformat()
     if extractors is None:
         extractors = discover_extractors(config.scan.languages)
+    if jobs is None:
+        jobs = default_jobs()
 
     ext_to_extractor = extension_dispatch(extractors)
 
     with Storage(state_dir) as storage:
         run_id = storage.begin_run()
         files_seen, files_unchanged = _scan_incremental(
-            root, storage, run_id, ext_to_extractor
+            root, storage, run_id, ext_to_extractor, jobs=jobs,
         )
         entities, feature_index = storage.load_all()
         storage.commit()
@@ -475,48 +493,101 @@ def _scan_incremental(
     storage: Storage,
     run_id: int,
     ext_to_extractor: dict,
+    jobs: int = 1,
 ) -> tuple[int, int]:
     """Walk the corpus, reusing cached entities/features for unchanged files.
 
     Returns ``(files_seen, files_unchanged)`` for the run summary.
+
+    When ``jobs > 1`` and a chunk has enough changed files to amortize
+    process startup, parse + extract runs across a worker pool. Storage
+    writes always stay on the main process (SQLite is single-writer).
+    The worker pool is created lazily on the first chunk that needs it,
+    so projects with no changed files (or very few) pay no overhead.
     """
+    from .parallel import parse_one, should_parallelize
+
     cached = storage.all_file_hashes()
     seen_paths: set[str] = set()
     files_unchanged = 0
 
-    for path in find_source_files(root, ext_to_extractor.keys()):
-        extractor = ext_to_extractor.get(path.suffix.lower())
-        if extractor is None:
-            continue  # find_source_files already filtered, but be defensive
+    # Memory-bounded streaming: we hold at most CHUNK_SIZE files' worth
+    # of content + parse results in RAM at once. Above this we drain
+    # to storage and start a fresh chunk.
+    CHUNK_SIZE = 256
 
-        try:
-            rel = path.relative_to(root).as_posix()
-        except ValueError:
-            rel = path.as_posix()
-        seen_paths.add(rel)
+    pool: Any = None
+    chunk: list[tuple[str, bytes, str, Any]] = []  # (rel, content, hash, ex)
 
-        try:
-            content = path.read_bytes()
-        except OSError:
-            continue
+    def get_pool() -> Any:
+        nonlocal pool
+        if pool is None:
+            from concurrent.futures import ProcessPoolExecutor
+            pool = ProcessPoolExecutor(max_workers=jobs)
+        return pool
 
-        current_hash = hashlib.sha256(content).hexdigest()
+    def flush() -> None:
+        if not chunk:
+            return
+        if should_parallelize(len(chunk), jobs):
+            worker_args = [
+                (rel, content, ex.language_name)
+                for rel, content, _h, ex in chunk
+            ]
+            results = {
+                rel: items
+                for rel, items in get_pool().map(
+                    parse_one, worker_args, chunksize=4,
+                )
+            }
+        else:
+            results = {}
+            for rel, content, _h, ex in chunk:
+                tree_root = ex.parse(content)
+                results[rel] = list(ex.extract(tree_root, rel))
 
-        if cached.get(rel) == current_hash:
+        for rel, _content, current_hash, _ex in chunk:
+            storage.delete_entities_for_file(rel)
+            new_entities: dict[str, Entity] = {}
+            new_features: dict[str, FeatureSet] = {}
+            for entity, features in results.get(rel, []):
+                new_entities[entity.id] = entity
+                new_features[entity.id] = features
+            storage.save_entities_and_features(new_entities, new_features)
             storage.upsert_file(rel, current_hash, run_id)
-            files_unchanged += 1
-            continue
+        chunk.clear()
 
-        # Changed or new — re-parse and replace this file's rows.
-        storage.delete_entities_for_file(rel)
-        tree_root = extractor.parse(content)
-        new_entities: dict[str, Entity] = {}
-        new_features: dict[str, FeatureSet] = {}
-        for entity, features in extractor.extract(tree_root, rel):
-            new_entities[entity.id] = entity
-            new_features[entity.id] = features
-        storage.save_entities_and_features(new_entities, new_features)
-        storage.upsert_file(rel, current_hash, run_id)
+    try:
+        for path in find_source_files(root, ext_to_extractor.keys()):
+            extractor = ext_to_extractor.get(path.suffix.lower())
+            if extractor is None:
+                continue  # find_source_files already filtered, but be defensive
+
+            try:
+                rel = path.relative_to(root).as_posix()
+            except ValueError:
+                rel = path.as_posix()
+            seen_paths.add(rel)
+
+            try:
+                content = path.read_bytes()
+            except OSError:
+                continue
+
+            current_hash = hashlib.sha256(content).hexdigest()
+
+            if cached.get(rel) == current_hash:
+                storage.upsert_file(rel, current_hash, run_id)
+                files_unchanged += 1
+                continue
+
+            chunk.append((rel, content, current_hash, extractor))
+            if len(chunk) >= CHUNK_SIZE:
+                flush()
+        flush()  # final partial chunk
+    finally:
+        if pool is not None:
+            pool.shutdown(wait=True)
 
     # Tombstone files that disappeared from disk since the last run.
     for stale in set(cached) - seen_paths:
