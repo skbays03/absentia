@@ -430,7 +430,9 @@ class LacunaApp(App[None]):
             from ..estimator import PARALLEL_FRACTION
             cal = load_calibration()
             bps_table = (
-                calibrated_bps_table(cal.machine_speed_factor)
+                calibrated_bps_table(
+                    cal.machine_speed_factor, cal.per_language_bps,
+                )
                 if cal else None
             )
             p = cal.amdahl_p if cal else PARALLEL_FRACTION

@@ -149,6 +149,46 @@ def test_calibrated_bps_table_minimum_one():
         assert bps >= 1
 
 
+def test_calibrated_bps_table_per_language_overrides():
+    """When per_language_bps has a value, it wins over the global factor."""
+    overrides = {"python": 9_999_999}
+    table = calibrated_bps_table(
+        machine_speed_factor=0.5, per_language_bps=overrides,
+    )
+    # python uses the override, not 0.5 × baseline
+    assert table["python"] == 9_999_999
+    # other languages still get the global factor
+    from lacuna.estimator import M_SERIES_BPS
+    assert table["c"] == int(M_SERIES_BPS["c"] * 0.5)
+
+
+def test_calibrate_per_language_skips_under_represented(tmp_path):
+    """Languages below MIN_BYTES_PER_LANGUAGE are excluded from
+    per-language calibration."""
+    from lacuna.calibration import (
+        MIN_BYTES_PER_LANGUAGE,
+        calibrate_per_language,
+    )
+    from lacuna.config import Config
+
+    # Make Python comfortably above the 500 KB threshold and JS well
+    # below it. Calibration should produce a python BPS only.
+    padding = "# " + ("x" * 4000) + "\n"
+    for i in range(160):  # ~640 KB total
+        (tmp_path / f"py_{i}.py").write_text(
+            f"def f_{i}(): return {i}\n{padding}"
+        )
+    (tmp_path / "tiny.js").write_text("function f() { return 1; }\n")
+
+    bps = calibrate_per_language(
+        corpus_root=tmp_path, config=Config(),
+        min_bytes=MIN_BYTES_PER_LANGUAGE,
+    )
+    assert "python" in bps
+    assert "javascript" not in bps
+    assert bps["python"] > 0
+
+
 def test_run_calibration_rejects_too_few_files(tmp_path):
     """A corpus below the file-count threshold should error cleanly."""
     from lacuna.calibration import run_calibration

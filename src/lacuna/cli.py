@@ -574,7 +574,10 @@ def cmd_est(
             pass
 
     bps_table = (
-        calibrated_bps_table(calibration.machine_speed_factor)
+        calibrated_bps_table(
+            calibration.machine_speed_factor,
+            calibration.per_language_bps,
+        )
         if calibration is not None else None
     )
     from .estimator import PARALLEL_FRACTION

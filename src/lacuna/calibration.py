@@ -49,6 +49,15 @@ MIN_CALIBRATION_BYTES = 100_000  # 100 KB
 # core-count-based invalidation.
 CALIBRATION_MAX_AGE_DAYS = 90
 
+# Languages with fewer bytes than this in the calibration corpus
+# get the global machine_speed_factor applied to their baseline,
+# rather than a separate measurement. Below this threshold, fixed
+# pipeline overhead (group + mine + storage, ~200ms) dominates the
+# measured time and the resulting BPS is more noise than signal.
+# Empirically: 138 KB of Bash measured 567 KB/s vs an actual ~3 MB/s
+# at this corpus size — the overhead made it look 5× slower than reality.
+MIN_BYTES_PER_LANGUAGE = 500_000  # 500 KB
+
 
 @dataclass(frozen=True)
 class CalibrationData:
@@ -66,6 +75,12 @@ class CalibrationData:
     # curious user (and as evidence in the methodology doc). Older
     # calibration files lack this; treat absence as "no observations."
     jobs_curve_observed: list[tuple[int, float]] = field(default_factory=list)
+    # Optional: bytes/sec per language, measured independently during
+    # calibration on languages with sufficient byte share. When a
+    # language is in this dict, its value overrides
+    # ``M_SERIES_BPS[lang] × machine_speed_factor``. Other languages
+    # fall back to the scaled baseline.
+    per_language_bps: dict[str, int] = field(default_factory=dict)
 
 
 def calibration_path() -> Path:
@@ -254,6 +269,13 @@ def run_calibration(
         if fit_amdahl and len(observations) >= 2 else 0.80
     )
 
+    per_lang_bps = calibrate_per_language(
+        corpus_root=corpus_root,
+        config=config,
+        shape=shape,
+        progress=progress,
+    )
+
     return CalibrationData(
         calibrated_at=datetime.now(timezone.utc).isoformat(),
         lacuna_version=__version__,
@@ -265,7 +287,85 @@ def run_calibration(
         calibration_duration_s=primary_elapsed,
         amdahl_p=fitted_p,
         jobs_curve_observed=observations,
+        per_language_bps=per_lang_bps,
     )
+
+
+def calibrate_per_language(
+    *,
+    corpus_root: Path,
+    config: Any,
+    shape: Any = None,
+    min_bytes: int = MIN_BYTES_PER_LANGUAGE,
+    progress: Any = None,
+) -> dict[str, int]:
+    """Measure bytes/sec independently for each language with enough
+    byte share in the corpus. Returns ``{language_name: bps}``.
+
+    Each eligible language gets its own jobs=1 cold scan with the
+    config narrowed to that language only. Languages below
+    ``min_bytes`` are skipped — their timing signal is too noisy
+    to fit (fixed pipeline overhead dominates per-byte cost).
+
+    Pass ``shape`` to avoid re-walking the corpus; otherwise we
+    walk it ourselves.
+    """
+    from dataclasses import replace
+    from .estimator import walk_corpus
+    from .extractors import discover_extractors, extension_dispatch
+    from .storage import SCHEMA_VERSION
+
+    if shape is None:
+        extractors = discover_extractors(config.scan.languages)
+        ext_to = extension_dispatch(extractors)
+        shape = walk_corpus(corpus_root, ext_to)
+
+    eligible = sorted(
+        (lang for lang, n in shape.by_language_bytes.items() if n >= min_bytes),
+        key=lambda lang: -shape.by_language_bytes[lang],
+    )
+    if not eligible:
+        return {}
+
+    per_lang_bps: dict[str, int] = {}
+    for idx, lang in enumerate(eligible):
+        if progress is not None:
+            try:
+                progress(f"lang:{lang}", len(eligible))
+            except Exception:
+                pass
+
+        sub_config = replace(
+            config,
+            scan=replace(config.scan, languages=[lang]),
+        )
+        sub_extractors = discover_extractors(sub_config.scan.languages)
+        if not sub_extractors:
+            continue
+
+        with tempfile.TemporaryDirectory(prefix="lacuna-cal-lang-") as tmpd:
+            tmp_state = Path(tmpd) / "state"
+            tmp_state.mkdir()
+            (tmp_state / "version").write_text(f"{SCHEMA_VERSION}\n")
+
+            from .cli import scan_corpus  # late import: avoid cycle
+
+            started = time.perf_counter()
+            scan_corpus(
+                root=corpus_root,
+                state_dir=tmp_state,
+                config=sub_config,
+                jobs=1,
+                extractors=sub_extractors,
+            )
+            elapsed = time.perf_counter() - started
+
+        if elapsed > 0:
+            per_lang_bps[lang] = max(
+                1, int(shape.by_language_bytes[lang] / elapsed)
+            )
+
+    return per_lang_bps
 
 
 def _select_amdahl_points(cores: int) -> list[int]:
@@ -386,14 +486,30 @@ def make_synthetic_corpus(
     return target_dir
 
 
-def calibrated_bps_table(machine_speed_factor: float) -> dict[str, int]:
-    """Apply the speed factor to the baseline BPS table.
+def calibrated_bps_table(
+    machine_speed_factor: float,
+    per_language_bps: dict[str, int] | None = None,
+) -> dict[str, int]:
+    """Build the BPS table from calibration outputs.
 
-    factor < 1 = machine slower than M-series baseline
-    factor > 1 = machine faster
+    Two-layer logic:
+
+    1. ``machine_speed_factor`` × ``M_SERIES_BPS[lang]`` — global
+       fallback for every language (factor < 1 = machine slower
+       than baseline; factor > 1 = faster).
+
+    2. ``per_language_bps[lang]`` — when present, *overrides* the
+       global fallback for that language. These come from
+       per-language scans during calibration; they're more accurate
+       because they capture parser-specific cost without averaging
+       across the whole corpus.
     """
     from .estimator import M_SERIES_BPS
-    return {
-        lang: max(1, int(bps * machine_speed_factor))
-        for lang, bps in M_SERIES_BPS.items()
-    }
+    table: dict[str, int] = {}
+    overrides = per_language_bps or {}
+    for lang, baseline in M_SERIES_BPS.items():
+        if lang in overrides:
+            table[lang] = max(1, int(overrides[lang]))
+        else:
+            table[lang] = max(1, int(baseline * machine_speed_factor))
+    return table

@@ -235,7 +235,10 @@ def quick_estimate_line(
         from .calibration import calibrated_bps_table, load_calibration
         cal = load_calibration()
         bps_table = (
-            calibrated_bps_table(cal.machine_speed_factor) if cal else None
+            calibrated_bps_table(
+                cal.machine_speed_factor, cal.per_language_bps,
+            )
+            if cal else None
         )
         # Use the calibrated Amdahl p when we have one — overrides the
         # caller's parallel_fraction (the caller's value is just the
