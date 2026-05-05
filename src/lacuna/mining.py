@@ -51,23 +51,31 @@ def mine(
     min_confidence: float = 0.8,
     feature_kind: str = "decorator",
 ) -> tuple[list[Rule], list[Gap]]:
-    """Mine rules from groups; emit gaps for non-conforming members."""
+    """Mine rules from groups; emit gaps for non-conforming members.
+
+    A member is *eligible* for a given ``feature_kind`` if its FeatureSet
+    has that kind populated (even as an empty set). Members for which the
+    kind doesn't apply at all (e.g. mining ``parent_class`` over a group
+    that mixes classes and functions) are excluded from both the
+    confidence denominator and the gap list — functions can't be
+    "missing" a parent class.
+    """
     rules: list[Rule] = []
     gaps: list[Gap] = []
 
     for group in groups:
-        # Tally each feature value's support across the group's members.
-        counter: Counter[str] = Counter()
-        for entity_id in group.members:
-            features = feature_index.get(entity_id)
-            if features is None:
-                continue
-            for value in features.get_set(feature_kind):
-                counter[value] += 1
-
-        total = len(group.members)
+        eligible: list[str] = [
+            mid for mid in group.members
+            if mid in feature_index and feature_kind in feature_index[mid].by_kind
+        ]
+        total = len(eligible)
         if total == 0:
             continue
+
+        counter: Counter[str] = Counter()
+        for mid in eligible:
+            for value in feature_index[mid].get_set(feature_kind):
+                counter[value] += 1
 
         identity = group.identity_feature
         for value, count in counter.items():
@@ -85,10 +93,8 @@ def mine(
             )
             rules.append(rule)
 
-            # Members lacking this value are gaps under this rule.
-            for entity_id in group.members:
-                features = feature_index.get(entity_id)
-                if features is None or value not in features.get_set(feature_kind):
-                    gaps.append(Gap(rule_id=rule.id, entity_id=entity_id))
+            for mid in eligible:
+                if value not in feature_index[mid].get_set(feature_kind):
+                    gaps.append(Gap(rule_id=rule.id, entity_id=mid))
 
     return rules, gaps

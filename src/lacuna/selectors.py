@@ -38,6 +38,8 @@ class Group:
         (e.g. directory)."""
         if self.selector_type == "decorator":
             return ("decorator", self.name)
+        if self.selector_type == "parent_class":
+            return ("parent_class", self.name)
         return None
 
 
@@ -45,7 +47,7 @@ def directory_groups(
     items: Iterable[tuple[Entity, FeatureSet]],
     *,
     min_members: int = 3,
-    kind_filter: tuple[str, ...] = ("function",),
+    kind_filter: tuple[str, ...] = ("function", "class"),
 ) -> list[Group]:
     """Group entities by their immediate parent directory."""
     by_dir: dict[str, list[str]] = defaultdict(list)
@@ -66,6 +68,35 @@ def directory_groups(
 _DEFAULT_DECORATOR_EXCLUDES: tuple[str, ...] = (
     "@property", "@staticmethod", "@classmethod",
 )
+
+_DEFAULT_PARENT_CLASS_EXCLUDES: tuple[str, ...] = (
+    "object",  # universal Python superclass; not a useful grouping
+)
+
+
+def parent_class_groups(
+    items: Iterable[tuple[Entity, FeatureSet]],
+    *,
+    min_members: int = 3,
+    exclude: tuple[str, ...] = _DEFAULT_PARENT_CLASS_EXCLUDES,
+) -> list[Group]:
+    """One group per unique parent class. Members are CLASSES that inherit
+    from that parent. A class with multiple parents is a member of every
+    corresponding group, enabling co-occurrence rules across mixins."""
+    by_parent: dict[str, list[str]] = defaultdict(list)
+    excluded = frozenset(exclude)
+    for entity, features in items:
+        if entity.kind != "class":
+            continue
+        for parent in features.get_set("parent_class"):
+            if parent in excluded:
+                continue
+            by_parent[parent].append(entity.id)
+    return [
+        Group(name=name, selector_type="parent_class", members=tuple(ids))
+        for name, ids in sorted(by_parent.items())
+        if len(ids) >= min_members
+    ]
 
 
 def decorator_groups(

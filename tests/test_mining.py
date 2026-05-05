@@ -91,6 +91,28 @@ def test_decorator_group_skips_trivial_self_rule():
     assert gaps == []
 
 
+def test_mining_skips_members_without_the_feature_kind():
+    """A directory group mixing classes (with parent_class) and functions
+    (without) should mine parent_class only across the classes — and not
+    flag the functions as 'missing' something they couldn't have."""
+    members = ["c1", "c2", "c3", "f1", "f2"]
+    group = Group(name="mixed", selector_type="directory", members=tuple(members))
+    feature_index = {
+        "c1": FeatureSet(by_kind={"parent_class": frozenset({"Base"})}),
+        "c2": FeatureSet(by_kind={"parent_class": frozenset({"Base"})}),
+        "c3": FeatureSet(by_kind={"parent_class": frozenset({"Base"})}),
+        # Functions don't have parent_class in their FeatureSet at all.
+        "f1": FeatureSet(by_kind={"calls": frozenset({"helper"})}),
+        "f2": FeatureSet(by_kind={"calls": frozenset({"helper"})}),
+    }
+    rules, gaps = mine([group], feature_index, min_confidence=0.8,
+                       feature_kind="parent_class")
+    assert len(rules) == 1
+    assert rules[0].support_n == 3
+    assert rules[0].support_total == 3  # functions excluded from denominator
+    assert gaps == []  # no eligible member is missing the value
+
+
 def test_decorator_group_finds_co_occurring_decorator():
     """In an @audit group, if 4/5 also have @route, that's a useful rule."""
     members = ["a", "b", "c", "d", "e"]

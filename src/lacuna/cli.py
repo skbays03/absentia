@@ -20,11 +20,11 @@ import json
 from . import __version__
 from .config import Config, find_config
 from .entities import Entity, FeatureSet
-from .features import extract_python_functions
+from .features import extract_python_entities
 from .mining import mine
 from .output import format_gaps, format_gaps_json
 from .parsing import find_python_files, parse_source
-from .selectors import decorator_groups, directory_groups
+from .selectors import decorator_groups, directory_groups, parent_class_groups
 from .storage import StateLock, StateLockError, Storage
 
 
@@ -226,10 +226,16 @@ def _run_check(
                 min_members=config.selectors.decorator.min_members,
                 exclude=config.selectors.decorator.exclude,
             ))
+        if config.selectors.parent_class.enabled:
+            groups.extend(parent_class_groups(
+                items,
+                min_members=config.selectors.parent_class.min_members,
+                exclude=config.selectors.parent_class.exclude,
+            ))
 
         rules: list = []
         gaps: list = []
-        for kind in ("decorator", "calls"):
+        for kind in ("decorator", "calls", "parent_class"):
             rs, gs = mine(groups, feature_index,
                           min_confidence=config.mining.min_confidence,
                           feature_kind=kind)
@@ -312,7 +318,7 @@ def _scan_incremental(
         tree_root = parse_source(content)
         new_entities: dict[str, Entity] = {}
         new_features: dict[str, FeatureSet] = {}
-        for entity, features in extract_python_functions(tree_root, rel):
+        for entity, features in extract_python_entities(tree_root, rel):
             new_entities[entity.id] = entity
             new_features[entity.id] = features
         storage.save_entities_and_features(new_entities, new_features)

@@ -15,6 +15,9 @@ from typing import Any
 _DEFAULT_DECORATOR_EXCLUDES: tuple[str, ...] = (
     "@property", "@staticmethod", "@classmethod",
 )
+_DEFAULT_PARENT_CLASS_EXCLUDES: tuple[str, ...] = (
+    "object",
+)
 
 
 @dataclass(frozen=True)
@@ -34,7 +37,7 @@ class MiningConfig:
 class DirectorySelectorConfig:
     enabled: bool = True
     min_members: int = 3
-    kind_filter: tuple[str, ...] = ("function",)
+    kind_filter: tuple[str, ...] = ("function", "class")
 
 
 @dataclass(frozen=True)
@@ -45,9 +48,19 @@ class DecoratorSelectorConfig:
 
 
 @dataclass(frozen=True)
+class ParentClassSelectorConfig:
+    enabled: bool = True
+    min_members: int = 3
+    exclude: tuple[str, ...] = _DEFAULT_PARENT_CLASS_EXCLUDES
+
+
+@dataclass(frozen=True)
 class SelectorsConfig:
     directory: DirectorySelectorConfig = field(default_factory=DirectorySelectorConfig)
     decorator: DecoratorSelectorConfig = field(default_factory=DecoratorSelectorConfig)
+    parent_class: ParentClassSelectorConfig = field(
+        default_factory=ParentClassSelectorConfig
+    )
 
 
 @dataclass(frozen=True)
@@ -92,10 +105,22 @@ class Config:
             exclude=tuple(sels_raw.get("decorator", {}).get(
                 "exclude", DecoratorSelectorConfig.exclude)),
         )
+        parent_class = ParentClassSelectorConfig(
+            enabled=sels_raw.get("parent_class", {}).get(
+                "enabled", ParentClassSelectorConfig.enabled),
+            min_members=sels_raw.get("parent_class", {}).get(
+                "min_members", ParentClassSelectorConfig.min_members),
+            exclude=tuple(sels_raw.get("parent_class", {}).get(
+                "exclude", ParentClassSelectorConfig.exclude)),
+        )
         return cls(
             scan=scan,
             mining=mining,
-            selectors=SelectorsConfig(directory=directory, decorator=decorator),
+            selectors=SelectorsConfig(
+                directory=directory,
+                decorator=decorator,
+                parent_class=parent_class,
+            ),
         )
 
 

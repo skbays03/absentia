@@ -1,5 +1,5 @@
 from lacuna.entities import Entity, FeatureSet
-from lacuna.selectors import decorator_groups, directory_groups
+from lacuna.selectors import decorator_groups, directory_groups, parent_class_groups
 
 
 def _entity(path: str, name: str) -> Entity:
@@ -99,3 +99,63 @@ def test_decorator_selector_emits_group_with_correct_type():
     [g] = decorator_groups(items, min_members=1)
     assert g.selector_type == "decorator"
     assert g.id == "decorator::@audit"
+
+
+def _class(file_path: str, name: str) -> Entity:
+    return Entity(
+        kind="class",
+        qualified_name=f"{file_path}::{name}",
+        file_path=file_path,
+        line=1,
+    )
+
+
+def _class_features(*parents: str) -> FeatureSet:
+    return FeatureSet(by_kind={"parent_class": frozenset(parents)})
+
+
+def test_parent_class_groups_one_per_unique_parent():
+    items = [
+        (_class("a.py", "Apple"),  _class_features("Fruit")),
+        (_class("a.py", "Banana"), _class_features("Fruit")),
+        (_class("a.py", "Cherry"), _class_features("Fruit", "Stone")),
+        (_class("a.py", "Lump"),   _class_features("Stone")),
+    ]
+    by_name = {g.name: g for g in parent_class_groups(items, min_members=1)}
+    assert set(by_name) == {"Fruit", "Stone"}
+    assert len(by_name["Fruit"].members) == 3
+    assert len(by_name["Stone"].members) == 2
+
+
+def test_parent_class_groups_excludes_object_by_default():
+    items = [
+        (_class("a.py", "A"), _class_features("object")),
+        (_class("a.py", "B"), _class_features("object", "Mixin")),
+        (_class("a.py", "C"), _class_features("Mixin")),
+    ]
+    groups = parent_class_groups(items, min_members=1)
+    assert {g.name for g in groups} == {"Mixin"}
+
+
+def test_parent_class_groups_skips_non_class_entities():
+    items = [
+        (_class("a.py", "A"), _class_features("Base")),
+        (_class("a.py", "B"), _class_features("Base")),
+        (
+            Entity(kind="function", qualified_name="a.py::fn", file_path="a.py", line=1),
+            FeatureSet(by_kind={"parent_class": frozenset({"Base"})}),
+        ),
+    ]
+    [g] = parent_class_groups(items, min_members=1)
+    assert len(g.members) == 2  # the function is not a class member
+
+
+def test_parent_class_selector_id_format():
+    items = [
+        (_class("a.py", "A"), _class_features("Base")),
+        (_class("a.py", "B"), _class_features("Base")),
+    ]
+    [g] = parent_class_groups(items, min_members=1)
+    assert g.selector_type == "parent_class"
+    assert g.id == "parent_class::Base"
+    assert g.identity_feature == ("parent_class", "Base")
