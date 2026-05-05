@@ -27,7 +27,7 @@ import json
 import os
 import tempfile
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -61,7 +61,11 @@ class CalibrationData:
     calibration_files: int
     calibration_bytes: int
     calibration_duration_s: float
-    amdahl_p: float = 0.80       # phase 3 may fit this from a curve
+    amdahl_p: float = 0.80
+    # Optional: per-jobs measurements that produced the fit, for the
+    # curious user (and as evidence in the methodology doc). Older
+    # calibration files lack this; treat absence as "no observations."
+    jobs_curve_observed: list[tuple[int, float]] = field(default_factory=list)
 
 
 def calibration_path() -> Path:
@@ -163,12 +167,22 @@ def run_calibration(
     *,
     corpus_root: Path,
     config: Any,
+    fit_amdahl: bool = True,
+    progress: Any = None,
 ) -> CalibrationData:
-    """Scan ``corpus_root`` at jobs=1, derive a machine_speed_factor.
+    """Scan ``corpus_root`` at jobs=1, derive a ``machine_speed_factor``,
+    and (optionally) fit Amdahl's ``p`` from a multi-jobs curve.
 
     Uses a temporary state directory so the user's ``.lacuna/`` cache
-    isn't polluted by calibration runs (and so we measure a true cold
-    scan, not a warm one).
+    isn't polluted by calibration runs (every scan is therefore cold).
+
+    When ``fit_amdahl`` is True (the default), additional scans run at
+    jobs ∈ {2, 4, 8, ...} up to a bounded number of points so we can
+    fit ``p`` from the observed speedup curve. Set False to skip and
+    fall back to ``PARALLEL_FRACTION = 0.80``.
+
+    ``progress`` (optional) is a callable accepting ``(jobs, n_runs)``
+    invoked before each sub-scan so callers can render progress.
 
     Raises ``ValueError`` if the corpus is too small to calibrate
     reliably.
@@ -196,41 +210,121 @@ def run_calibration(
             f"{MIN_CALIBRATION_BYTES} for reliable calibration"
         )
 
-    # Disposable state dir → guaranteed cold scan, no user-cache write.
-    with tempfile.TemporaryDirectory(prefix="lacuna-cal-") as tmpd:
-        tmp_state = Path(tmpd) / "state"
-        tmp_state.mkdir()
-        (tmp_state / "version").write_text(f"{SCHEMA_VERSION}\n")
+    cores = detect_cores()
+    jobs_to_measure = (
+        _select_amdahl_points(cores) if fit_amdahl and cores >= 2 else [1]
+    )
 
-        # Late import to avoid an import cycle at module load.
-        from .cli import scan_corpus
+    observations: list[tuple[int, float]] = []
+    primary_elapsed = 0.0
+    for n_jobs in jobs_to_measure:
+        if progress is not None:
+            try:
+                progress(n_jobs, len(jobs_to_measure))
+            except Exception:
+                pass  # progress callback must never break calibration
 
-        started = time.perf_counter()
-        scan_corpus(
-            root=corpus_root,
-            state_dir=tmp_state,
-            config=config,
-            jobs=1,
-            extractors=extractors,
-        )
-        elapsed = time.perf_counter() - started
+        with tempfile.TemporaryDirectory(prefix="lacuna-cal-") as tmpd:
+            tmp_state = Path(tmpd) / "state"
+            tmp_state.mkdir()
+            (tmp_state / "version").write_text(f"{SCHEMA_VERSION}\n")
+
+            from .cli import scan_corpus  # late import: avoid cycle
+
+            started = time.perf_counter()
+            scan_corpus(
+                root=corpus_root,
+                state_dir=tmp_state,
+                config=config,
+                jobs=n_jobs,
+                extractors=extractors,
+            )
+            elapsed = time.perf_counter() - started
+        observations.append((n_jobs, elapsed))
+        if n_jobs == 1:
+            primary_elapsed = elapsed
 
     predicted = serial_time_for(shape.by_language_bytes)
-    if predicted <= 0 or elapsed <= 0:
-        factor = 1.0
-    else:
-        factor = predicted / elapsed
+    factor = (
+        predicted / primary_elapsed
+        if predicted > 0 and primary_elapsed > 0 else 1.0
+    )
+    fitted_p = (
+        fit_amdahl_p(observations)
+        if fit_amdahl and len(observations) >= 2 else 0.80
+    )
 
     return CalibrationData(
         calibrated_at=datetime.now(timezone.utc).isoformat(),
         lacuna_version=__version__,
-        core_count=detect_cores(),
+        core_count=cores,
         machine_speed_factor=factor,
         calibration_corpus_path=str(corpus_root),
         calibration_files=shape.files,
         calibration_bytes=shape.bytes,
-        calibration_duration_s=elapsed,
+        calibration_duration_s=primary_elapsed,
+        amdahl_p=fitted_p,
+        jobs_curve_observed=observations,
     )
+
+
+def _select_amdahl_points(cores: int) -> list[int]:
+    """Powers of 2 up to ``cores``, plus ``cores`` if it isn't one.
+
+    Capped at 4 measurement points so calibration time scales
+    predictably (each extra point adds another full scan worth of
+    user-visible cost).
+    """
+    points: list[int] = []
+    n = 1
+    while n <= cores and len(points) < 4:
+        points.append(n)
+        n *= 2
+    if cores not in points and len(points) < 4:
+        points.append(cores)
+    return sorted(set(points))
+
+
+def fit_amdahl_p(
+    observations: list[tuple[int, float]],
+    *,
+    p_min: float = 0.20,
+    p_max: float = 0.99,
+    step: float = 0.01,
+) -> float:
+    """Find the Amdahl ``p`` that best explains observed scan times.
+
+    ``observations`` is a list of ``(jobs, elapsed_seconds)`` from a
+    real calibration run. Point ``jobs=1`` provides the serial
+    baseline; subsequent points give observed speedups
+    (``baseline / elapsed``). We grid-search ``p`` over [p_min, p_max]
+    and pick the value minimizing squared residuals between
+    Amdahl-predicted and observed speedups.
+
+    Falls back to ``PARALLEL_FRACTION`` if input lacks a baseline or
+    has only one point.
+    """
+    from .estimator import PARALLEL_FRACTION, amdahl_speedup
+
+    baseline = next((t for n, t in observations if n == 1), None)
+    if baseline is None or baseline <= 0:
+        return PARALLEL_FRACTION
+    measured = [(n, baseline / t) for n, t in observations if n > 1 and t > 0]
+    if not measured:
+        return PARALLEL_FRACTION
+
+    best_p = PARALLEL_FRACTION
+    best_err = float("inf")
+    p = p_min
+    while p <= p_max + 1e-9:
+        err = sum(
+            (amdahl_speedup(p, n) - obs_sp) ** 2 for n, obs_sp in measured
+        )
+        if err < best_err:
+            best_err = err
+            best_p = p
+        p += step
+    return round(best_p, 3)
 
 
 def calibrated_bps_table(machine_speed_factor: float) -> dict[str, int]:

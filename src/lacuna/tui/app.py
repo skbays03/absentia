@@ -427,15 +427,18 @@ class LacunaApp(App[None]):
                 return
 
             from ..calibration import calibrated_bps_table, load_calibration
+            from ..estimator import PARALLEL_FRACTION
             cal = load_calibration()
             bps_table = (
                 calibrated_bps_table(cal.machine_speed_factor)
                 if cal else None
             )
+            p = cal.amdahl_p if cal else PARALLEL_FRACTION
             est = estimate(
                 by_language_bytes=shape.by_language_bytes,
                 jobs=default_jobs(),
                 bps_table=bps_table,
+                parallel_fraction=p,
             )
             note = "" if cal else " (uncalibrated)"
             self.sub_title = (

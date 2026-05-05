@@ -565,6 +565,8 @@ def cmd_est(*, root: Path, recalibrate: bool) -> int:
         calibrated_bps_table(calibration.machine_speed_factor)
         if calibration is not None else None
     )
+    from .estimator import PARALLEL_FRACTION
+    p_value = calibration.amdahl_p if calibration is not None else PARALLEL_FRACTION
 
     report = format_estimate_report(
         root=root,
@@ -575,6 +577,7 @@ def cmd_est(*, root: Path, recalibrate: bool) -> int:
         calibrated_at=calibration.calibrated_at if calibration else None,
         observed_cold_scan_s=observed_cold_scan_s,
         bps_table=bps_table,
+        parallel_fraction=p_value,
     )
     print(report, end="")
     return 0

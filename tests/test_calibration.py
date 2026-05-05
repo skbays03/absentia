@@ -159,6 +159,55 @@ def test_run_calibration_rejects_too_few_files(tmp_path):
         run_calibration(corpus_root=tmp_path, config=Config())
 
 
+def test_fit_amdahl_p_recovers_known_value():
+    """Synthesize observations from a known p, confirm we recover it."""
+    from lacuna.calibration import fit_amdahl_p
+    from lacuna.estimator import amdahl_speedup
+
+    true_p = 0.85
+    baseline = 10.0
+    obs = [(1, baseline)]
+    for n in (2, 4, 8, 16):
+        obs.append((n, baseline / amdahl_speedup(true_p, n)))
+    fitted = fit_amdahl_p(obs)
+    # Grid step is 0.01 so allow a small fit window.
+    assert abs(fitted - true_p) <= 0.02
+
+
+def test_fit_amdahl_p_falls_back_without_baseline():
+    """No jobs=1 point → return PARALLEL_FRACTION default."""
+    from lacuna.calibration import fit_amdahl_p
+    from lacuna.estimator import PARALLEL_FRACTION
+
+    obs = [(2, 5.0), (4, 3.0)]
+    assert fit_amdahl_p(obs) == PARALLEL_FRACTION
+
+
+def test_fit_amdahl_p_falls_back_with_only_baseline():
+    """Only jobs=1 point → can't compute speedups → fall back."""
+    from lacuna.calibration import fit_amdahl_p
+    from lacuna.estimator import PARALLEL_FRACTION
+
+    assert fit_amdahl_p([(1, 5.0)]) == PARALLEL_FRACTION
+
+
+def test_select_amdahl_points_capped_at_four():
+    """Even on a 64-core machine we measure at most 4 jobs counts."""
+    from lacuna.calibration import _select_amdahl_points
+
+    points = _select_amdahl_points(64)
+    assert len(points) == 4
+    assert points[0] == 1
+    assert all(p <= 64 for p in points)
+
+
+def test_select_amdahl_points_includes_all_low_cores():
+    """1, 2, 4, 8 covers an 8-core machine entirely."""
+    from lacuna.calibration import _select_amdahl_points
+
+    assert _select_amdahl_points(8) == [1, 2, 4, 8]
+
+
 def test_run_calibration_succeeds_on_sufficient_corpus(tmp_path):
     """End-to-end: scan a synthetic corpus, derive a speed factor."""
     from lacuna.calibration import (

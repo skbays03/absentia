@@ -210,6 +210,7 @@ def quick_estimate_line(
     root: Path,
     config: Any,
     jobs: int | None = None,
+    parallel_fraction: float = PARALLEL_FRACTION,
 ) -> str | None:
     """Compact one-line preamble used by ``lacuna check`` / ``lacuna init`` /
     the TUI before a scan starts. Walks the corpus, applies the calibrated
@@ -236,6 +237,10 @@ def quick_estimate_line(
         bps_table = (
             calibrated_bps_table(cal.machine_speed_factor) if cal else None
         )
+        # Use the calibrated Amdahl p when we have one — overrides the
+        # caller's parallel_fraction (the caller's value is just the
+        # default for the uncalibrated path).
+        p = cal.amdahl_p if cal else parallel_fraction
 
         from .parallel import default_jobs
         n_jobs = jobs if jobs is not None else default_jobs()
@@ -243,6 +248,7 @@ def quick_estimate_line(
             by_language_bytes=shape.by_language_bytes,
             jobs=n_jobs,
             bps_table=bps_table,
+            parallel_fraction=p,
         )
         cal_note = "" if cal else " (uncalibrated)"
         return (
@@ -302,6 +308,7 @@ def format_estimate_report(
     calibrated_at: str | None = None,
     observed_cold_scan_s: float | None = None,
     bps_table: dict[str, int] | None = None,
+    parallel_fraction: float = PARALLEL_FRACTION,
 ) -> str:
     """Human-readable ASCII report — the body of ``lacuna est`` output.
 
@@ -315,7 +322,10 @@ def format_estimate_report(
     omitted means "use M-series baseline".
     """
     curve = jobs_curve(
-        shape.by_language_bytes, max_jobs=cpu_count, bps_table=bps_table,
+        shape.by_language_bytes,
+        max_jobs=cpu_count,
+        bps_table=bps_table,
+        parallel_fraction=parallel_fraction,
     )
 
     lines: list[str] = []
@@ -393,13 +403,18 @@ def format_estimate_report(
 
     if calibrated:
         when = calibrated_at or "unknown"
+        p_label = (
+            f"p = {parallel_fraction:.2f} (fitted)"
+            if abs(parallel_fraction - PARALLEL_FRACTION) > 1e-6
+            else f"p = {parallel_fraction:.2f}"
+        )
         lines.append(
-            f"Cost model:    p = {PARALLEL_FRACTION:.2f}, calibrated "
-            f"on this machine ({when})."
+            f"Cost model:    {p_label}, calibrated on this machine "
+            f"({when})."
         )
     else:
         lines.append(
-            f"Cost model:    p = {PARALLEL_FRACTION:.2f}, M-series "
+            f"Cost model:    p = {parallel_fraction:.2f}, M-series "
             f"baseline (uncalibrated; expect ±2-4× error)."
         )
         lines.append(
