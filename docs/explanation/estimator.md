@@ -28,7 +28,7 @@ Last actual cold scan     0.9 s   (from .lacuna/last_run.json — ground truth)
        8        0.8 s    1.00×         12%
       10        0.8 s    1.00×         10%
 
-Cost model:    p = 0.80, calibrated on this machine (2026-05-05).
+Cost model:    p = 0.36 (fitted), calibrated on this machine (2026-05-05).
 Methodology:   docs/explanation/estimator.md
 ```
 
@@ -66,19 +66,32 @@ serial_time = Σ (language_bytes / language_throughput)
 
 ### 2. Amdahl's law for parallel speedup
 
-Lacuna's pipeline is roughly 80% parallelizable (parse + extract,
-which is per-file independent and runs across a worker pool) and
-20% serial (group + mine + storage write, which can't be sped up
-by adding cores). Amdahl's law turns that into a speedup curve:
+Lacuna's pipeline is partly parallelizable (parse + extract, which
+runs per-file across a worker pool) and partly serial (group + mine
++ storage write, which can't be sped up by adding cores). Amdahl's
+law turns that into a speedup curve:
 
 ```
-speedup(N) = 1 / ((1 − p) + p/N)        where p = 0.80
+speedup(N) = 1 / ((1 − p) + p/N)
 ```
 
-This is what your speedup column shows. Notice the asymptote: as
-`N → ∞`, speedup → `1 / (1 − p) = 5×`. **You can never get more
-than 5× speedup**, no matter how many cores you throw at it. The
-serial tail wins eventually.
+Where `p` is the parallelizable fraction. The default is `p = 0.80`
+(an architectural estimate), but **calibration fits ``p`` from your
+machine's actual scan times** at jobs ∈ {1, 2, 4, 8} and stores the
+fitted value. The output labels it `(fitted)` when it diverges from
+the architectural default.
+
+Why fit instead of bake in 0.80? The actual `p` depends on real
+factors that vary per machine: I/O subsystem, scheduler, NUMA,
+thermal, container limits. Small corpora on fast machines often
+show much lower `p` because the serial pipeline tail dominates the
+parallel gains. Validated against Dev-Dashboard: fitted `p = 0.36`
+(vs. baked 0.80) — accurate because Dev-Dashboard scans in <1 s
+and process-spawn overhead eats into the parallel fraction.
+
+Notice the asymptote: as `N → ∞`, speedup → `1 / (1 − p)`.
+**You can never get more than that**, no matter how many cores you
+throw at it. The serial tail wins eventually.
 
 | jobs | speedup | parallel efficiency |
 |---:|---:|---:|
@@ -129,20 +142,48 @@ first run.
 
 ### What calibration does
 
-1. Walk a corpus you choose (default: the directory you ran
-   `lacuna est` in). Validate it has at least 30 files and 100 KB.
-2. Predict its serial time using the M-series baseline coefficients.
-3. Run an actual single-process scan in a temporary state dir
-   (so your real `.lacuna/` cache isn't polluted, and the scan is
-   guaranteed cold).
-4. Compute `machine_speed_factor = predicted_time / actual_time`.
-   - Factor < 1 means your machine is slower than the baseline.
-   - Factor > 1 means faster.
-5. Cache the result at `~/.lacuna/calibration.json`.
+Three measurement passes, all run in a throwaway state dir so your
+real `.lacuna/` cache isn't polluted (and so every scan is cold):
 
-Future estimates multiply all baseline bytes/sec values by this
-factor before computing — a single-knob correction that captures
-the dominant source of error.
+1. **Validate the corpus.** Walk the chosen path (default: the
+   directory you ran `lacuna est` in). Refuse if it has fewer than
+   30 files or less than 100 KB total — below that, fixed pipeline
+   overhead dominates the timing signal and the result would be
+   noise. Pass `--use-synthetic` to calibrate against a bundled
+   ~180 KB Python corpus instead, useful when your cwd is empty.
+
+2. **Speedup curve at jobs ∈ {1, 2, 4, 8}** (or fewer points on a
+   small machine). Use `jobs=1` time + the M-series baseline to
+   compute `machine_speed_factor = predicted / actual`. Use the
+   speedup curve to fit Amdahl's `p` via grid search (least
+   squares over `p ∈ [0.20, 0.99]`).
+
+3. **Per-language BPS for languages with ≥500 KB share.** Each
+   eligible language gets its own jobs=1 cold scan with the config
+   narrowed to that language. The measured `bytes / elapsed` is its
+   calibrated BPS. Below 500 KB the timing signal is noise-
+   dominated, so smaller languages fall back to the global
+   `machine_speed_factor` × baseline scaling.
+
+The full result is cached at `~/.lacuna/calibration.json`:
+
+```json
+{
+  "calibrated_at": "...",
+  "lacuna_version": "...",
+  "core_count": 10,
+  "machine_speed_factor": 0.26,
+  "amdahl_p": 0.36,
+  "jobs_curve_observed": [[1, 0.79], [2, 0.65], [4, 0.55], [8, 0.55]],
+  "per_language_bps": {"python": 6443353, "javascript": 3476173},
+  "...": "..."
+}
+```
+
+Future estimates use a two-layer policy: per-language overrides win
+where they exist; everything else gets `M_SERIES_BPS[lang]` scaled
+by `machine_speed_factor`. The fitted `p` flows into the Amdahl
+curve.
 
 ### When calibration re-prompts
 
@@ -153,6 +194,9 @@ invocation) when:
   baseline coefficients no longer match.
 - **Core count changed.** Most likely a different machine; the
   cached numbers don't apply.
+- **The cache is older than 90 days.** Catches drift from OS
+  upgrades, thermal degradation, dying SSDs, and similar slow
+  hardware changes that don't trigger the version-or-cores check.
 - **You pass `--recalibrate`.** Manual override.
 
 If your `~/.lacuna/calibration.json` is missing, `lacuna est`
@@ -194,6 +238,7 @@ grab coffee?" predictor. If you need exact wall-clock numbers, run
 
 ```bash
 lacuna est --recalibrate              # re-prompt and re-measure
+lacuna est --recalibrate --use-synthetic   # calibrate against bundled corpus
 ```
 
 Or delete the cache file and run `lacuna est` again:
@@ -203,24 +248,50 @@ rm ~/.lacuna/calibration.json
 lacuna est
 ```
 
-If you change machines or upgrade lacuna, the cache invalidates
-itself — you'll be re-prompted automatically.
+If you change machines, upgrade lacuna, or 90 days pass, the cache
+invalidates itself — you'll be re-prompted automatically.
+
+## Where this surfaces in normal flows
+
+Once calibration runs, the cost model is in service across lacuna:
+
+- **`lacuna est`** — the dedicated UI, prints the full ASCII
+  jobs-vs-time table.
+- **`lacuna check`** — one-line preamble before scanning
+  (`Scanning N files (M MB) — est. ~Xs at jobs=Y`). Skipped when
+  output is JSON, when `--quiet` is passed, or when stderr isn't a
+  terminal (CI logs stay clean).
+- **`lacuna init`** — first-scan estimate as a footer between the
+  init confirmation and the "Run lacuna check" line.
+- **TUI** — transient `estimating ~Xs · scanning…` subtitle on
+  cold scans, replaced by the post-scan stats once the scan
+  completes.
+
+All four paths share the same `quick_estimate_line()` helper and
+read the same `~/.lacuna/calibration.json` cache.
 
 ## Future work
 
-The current model has known limits, addressed in roughly this order:
+The current implementation covers the headline features in the
+original design:
 
-- **Per-language calibration.** A single `machine_speed_factor`
-  applies uniformly to every language. A real model would measure
-  per-language throughput (different machines accelerate different
-  parsers differently).
-- **Amdahl's `p` from observation.** Today `p = 0.80` is baked in.
-  Multi-jobs calibration runs (jobs ∈ {1, 2, 4, 8}) would let us fit
-  `p` for each user's specific hardware + I/O subsystem.
-- **Bundled synthetic corpus** + `--use-synthetic` flag. Lets you
-  calibrate from an empty directory.
-- **Age-based re-prompt.** Re-calibrate after 90 days to catch drift
-  from OS updates, thermal degradation, dying SSD, etc.
+- ✅ Per-language calibration (≥ 500 KB threshold for clean signal)
+- ✅ Amdahl's `p` fitted from observed multi-jobs curve
+- ✅ Bundled synthetic corpus + `--use-synthetic` flag
+- ✅ Age-based re-prompt (90 days)
+- ✅ Stale-detection on version + core-count change
+- ✅ Reality-check ground truth from prior `last_run.json`
 
-These improvements refine the model without changing the structure;
-the math above stays the same.
+What's still rough:
+
+- The 500 KB minimum-bytes-per-language threshold is conservative.
+  A more sophisticated model would subtract estimated pipeline
+  overhead from the per-language elapsed time, recovering signal
+  on smaller language shares.
+- `p` is fit on a single corpus. A more rigorous fit would combine
+  multiple corpora + bootstrap to give a confidence interval, not
+  a point estimate.
+- No telemetry / no aggregation. Each user calibrates locally, and
+  we don't know if our defaults are good for the population. A
+  privacy-respecting opt-in submission would let us refine the
+  M-series baselines over time.
