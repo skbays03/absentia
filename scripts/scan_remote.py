@@ -89,6 +89,12 @@ KNOWN_CORPORA: dict[str, list[tuple[str, str]]] = {
         ("https://github.com/junit-team/junit5",
          "Annotation-heavy testing framework — best signal for @Test patterns"),
     ],
+    "ruby": [
+        ("https://github.com/sinatra/sinatra",
+         "Compact idiomatic Ruby DSL"),
+        ("https://github.com/rack/rack",
+         "Modular, lots of include-based mixins"),
+    ],
     "swift": [
         ("https://github.com/Alamofire/Alamofire",
          "Real Swift idioms, structs + protocols"),

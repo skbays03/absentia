@@ -19,6 +19,7 @@ from .go import GoExtractor
 from .java import JavaExtractor
 from .javascript import JavaScriptExtractor
 from .python import PythonExtractor
+from .ruby import RubyExtractor
 from .rust import RustExtractor
 from .swift import SwiftExtractor
 from .typescript import TSXExtractor, TypeScriptExtractor
@@ -32,6 +33,7 @@ _BUILTIN_EXTRACTORS: tuple[type[Extractor], ...] = (
     RustExtractor,
     GoExtractor,
     JavaExtractor,
+    RubyExtractor,
     SwiftExtractor,
 )
 
@@ -81,6 +83,7 @@ __all__ = [
     "JavaExtractor",
     "JavaScriptExtractor",
     "PythonExtractor",
+    "RubyExtractor",
     "RustExtractor",
     "SwiftExtractor",
     "TSXExtractor",
