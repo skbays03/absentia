@@ -1,22 +1,80 @@
 # Selectors Reference
 
-> _Stub. To be expanded into a full per-selector reference. The list of
-> built-in selectors and their configuration lives in
-> `lacuna.toml.example` at the repo root._
+A *selector* turns the flat collection of extracted entities into
+**groups** — sets of entities mining will compare against each
+other. Lacuna ships three built-in selector types, all configured
+under `[selectors.*]` in `lacuna.toml`.
 
-Lacuna ships three built-in selector types, configured under
-`[selectors.*]` in `lacuna.toml`:
+## Built-in selectors
 
 | Selector | Emits one group per | Default `min_members` |
 |---|---|---|
 | `directory` | unique parent directory containing entities | 3 |
 | `decorator` | unique decorator value | 3 |
-| `parent_class` | unique parent class / interface / protocol | 3 |
+| `parent_class` | unique parent class / interface / protocol / trait | 3 |
 
-See [how mining works](../explanation/how-mining-works.md) for the
-mechanics of how groups feed rules and gaps. See `lacuna.toml.example`
-in the repo for every option each selector accepts.
+### `directory`
 
-A community plugin SDK for adding new selector types (and language
-extractors) is planned; until it lands, the `lacuna.extractors`
-entry-point group is the only registration mechanism.
+Group entities by the directory they live in. The most useful
+selector for "all entities in `src/api/` should look alike."
+
+Options:
+
+```toml
+[selectors.directory]
+enabled     = true
+min_members = 3                       # skip dirs with fewer entities
+kind_filter = ["function", "class"]   # only group these kinds
+```
+
+### `decorator`
+
+Group entities by which decorator / annotation / attribute they
+carry. Catches "all `@route`-decorated functions need `@audit`."
+
+Options:
+
+```toml
+[selectors.decorator]
+enabled     = true
+min_members = 3
+include     = ["*"]                     # all decorators
+exclude     = ["@property", "@staticmethod"]
+match_args  = false                     # @app.route("/x") groups with @app.route("/y")
+```
+
+### `parent_class`
+
+Group entities by inheritance / protocol conformance / trait impl.
+Same selector handles classes (Python/Java/C#), structs (Rust), and
+extensions (Swift/Kotlin) — anything tree-sitter exposes as a
+parent-relationship.
+
+Options:
+
+```toml
+[selectors.parent_class]
+enabled           = true
+min_members       = 3
+include_inherited = false               # group only by direct parent
+exclude           = ["object"]          # don't group on universal base
+```
+
+## How groups feed mining
+
+For each group, the mining stage counts how often each feature
+value appears among its members. Values that appear in
+≥ `min_confidence` of members become **rules**; members that
+*don't* exhibit the rule become **gaps**. See
+[how mining works](../explanation/how-mining-works.md) for the
+full mechanics.
+
+## Adding new selectors
+
+A community plugin SDK is planned; until it lands, the
+`lacuna.extractors` entry-point group is the only registration
+mechanism for adding language extractors. New *selector* types
+are still in-tree only.
+
+See `lacuna.toml.example` in the repo root for a working sample
+with every option commented.

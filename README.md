@@ -46,11 +46,26 @@ one doesn't"* (a local pattern your team established without writing it down).
 
 ## Install
 
+Lacuna isn't on PyPI yet (still pre-1.0). Install from the repo:
+
 ```bash
-pip install lacuna
+git clone https://github.com/skbays03/lacuna.git
+cd lacuna
+pip install .                   # or `pip install -e .` for an editable install
 ```
 
-Requires Python 3.11+.
+Or with [pipx](https://pipx.pypa.io/) (recommended for CLI tools — installs into an isolated environment, puts `lacuna` on your PATH):
+
+```bash
+git clone https://github.com/skbays03/lacuna.git
+pipx install ./lacuna
+```
+
+Requires Python 3.11+. Cross-platform (macOS, Linux, Windows).
+On Windows, the same `pip install .` / `pipx install ./lacuna`
+commands work in PowerShell or `cmd`; if you want a venv first,
+activate it with `.venv\Scripts\activate` instead of the
+POSIX `source .venv/bin/activate`.
 
 ## Quickstart
 

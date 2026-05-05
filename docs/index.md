@@ -13,9 +13,12 @@ A code-hygiene tool that mines patterns your codebase already follows and surfac
 - **[What is negative-space search?](explanation/what-is-negative-space.md)** — the value prop in prose.
 - **[Why no LLM?](explanation/why-no-llm.md)** — the positioning, defended.
 - **[How mining works](explanation/how-mining-works.md)** — the mechanics behind every gap.
+- **[Architecture and performance](explanation/architecture.md)** — the four-stage pipeline + benchmark numbers (Linux kernel: 96.7 s).
+- **[Cold-scan time estimator](explanation/estimator.md)** — the math + calibration behind `lacuna est`.
 
 ## Look things up
 
 - **[Configuration reference](reference/lacuna-toml.md)** — every `lacuna.toml` option.
 - **[CLI reference](reference/cli.md)** — every command and flag.
 - **[TUI keybindings](reference/tui-keys.md)** — every key, also surfaced via `?` in-app.
+- **[Selectors reference](reference/selectors.md)** — the built-in selector types and their config.

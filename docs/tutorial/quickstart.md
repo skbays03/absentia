@@ -6,13 +6,15 @@ suppress one, then point lacuna at your own code.
 
 ## Prerequisites
 
+Lacuna isn't on PyPI yet (still pre-1.0). Install from a local clone:
+
 ```bash
-pip install lacuna
+git clone https://github.com/skbays03/lacuna.git
+pipx install ./lacuna           # or `pip install ./lacuna` if you don't use pipx
 ```
 
 After install, ``lacuna --version`` should work from any directory.
-Requires Python 3.11+. (See the [README](../index.md) for source-install
-and editable-install options.)
+Requires Python 3.11+; works on macOS, Linux, and Windows.
 
 ## Step 1 — create a tiny demo project
 
