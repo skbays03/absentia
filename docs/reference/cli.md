@@ -4,10 +4,22 @@ The lacuna command-line interface. Run any subcommand with `--help`
 for the full flag list as printed by argparse — this page is the
 narrative companion to those messages.
 
-## `lacuna`
+## `lacuna [path]`
 
 Run with no subcommand, from a TTY, to launch the
 [interactive TUI](tui-keys.md). Outside a TTY, prints help.
+
+Pass an optional path to open the TUI in a different directory:
+
+```bash
+lacuna                  # TUI in cwd
+lacuna ~/myrepo         # TUI in ~/myrepo
+lacuna /tmp/linux       # TUI in /tmp/linux
+```
+
+The path shorthand only fires when the argument is a real,
+existing directory and not a known subcommand (`init`, `check`,
+`est`, `suppress`). Otherwise argparse handles dispatch normally.
 
 ## `lacuna init [path]`
 

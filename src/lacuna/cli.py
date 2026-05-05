@@ -54,10 +54,37 @@ exclude     = ["@property", "@staticmethod", "@classmethod"]
 """
 
 
+_SUBCOMMANDS = frozenset({"init", "check", "est", "estimate", "suppress"})
+
+
 def main(argv: list[str] | None = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+
+    # Shorthand: `lacuna <path>` — if the first arg isn't a known
+    # subcommand or a flag, and it points at an existing directory,
+    # treat it as "open the TUI in that path." This is purely a UX
+    # convenience; everything still works via the explicit subcommands.
+    tui_path: Path | None = None
+    if len(argv) == 1 and argv[0] not in _SUBCOMMANDS and not argv[0].startswith("-"):
+        candidate = Path(argv[0]).expanduser()
+        if candidate.is_dir():
+            tui_path = candidate.resolve()
+            argv = []  # fall through to the no-subcommand branch below
+
     parser = argparse.ArgumentParser(
         prog="lacuna",
         description="Find the holes your code already drew.",
+        epilog=(
+            "Quick reference:\n"
+            "  lacuna                   open the TUI in the current directory\n"
+            "  lacuna PATH              open the TUI in PATH (e.g. lacuna ~/myrepo)\n"
+            "  lacuna init              bootstrap a project here\n"
+            "  lacuna check             batch scan, print gaps, exit non-zero on failure\n"
+            "  lacuna est               estimate cold-scan time without scanning\n"
+            "  lacuna suppress GAP_ID   mark a gap as intentional\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"lacuna {__version__}")
     sub = parser.add_subparsers(dest="cmd")
@@ -122,9 +149,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd is None:
         # No subcommand: launch the TUI when run from a TTY, otherwise
         # fall through to printing help (so piped usage stays sane).
+        # ``tui_path`` was populated above when the user passed
+        # ``lacuna <path>`` — otherwise default to cwd.
         if sys.stdin.isatty() and sys.stdout.isatty():
             from .tui import run_tui
-            root = Path(".").resolve()
+            root = tui_path if tui_path is not None else Path(".").resolve()
             config = _load_config(root, None)
             return run_tui(root, config)
         parser.print_help()
