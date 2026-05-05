@@ -191,6 +191,80 @@ class StepIndicator:
         self.finish()
 
 
+class Spinner:
+    """Indeterminate-progress spinner.
+
+    Use when the work is opaque (no count/total available): rgloss
+    over a home directory, a single big-tree walk, network-bound
+    fetches. Ticks an animated frame + elapsed-time label so the user
+    sees the tool is alive.
+    """
+
+    _FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+
+    def __init__(self, label: str = "") -> None:
+        self.label = label
+        self._started = time.perf_counter()
+        self._frame = 0
+        self._last_drawn = 0.0
+        self._tty = _is_tty()
+        self._finished = False
+
+    def tick(self) -> None:
+        if self._finished or not self._tty:
+            return
+        now = time.perf_counter()
+        if now - self._last_drawn < _THROTTLE_SECONDS:
+            return
+        self._last_drawn = now
+        self._frame = (self._frame + 1) % len(self._FRAMES)
+        elapsed = now - self._started
+        sym = self._FRAMES[self._frame]
+        prefix = f"{self.label} " if self.label else ""
+        line = f"\r{sym} {prefix}({_format_time(elapsed)})"
+        sys.stderr.write(line.ljust(80)[:80])
+        sys.stderr.flush()
+
+    def finish(self, end_message: str | None = None) -> None:
+        if self._finished:
+            return
+        self._finished = True
+        if not self._tty:
+            return
+        if end_message:
+            sys.stderr.write(f"\r✓ {end_message}".ljust(80)[:80] + "\n")
+        else:
+            # Just clear the line and move on.
+            sys.stderr.write("\r" + " " * 80 + "\r")
+        sys.stderr.flush()
+
+    def __enter__(self) -> "Spinner":
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.finish()
+
+
+@contextlib.contextmanager
+def spinning(spinner: Spinner) -> Iterator[None]:
+    """Run ``spinner.tick()`` ~10 Hz on a daemon thread for the duration
+    of the block. Mirror of :func:`ticking` for ``StepIndicator``.
+    """
+    stop = threading.Event()
+
+    def loop() -> None:
+        while not stop.wait(_THROTTLE_SECONDS):
+            spinner.tick()
+
+    t = threading.Thread(target=loop, daemon=True)
+    t.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        t.join(timeout=0.5)
+
+
 @contextlib.contextmanager
 def ticking(indicator: StepIndicator) -> Iterator[None]:
     """Context manager that runs ``indicator.tick()`` ~10 Hz on a daemon

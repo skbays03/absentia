@@ -371,14 +371,20 @@ def _run_check(
 
     # Live progress bar for the scan loop, in interactive text mode.
     # We need a total file count to render percent/ETA — get it from
-    # walk_corpus, which is sub-second even on the Linux kernel.
+    # walk_corpus, which is sub-second on small projects but ~1–2 s on
+    # the Linux kernel; show a spinner during that walk so the gap
+    # between "Scanning N files…" preamble and the live progress bar
+    # doesn't read as a hang.
     progress_bar = None
     progress_callback = None
     if interactive_text_mode:
         from .estimator import walk_corpus
-        from .progress import ProgressBar
+        from .progress import ProgressBar, Spinner, spinning
         ext_to = extension_dispatch(extractors)
-        shape = walk_corpus(root, ext_to)
+        walk_spinner = Spinner(label="Walking corpus")
+        with spinning(walk_spinner):
+            shape = walk_corpus(root, ext_to)
+        walk_spinner.finish()
         if shape.files > 0:
             progress_bar = ProgressBar(total=shape.files, label="Scanning")
             progress_callback = progress_bar.update
@@ -646,7 +652,6 @@ def cmd_purge_all(*, confirm: bool = True) -> int:
     import shutil
 
     home = Path.home()
-    print(f"Scanning {home} for lacuna state…", file=sys.stderr)
 
     # Skip dirs that almost certainly aren't going to host a lacuna state
     # and would otherwise slow the walk dramatically.
@@ -663,21 +668,27 @@ def cmd_purge_all(*, confirm: bool = True) -> int:
     project_state_dirs: list[Path] = []
     machine_cache = home / ".lacuna"
 
-    # Walk for project-level .lacuna/ dirs
+    # rglob over $HOME can be 10–60 s on a packed home dir; use a
+    # spinner so the user sees the tool is alive.
+    from .progress import Spinner, spinning
+    spinner = Spinner(label=f"Scanning {home} for lacuna state")
     try:
-        for path in home.rglob(".lacuna"):
-            if not path.is_dir():
-                continue
-            if is_skip_descendant(path):
-                continue
-            if path == machine_cache:
-                continue  # handled separately below
-            # Verify it looks like a project state dir
-            if (path / "version").exists() or (path / "state.db").exists():
-                project_state_dirs.append(path)
+        with spinning(spinner):
+            for path in home.rglob(".lacuna"):
+                if not path.is_dir():
+                    continue
+                if is_skip_descendant(path):
+                    continue
+                if path == machine_cache:
+                    continue  # handled separately below
+                # Verify it looks like a project state dir
+                if (path / "version").exists() or (path / "state.db").exists():
+                    project_state_dirs.append(path)
     except OSError as e:
+        spinner.finish()
         print(f"lacuna: scan failed: {e}", file=sys.stderr)
         return 2
+    spinner.finish(end_message=f"Scan complete ({len(project_state_dirs)} project state dirs found)")
 
     # Machine-wide cache (different shape — has calibration.json, no version)
     machine_cache_present = (
@@ -795,7 +806,16 @@ def cmd_est(
         return 2
 
     ext_to_extractor = extension_dispatch(extractors)
-    shape = walk_corpus(root, ext_to_extractor)
+
+    # Spinner during the corpus walk — sub-second on small projects but
+    # ~1–2 s on the Linux kernel; without it the tool looks frozen on
+    # big inputs.
+    from .progress import Spinner, spinning
+    spinner = Spinner(label=f"Walking {root}")
+    with spinning(spinner):
+        shape = walk_corpus(root, ext_to_extractor)
+    spinner.finish()
+
     # When --use-synthetic is requested we calibrate on a bundled
     # synthetic corpus regardless of whether `root` has source files.
     # An empty root just means "no estimate report at the end."

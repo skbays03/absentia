@@ -5,7 +5,14 @@ import io
 import sys
 from unittest.mock import patch
 
-from lacuna.progress import ProgressBar, StepIndicator, ticking, _format_time
+from lacuna.progress import (
+    ProgressBar,
+    Spinner,
+    StepIndicator,
+    spinning,
+    ticking,
+    _format_time,
+)
 
 
 def test_format_time_under_minute():
@@ -113,3 +120,47 @@ def test_ticking_context_manager_is_safe_no_tty():
         with ticking(ind):
             pass  # no work
         ind.finish()
+
+
+def test_spinner_non_tty(capsys):
+    """Non-TTY: spinner does nothing visible."""
+    with patch.object(sys.stderr, "isatty", return_value=False):
+        sp = Spinner(label="x")
+        for _ in range(20):
+            sp.tick()
+        sp.finish("done")
+    captured = capsys.readouterr()
+    assert captured.err == ""
+
+
+def test_spinner_writes_on_tty():
+    fake = io.StringIO()
+
+    class _FakeStream:
+        def write(self, data):
+            return fake.write(data)
+
+        def flush(self):
+            pass
+
+        def isatty(self):
+            return True
+
+    with patch.object(sys, "stderr", _FakeStream()):
+        sp = Spinner(label="walking")
+        # Force a draw by bypassing throttle
+        sp._last_drawn = 0.0
+        sp.tick()
+        sp.finish(end_message="walked")
+    out = fake.getvalue()
+    assert "walking" in out
+    assert "walked" in out
+
+
+def test_spinning_context_manager_is_safe_no_tty():
+    """spinning() runs cleanly even when spinner is no-op (non-TTY)."""
+    with patch.object(sys.stderr, "isatty", return_value=False):
+        sp = Spinner(label="x")
+        with spinning(sp):
+            pass
+        sp.finish()
