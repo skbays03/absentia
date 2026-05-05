@@ -104,6 +104,12 @@ re-scan of any of these completes in milliseconds (incremental cache
 covers unchanged files, which is most of them on any normal
 commit).
 
+Numbers above are M-series specific. To know what your hardware
+does, run `lacuna est` from any project directory — it walks the
+corpus, applies a calibrated cost model, and prints a per-jobs
+estimate before you scan. Methodology in
+[the estimator doc](estimator.md).
+
 ### Throughput
 
 Across all 16 corpora, lacuna sustains **5,000–15,000 entities per

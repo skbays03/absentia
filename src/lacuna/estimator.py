@@ -23,6 +23,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 
 # Per-language throughput at jobs=1 on the calibration baseline machine
@@ -202,6 +203,56 @@ def walk_corpus(root: Path, ext_to_extractor: dict) -> CorpusShape:
         by_language_bytes=by_lang_bytes,
         by_language_files=by_lang_files,
     )
+
+
+def quick_estimate_line(
+    *,
+    root: Path,
+    config: Any,
+    jobs: int | None = None,
+) -> str | None:
+    """Compact one-line preamble used by ``lacuna check`` / ``lacuna init`` /
+    the TUI before a scan starts. Walks the corpus, applies the calibrated
+    model when available, and returns a string like::
+
+        Scanning 395 files (5.5 MB) — est. ~0.8 s at jobs=4
+
+    Returns ``None`` if the estimator can't run (no extractors,
+    no source files, or the corpus walk fails). Callers should
+    treat ``None`` as "skip the preamble".
+    """
+    try:
+        from .extractors import discover_extractors, extension_dispatch
+        extractors = discover_extractors(config.scan.languages)
+        if not extractors:
+            return None
+        ext_to = extension_dispatch(extractors)
+        shape = walk_corpus(root, ext_to)
+        if shape.files == 0:
+            return None
+
+        from .calibration import calibrated_bps_table, load_calibration
+        cal = load_calibration()
+        bps_table = (
+            calibrated_bps_table(cal.machine_speed_factor) if cal else None
+        )
+
+        from .parallel import default_jobs
+        n_jobs = jobs if jobs is not None else default_jobs()
+        est = estimate(
+            by_language_bytes=shape.by_language_bytes,
+            jobs=n_jobs,
+            bps_table=bps_table,
+        )
+        cal_note = "" if cal else " (uncalibrated)"
+        return (
+            f"Scanning {shape.files:,d} files "
+            f"({_format_size(shape.bytes)}) — "
+            f"est. ~{_format_seconds(est.parallel_time_s)} "
+            f"at jobs={n_jobs}{cal_note}"
+        )
+    except Exception:
+        return None
 
 
 def cpu_count_for_estimator() -> int:

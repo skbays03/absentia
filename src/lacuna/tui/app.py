@@ -399,7 +399,51 @@ class LacunaApp(App[None]):
 
     def on_mount(self) -> None:
         self.title = f"lacuna — {self.root.name}"
-        self._do_scan()
+        # Show a quick estimate in the subtitle so the user has a sense
+        # of how long the cold scan will take. The actual scan happens
+        # one tick later via call_after_refresh — that lets Textual
+        # paint the estimate first, then run the (blocking) scan.
+        self._set_estimate_subtitle()
+        self.call_after_refresh(self._do_scan)
+
+    def _set_estimate_subtitle(self) -> None:
+        """Compute and display 'estimating ~Xs · scanning…' as a
+        transient subtitle. Replaced by `_update_subtitle` once the
+        real scan finishes. Failures fall through silently — the
+        estimator must never block the TUI.
+        """
+        try:
+            from ..estimator import (
+                _format_seconds, estimate, walk_corpus,
+            )
+            from ..extractors import discover_extractors, extension_dispatch
+            from ..parallel import default_jobs
+
+            extractors = discover_extractors(self.config.scan.languages)
+            ext_to = extension_dispatch(extractors)
+            shape = walk_corpus(self.root, ext_to)
+            if shape.files == 0:
+                self.sub_title = "scanning…"
+                return
+
+            from ..calibration import calibrated_bps_table, load_calibration
+            cal = load_calibration()
+            bps_table = (
+                calibrated_bps_table(cal.machine_speed_factor)
+                if cal else None
+            )
+            est = estimate(
+                by_language_bytes=shape.by_language_bytes,
+                jobs=default_jobs(),
+                bps_table=bps_table,
+            )
+            note = "" if cal else " (uncalibrated)"
+            self.sub_title = (
+                f"estimating ~{_format_seconds(est.parallel_time_s)}"
+                f"{note} · scanning…"
+            )
+        except Exception:
+            self.sub_title = "scanning…"
 
     # ── Scan ──────────────────────────────────────────────────────────
 

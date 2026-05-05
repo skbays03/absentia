@@ -207,6 +207,17 @@ def cmd_init(*, root: Path, force: bool) -> int:
     print("  - Wrote lacuna.toml")
     print("  - Created .lacuna/ (gitignored)")
     print()
+
+    # First-scan estimate footer. Uses the calibrated model when
+    # available; otherwise the uncalibrated baseline. Skips silently
+    # if the corpus has no source files yet (empty repo).
+    from .config import Config as _Config
+    from .estimator import quick_estimate_line
+    line = quick_estimate_line(root=root, config=_Config())
+    if line is not None:
+        print(line)
+        print()
+
     print("Run `lacuna check` to start exploring.")
     return 0
 
@@ -276,6 +287,17 @@ def _run_check(
         else:
             print(f"lacuna: {msg}", file=sys.stderr)
         return 2
+
+    # One-line estimate preamble for interactive text mode.
+    # Suppressed in JSON, quiet, and non-TTY contexts to keep
+    # CI logs and machine-readable output clean. Gated on stderr
+    # (where the line lands) — that way `lacuna check | grep ...`
+    # still surfaces the preamble for the human watching the terminal.
+    if not as_json and not quiet and sys.stderr.isatty():
+        from .estimator import quick_estimate_line
+        line = quick_estimate_line(root=root, config=config, jobs=jobs)
+        if line is not None:
+            print(line, file=sys.stderr)
 
     result = scan_corpus(
         root=root, state_dir=state_dir, config=config,

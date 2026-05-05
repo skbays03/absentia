@@ -141,6 +141,10 @@ Most projects scan in seconds. Warm re-scans (incremental cache) complete in
 milliseconds. Full benchmark table across 16 languages and ~2.4M entities in
 [architecture and performance](docs/explanation/architecture.md).
 
+Curious what your machine looks like? Run `lacuna est` from any project
+directory for a hardware-calibrated cold-scan estimate — see
+[the estimator methodology](docs/explanation/estimator.md) for the math.
+
 ## What lacuna is not
 
 - **Not a linter.** Linters enforce rules someone else wrote. lacuna enforces

@@ -32,6 +32,7 @@ nav:
       - Why no LLM: explanation/why-no-llm.md
       - How mining works: explanation/how-mining-works.md
       - Architecture and performance: explanation/architecture.md
+      - Cold-scan time estimator: explanation/estimator.md
 
 plugins:
   - search
