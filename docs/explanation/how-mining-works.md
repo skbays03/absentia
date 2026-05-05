@@ -84,15 +84,33 @@ emits the same `Rule` and `Gap` shapes, but consults its own
 configured pair table rather than the corpus's statistical
 distribution.
 
-Built-in pairs (in `src/lacuna/symmetry.py`):
+Two sources of pairs:
+
+**Hardcoded language protocols** (in `src/lacuna/symmetry.py`):
 
 | Pair | Scope | Rule |
 |---|---|---|
-| `__enter__` / `__exit__` | class | Context-manager protocol |
-| `__aenter__` / `__aexit__` | class | Async context-manager |
-| `setUp` / `tearDown` | class | unittest setup/teardown |
-| `upgrade` / `downgrade` | file | Alembic migrations |
-| `up` / `down` | file | Short-form migrations |
+| `__enter__` / `__exit__` | class | Python's `with` requires both |
+| `__aenter__` / `__aexit__` | class | `async with` requires both |
+
+These are language contracts the runtime enforces — every Python
+codebase that uses one needs the other, regardless of project
+conventions.
+
+**Auto-mined from the corpus** (`mine_symmetry_pairs`): pairs of
+method or function names that co-occur in ≥80% of scopes
+containing either one, with at least one violator. Catches
+project-specific conventions without a hardcoded list:
+
+- `setUp` / `tearDown` (when a project uses unittest)
+- `upgrade` / `downgrade` (alembic migrations)
+- `register` / `unregister` (your event bus)
+- `acquire` / `release` (your custom session API)
+
+The same engine philosophy applies — *"the rules come from your
+code itself"* — extended to symmetry. A project that uses pytest
+fixtures instead of unittest setUp/tearDown won't get spurious
+pairs mined for it; the data won't be there.
 
 For each pair the engine finds every scope (class or file) where
 `left` is present, then flags any of those scopes that don't also

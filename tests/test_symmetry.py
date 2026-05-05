@@ -6,6 +6,7 @@ from lacuna.symmetry import (
     BUILTIN_PAIRS,
     SymmetryPair,
     find_symmetry_gaps,
+    mine_symmetry_pairs,
 )
 
 
@@ -81,19 +82,6 @@ def test_context_manager_partial_corpus():
     assert cm_gaps[0].entity_id == b_enter.id
 
 
-def test_unittest_setup_teardown_pair():
-    """setUp without tearDown surfaces a gap."""
-    setup = _method("tests/test_x.py", "TestX", "setUp")
-    entities = {setup.id: setup}
-
-    rules, gaps = find_symmetry_gaps(entities)
-
-    rule = next((r for r in rules if "unittest_setup_teardown" in r.group_id), None)
-    assert rule is not None
-    assert rule.feature_value == "tearDown"
-    assert any(g.entity_id == setup.id for g in gaps)
-
-
 def test_async_context_manager_pair():
     """__aenter__ without __aexit__ is a gap."""
     enter = _method("src/x.py", "A", "__aenter__")
@@ -107,42 +95,89 @@ def test_async_context_manager_pair():
     assert any(g.entity_id == enter.id for g in gaps)
 
 
-# ── File-scoped pairs ─────────────────────────────────────────────────
+# ── Auto-mined convention pairs ──────────────────────────────────────
 
 
-def test_alembic_migration_complete_no_gap():
-    """File with both upgrade and downgrade produces no gap."""
-    up = _func("migrations/0001_users.py", "upgrade")
-    down = _func("migrations/0001_users.py", "downgrade")
-    entities = {up.id: up, down.id: down}
+def test_mine_class_scoped_pair_setup_teardown():
+    """When most classes have both setUp and tearDown, mine the pair and
+    flag the one without tearDown."""
+    entities = {}
+    # 4 classes have both
+    for i in range(4):
+        s = _method(f"tests/t_{i}.py", f"T{i}", "setUp")
+        td = _method(f"tests/t_{i}.py", f"T{i}", "tearDown")
+        entities[s.id] = s
+        entities[td.id] = td
+    # 1 class has only setUp (the violator)
+    only_setup = _method("tests/t_4.py", "T4", "setUp")
+    entities[only_setup.id] = only_setup
 
-    rules, gaps = find_symmetry_gaps(entities)
-    assert len(gaps) == 0
+    pairs = mine_symmetry_pairs(entities, min_support=3, min_confidence=0.8)
+    setup_to_teardown = [
+        p for p in pairs
+        if p.left == "setUp" and p.right == "tearDown" and p.scope == "class"
+    ]
+    assert len(setup_to_teardown) == 1
+    assert setup_to_teardown[0].name.startswith("mined:")
+
+    # End-to-end: find_symmetry_gaps with auto_mine=True flags the violator.
+    rules, gaps = find_symmetry_gaps(entities, auto_mine=True)
+    assert any(g.entity_id == only_setup.id for g in gaps)
 
 
-def test_alembic_migration_missing_downgrade():
-    """File with only upgrade is a gap."""
-    up = _func("migrations/0001_users.py", "upgrade")
-    entities = {up.id: up}
+def test_mine_file_scoped_pair_upgrade_downgrade():
+    """Alembic-style: file with upgrade should also have downgrade.
+    Mined when most files honor it."""
+    entities = {}
+    # 5 migrations have both
+    for i in range(5):
+        u = _func(f"migrations/{i:04d}_x.py", "upgrade")
+        d = _func(f"migrations/{i:04d}_x.py", "downgrade")
+        entities[u.id] = u
+        entities[d.id] = d
+    # 1 has only upgrade
+    broken = _func("migrations/0099_broken.py", "upgrade")
+    entities[broken.id] = broken
 
-    rules, gaps = find_symmetry_gaps(entities)
+    pairs = mine_symmetry_pairs(entities)
+    up_to_down = [
+        p for p in pairs
+        if p.left == "upgrade" and p.right == "downgrade" and p.scope == "file"
+    ]
+    assert len(up_to_down) == 1
 
-    rule = next((r for r in rules if "alembic_migration" == r.group_id.split(":")[-1]), None)
-    assert rule is not None
-    assert rule.feature_value == "downgrade"
-    assert any(g.entity_id == up.id for g in gaps)
+
+def test_mine_skips_pairs_below_min_support():
+    """Pairs in fewer than min_support scopes are dropped (noise)."""
+    entities = {}
+    # Only 2 classes with the pair — below default min_support=3
+    for i in range(2):
+        a = _method("src/x.py", f"C{i}", "begin")
+        b = _method("src/x.py", f"C{i}", "end")
+        entities[a.id] = a
+        entities[b.id] = b
+    only_begin = _method("src/x.py", "C9", "begin")
+    entities[only_begin.id] = only_begin
+
+    pairs = mine_symmetry_pairs(entities, min_support=3)
+    assert pairs == []
 
 
-def test_short_form_migration_pair():
-    """up()/down() pair (short-form migrations)."""
-    up = _func("migrations/0001_x.py", "up")
-    entities = {up.id: up}
+def test_mine_skips_pairs_with_no_violator():
+    """If every scope honors the pair, the engine doesn't bother
+    emitting it — there's nothing to flag."""
+    entities = {}
+    # 5 classes, all with both
+    for i in range(5):
+        a = _method(f"src/x_{i}.py", f"C{i}", "alpha")
+        b = _method(f"src/x_{i}.py", f"C{i}", "beta")
+        entities[a.id] = a
+        entities[b.id] = b
 
-    rules, gaps = find_symmetry_gaps(entities)
-
-    rule = next((r for r in rules if "alembic_migration_short" in r.group_id), None)
-    assert rule is not None
-    assert rule.feature_value == "down"
+    pairs = mine_symmetry_pairs(entities)
+    assert all(
+        p.left != "alpha" and p.right != "beta" for p in pairs
+    )
 
 
 # ── Edge cases ────────────────────────────────────────────────────────
