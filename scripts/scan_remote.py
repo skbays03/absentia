@@ -83,6 +83,12 @@ KNOWN_CORPORA: dict[str, list[tuple[str, str]]] = {
         ("https://github.com/spf13/cobra",
          "Method-pattern heavy"),
     ],
+    "java": [
+        ("https://github.com/google/gson",
+         "Idiomatic JSON library, lots of class hierarchy"),
+        ("https://github.com/junit-team/junit5",
+         "Annotation-heavy testing framework — best signal for @Test patterns"),
+    ],
     "swift": [
         ("https://github.com/Alamofire/Alamofire",
          "Real Swift idioms, structs + protocols"),

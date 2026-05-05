@@ -26,7 +26,7 @@ class ScanConfig:
     exclude: tuple[str, ...] = ()
     languages: tuple[str, ...] = (
         "python", "javascript", "typescript", "tsx",
-        "rust", "go", "swift",
+        "rust", "go", "java", "swift",
     )
 
 

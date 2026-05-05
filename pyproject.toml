@@ -24,6 +24,7 @@ dependencies = [
     "tree-sitter-typescript >= 0.21",
     "tree-sitter-rust >= 0.21",
     "tree-sitter-go >= 0.21",
+    "tree-sitter-java >= 0.21",
     "tree-sitter-swift >= 0.5",
     # "textual >= 0.50",  # added when TUI lands
 ]
@@ -50,6 +51,7 @@ typescript = "lacuna.extractors.typescript:TypeScriptExtractor"
 tsx        = "lacuna.extractors.typescript:TSXExtractor"
 rust       = "lacuna.extractors.rust:RustExtractor"
 go         = "lacuna.extractors.go:GoExtractor"
+java       = "lacuna.extractors.java:JavaExtractor"
 swift      = "lacuna.extractors.swift:SwiftExtractor"
 
 [project.urls]
