@@ -474,6 +474,14 @@ def scan_corpus(
         entities, feature_index = storage.load_all()
         storage.commit()
 
+        # Corpus-level feature enrichment: features that need to know
+        # about the whole corpus (e.g. sibling_test, which checks
+        # whether a matching test entity exists). Runs in memory only;
+        # not persisted because the result depends on the full set of
+        # entities, not on any single file.
+        from .enrichment import enrich_all
+        enrich_all(entities, feature_index)
+
         items = [(e, feature_index[e.id]) for e in entities.values()]
         groups: list = []
         if config.selectors.directory.enabled:
@@ -498,7 +506,7 @@ def scan_corpus(
 
         rules: list = []
         gaps: list = []
-        for kind in ("decorator", "calls", "parent_class"):
+        for kind in ("decorator", "calls", "parent_class", "sibling_test"):
             rs, gs = mine(groups, feature_index,
                           min_confidence=config.mining.min_confidence,
                           feature_kind=kind)

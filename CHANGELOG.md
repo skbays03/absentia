@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Sibling-test detection.** A new corpus-level enrichment pass
+  computes a `sibling_test` feature for every non-test function;
+  mining over it produces "8/10 functions in src/api/ have a sibling
+  test; this one doesn't" gaps. Closes the README's long-standing
+  promise. Conventions covered: `tests/<rest>/test_<name>.py`,
+  flat `tests/test_<name>.py`, in-tree `<dir>/test_<name>.py`,
+  and Go-style `<name>_test.<ext>`.
 - **16-language extractor system** built on tree-sitter: Python,
   JavaScript, TypeScript, Rust, Go, Java, Ruby, C#, Swift, C, C++,
   PHP, Kotlin, Scala, Lua, Bash. Pluggable via the

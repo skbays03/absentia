@@ -51,6 +51,21 @@ Every language has its own extractor, but the output is the same
 shape: an `Entity` and a `FeatureSet`. Mining doesn't know or care
 which language an entity came from.
 
+A few feature kinds aren't extractor-emitted — they're computed in
+a corpus-level enrichment pass after all extractors run, because
+they need to know about *other* entities to be answered. Right now
+that's just one:
+
+- **`sibling_test`** — true when a matching test entity exists
+  (e.g. `tests/api/test_users.py::test_create_user` for the source
+  function `src/api/users.py::create_user`). The check covers
+  src/tests-mirror layouts, flat `tests/`, in-tree `test_*.py`,
+  and Go-style `*_test.go`.
+
+Mining `sibling_test` over the directory selector then surfaces
+gaps like "8 of 10 functions in `src/api/` have a sibling test;
+this one doesn't."
+
 A few things worth noting:
 
 - **Decorator arguments are dropped.** `@app.route("/users")` becomes
