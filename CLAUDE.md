@@ -78,12 +78,23 @@ In **user projects** (not this repo):
 
 `scripts/update_ts.py` discovers every installed `tree-sitter*` package and
 checks pip for updates. Run periodically as new lacuna extractors are added —
-keeps grammars current without hardcoding the list. Default is a dry run;
-pass `--apply` to actually upgrade.
+keeps grammars current without hardcoding the list.
+
+Three modes:
+
+- **Interactive** (default, when run from a TTY): numbered list + menu.
+  Choices: 1) apply outdated · 2) apply all · 3) apply specific packages
+  by number (e.g. `3 2,4`) · q) quit.
+- **Non-interactive apply** (`--apply`, `--apply --all`): runs the upgrade
+  without prompting, suitable for CI / cron.
+- **Non-interactive info** (`--dry-run`, or non-TTY stdin): prints the
+  status and exits.
 
 ```bash
-python scripts/update_ts.py            # show outdated
-python scripts/update_ts.py --apply    # upgrade outdated
+python scripts/update_ts.py            # interactive
+python scripts/update_ts.py --apply    # upgrade outdated, no prompt
+python scripts/update_ts.py --apply --all   # upgrade everything, no prompt
+python scripts/update_ts.py --dry-run  # print status only
 ```
 
 The script is *deliberately* dynamic: it discovers tree-sitter packages by
