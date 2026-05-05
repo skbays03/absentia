@@ -43,6 +43,12 @@ CALIBRATION_FILENAME = "calibration.json"
 MIN_CALIBRATION_FILES = 30
 MIN_CALIBRATION_BYTES = 100_000  # 100 KB
 
+# Re-prompt the user to recalibrate after this many days. Catches
+# drift from OS upgrades, thermal degradation, dying SSDs, and
+# similar slow-moving changes that don't trigger the version- or
+# core-count-based invalidation.
+CALIBRATION_MAX_AGE_DAYS = 90
+
 
 @dataclass(frozen=True)
 class CalibrationData:
@@ -95,11 +101,13 @@ def is_stale(
     *,
     current_version: str | None = None,
     current_cores: int | None = None,
+    now: datetime | None = None,
+    max_age_days: int = CALIBRATION_MAX_AGE_DAYS,
 ) -> tuple[bool, str | None]:
     """Return ``(is_stale, human_reason)``.
 
-    ``current_version`` and ``current_cores`` exist for testing; in
-    production they default to the live values.
+    ``current_version``, ``current_cores``, and ``now`` exist for
+    testing; in production they default to the live values.
     """
     cv = current_version if current_version is not None else __version__
     if data.lacuna_version != cv:
@@ -113,7 +121,32 @@ def is_stale(
             f"core count changed since calibration "
             f"({data.core_count} → {cc})"
         )
+    age_days = _age_in_days(data.calibrated_at, now=now)
+    if age_days is not None and age_days >= max_age_days:
+        return True, (
+            f"calibration is {age_days} days old (≥ {max_age_days})"
+        )
     return False, None
+
+
+def _age_in_days(
+    calibrated_at_iso: str, now: datetime | None = None,
+) -> int | None:
+    """Days between ``calibrated_at`` and ``now``. Returns None if
+    the timestamp is unparseable (forward-compat: don't refuse to
+    estimate just because we can't parse the date).
+    """
+    try:
+        ts = datetime.fromisoformat(calibrated_at_iso)
+    except ValueError:
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    current = now if now is not None else datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    delta = current - ts
+    return max(0, delta.days)
 
 
 def detect_cores() -> int:

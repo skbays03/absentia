@@ -93,6 +93,40 @@ def test_is_stale_no_change():
     assert reason is None
 
 
+def test_is_stale_age_threshold():
+    """A calibration older than max_age_days is flagged stale."""
+    from datetime import datetime, timedelta, timezone
+
+    from lacuna.calibration import CALIBRATION_MAX_AGE_DAYS
+
+    old_ts = (
+        datetime.now(timezone.utc) - timedelta(days=CALIBRATION_MAX_AGE_DAYS + 1)
+    ).isoformat()
+    data = _sample_data(calibrated_at=old_ts)
+    stale, reason = is_stale(data, current_version="0.1.0", current_cores=8)
+    assert stale is True
+    assert "days old" in reason
+
+
+def test_is_stale_recent_calibration_not_aged():
+    """A recent calibration (under threshold) is not flagged for age."""
+    from datetime import datetime, timedelta, timezone
+
+    recent_ts = (
+        datetime.now(timezone.utc) - timedelta(days=10)
+    ).isoformat()
+    data = _sample_data(calibrated_at=recent_ts)
+    stale, reason = is_stale(data, current_version="0.1.0", current_cores=8)
+    assert stale is False
+
+
+def test_is_stale_unparseable_timestamp_does_not_crash():
+    """A garbage calibrated_at field shouldn't break is_stale."""
+    data = _sample_data(calibrated_at="not a date")
+    stale, reason = is_stale(data, current_version="0.1.0", current_cores=8)
+    assert stale is False  # unparseable → fall through, don't refuse
+
+
 def test_calibrated_bps_table_scales_baseline():
     """factor < 1 produces slower BPS; factor > 1 produces faster."""
     from lacuna.estimator import M_SERIES_BPS
