@@ -99,6 +99,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.cmd is None:
+        # No subcommand: launch the TUI when run from a TTY, otherwise
+        # fall through to printing help (so piped usage stays sane).
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            from .tui import run_tui
+            root = Path(".").resolve()
+            config = _load_config(root, None)
+            return run_tui(root, config)
         parser.print_help()
         return 0
 
@@ -243,6 +250,62 @@ def _run_check(
         else:
             print(f"lacuna: {msg}", file=sys.stderr)
         return 2
+
+    result = scan_corpus(
+        root=root, state_dir=state_dir, config=config,
+        started=started, started_iso=started_iso, extractors=extractors,
+    )
+    gaps = result["gaps"]
+    rules_by_id = result["rules_by_id"]
+    entities = result["entities"]
+    scan_stats = result["scan_stats"]
+
+    if as_json:
+        print(format_gaps_json(gaps, rules_by_id, entities, scan_stats=scan_stats))
+    else:
+        print(format_gaps(gaps, rules_by_id, entities,
+                          min_confidence=config.mining.min_confidence))
+        if not quiet:
+            cache_note = (
+                f" ({scan_stats['files_unchanged']} unchanged)"
+                if scan_stats['files_unchanged'] else ""
+            )
+            suppressed_note = (
+                f", {scan_stats['suppressed']} suppressed"
+                if scan_stats['suppressed'] else ""
+            )
+            print(f"  {len(entities)} entities scanned, "
+                  f"{scan_stats['groups']} groups, {scan_stats['rules']} rules in "
+                  f"{scan_stats['duration_ms'] / 1000:.2f}s{cache_note}{suppressed_note}")
+            print()
+
+    return 1 if gaps else 0
+
+
+def scan_corpus(
+    *,
+    root: Path,
+    state_dir: Path,
+    config: Config,
+    started: float | None = None,
+    started_iso: str | None = None,
+    extractors: dict | None = None,
+) -> dict:
+    """Run a full scan + mine cycle and return the result.
+
+    Used by both ``cmd_check`` (which formats and prints) and the TUI
+    (which renders widgets). Caller is responsible for the StateLock —
+    typically held for the surrounding cmd_check / TUI session.
+    """
+    from datetime import datetime, timezone
+
+    if started is None:
+        started = time.perf_counter()
+    if started_iso is None:
+        started_iso = datetime.now(timezone.utc).isoformat()
+    if extractors is None:
+        extractors = discover_extractors(config.scan.languages)
+
     ext_to_extractor = extension_dispatch(extractors)
 
     with Storage(state_dir) as storage:
@@ -284,7 +347,6 @@ def _run_check(
             rules.extend(rs)
             gaps.extend(gs)
 
-        # Filter out gaps the user has explicitly suppressed.
         suppressions = storage.load_suppressions()
         suppressed_short_ids = set(suppressions.keys())
         suppressed_full_ids = {
@@ -329,24 +391,15 @@ def _run_check(
     }
     _write_last_run(state_dir, scan_stats, run_id, len(gaps))
 
-    if as_json:
-        print(format_gaps_json(gaps, rules_by_id, entities, scan_stats=scan_stats))
-    else:
-        print(format_gaps(gaps, rules_by_id, entities,
-                          min_confidence=config.mining.min_confidence))
-        if not quiet:
-            cache_note = (
-                f" ({files_unchanged} unchanged)" if files_unchanged else ""
-            )
-            suppressed_note = (
-                f", {suppressed_count} suppressed" if suppressed_count else ""
-            )
-            print(f"  {len(entities)} entities scanned, "
-                  f"{len(groups)} groups, {len(rules)} rules in "
-                  f"{elapsed:.2f}s{cache_note}{suppressed_note}")
-            print()
-
-    return 1 if gaps else 0
+    return {
+        "entities": entities,
+        "feature_index": feature_index,
+        "groups": groups,
+        "rules": rules,
+        "rules_by_id": rules_by_id,
+        "gaps": gaps,
+        "scan_stats": scan_stats,
+    }
 
 
 def cmd_suppress(
