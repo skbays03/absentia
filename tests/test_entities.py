@@ -1,4 +1,4 @@
-from lacuna.entities import Entity, FeatureSet
+from lacuna.entities import Entity, FeatureSet, clean_call_name
 
 
 def test_entity_id_is_qualified_name():
@@ -24,9 +24,6 @@ def test_featureset_get_set_returns_frozenset_for_missing_kind():
 def test_featureset_get_set_returns_values_when_present():
     fs = FeatureSet(by_kind={"decorator": frozenset({"@audit", "@route"})})
     assert fs.get_set("decorator") == frozenset({"@audit", "@route"})
-
-
-from lacuna.entities import clean_call_name
 
 
 def test_clean_call_name_passes_through_simple_names():

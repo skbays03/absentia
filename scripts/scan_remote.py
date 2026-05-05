@@ -187,7 +187,7 @@ def _pick_corpus(language: str) -> str | None:
     if not sys.stdin.isatty():
         # Non-interactive: auto-pick first.
         url = options[0][0]
-        print(f"(non-TTY input — auto-selecting first option)")
+        print("(non-TTY input — auto-selecting first option)")
         print(f"Using {url}")
         return url
 

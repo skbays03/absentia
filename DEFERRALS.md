@@ -60,15 +60,20 @@ _None currently._
 - **Resolution:** Design or commission a simple wordmark. Add to README and docs site theme.
 - **Latest by:** Optional; before any major marketing push.
 
-### CI pipeline
-- **Status:** No `.github/workflows/` yet.
-- **Why deferred:** No code to test yet.
-- **Resolution:** Once tests exist, add workflows for: pytest on push/PR, ruff + mypy lint, mkdocs build verification, doctest of tutorial examples.
-- **Latest by:** Before public repo (so PRs run CI).
-
 ---
 
 ## Resolved
+
+### ~~CI pipeline~~ → `.github/workflows/ci.yml`
+**Resolved 2026-05-05.**
+
+Four jobs on every push and PR:
+1. **test** — pytest matrix on Python 3.11, 3.12, 3.13
+2. **lint** — `ruff check .`
+3. **typecheck** — `mypy src/lacuna` (lenient settings, focused on real bugs not exhaustive generic annotations)
+4. **docs-build** — `mkdocs build --strict` verifies the docs site builds cleanly
+
+All four pass locally before commit. Doctest of tutorial examples deferred until the tutorial has real (executable) examples.
 
 ### ~~License~~ → Apache 2.0
 **Resolved 2026-05-04.**

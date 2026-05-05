@@ -181,8 +181,8 @@ def cmd_init(*, root: Path, force: bool) -> int:
                 fh.write(".lacuna/\n")
 
     print(f"Initialized lacuna in {root}")
-    print(f"  - Wrote lacuna.toml")
-    print(f"  - Created .lacuna/ (gitignored)")
+    print("  - Wrote lacuna.toml")
+    print("  - Created .lacuna/ (gitignored)")
     print()
     print("Run `lacuna check` to start exploring.")
     return 0

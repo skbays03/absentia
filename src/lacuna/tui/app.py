@@ -281,7 +281,8 @@ class LacunaApp(App[None]):
         self._view: str = "gaps"
         self._filter: dict[str, str] = {"gaps": "", "rules": "", "groups": ""}
         self._nav_stack: list[tuple[str, str]] = []
-        self._watch_timer = None
+        from textual.timer import Timer
+        self._watch_timer: Timer | None = None
 
     # ── Layout ────────────────────────────────────────────────────────
 
@@ -724,7 +725,7 @@ class LacunaApp(App[None]):
             # No table to land on for a single entity; just open in editor.
             self._open_entity_in_editor(entity)
 
-    def action_back(self) -> None:
+    async def action_back(self) -> None:
         if not self._nav_stack:
             return
         view, sel = self._nav_stack.pop()

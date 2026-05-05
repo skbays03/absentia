@@ -95,4 +95,16 @@ target-version = "py311"
 
 [tool.mypy]
 python_version = "3.11"
-strict = true
+# Pragmatic settings: catch real bugs (None deref, return-type, etc.)
+# without forcing exhaustive generic annotations everywhere. Tighten
+# incrementally as the codebase stabilizes.
+warn_return_any = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+ignore_missing_imports = true
+# Per-module overrides — extractors lean on tree-sitter's loosely-typed
+# Node API; treating their child fields as bytes|None forces noisy guards.
+[[tool.mypy.overrides]]
+module = "lacuna.extractors.*"
+disable_error_code = ["union-attr"]
