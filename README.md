@@ -133,6 +133,14 @@ Four deterministic stages:
 Run lacuna twice on the same code and you get the same output. See
 [how mining works](docs/explanation/how-mining-works.md) for the full picture.
 
+## Performance
+
+lacuna scans the entire Linux kernel — 666,574 entities across ~30 million
+lines of C — in 96.7 seconds on a single Python process on an M-series MacBook.
+Most projects scan in seconds. Warm re-scans (incremental cache) complete in
+milliseconds. Full benchmark table across 16 languages and ~2.4M entities in
+[architecture and performance](docs/explanation/architecture.md).
+
 ## What lacuna is not
 
 - **Not a linter.** Linters enforce rules someone else wrote. lacuna enforces
