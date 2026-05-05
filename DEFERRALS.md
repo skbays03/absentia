@@ -26,11 +26,6 @@ _None currently._
 - **Resolution:** Once the TUI is functional, record an animated demo (asciinema → SVG, or a short MP4/GIF) and embed in the README directly under the tagline.
 - **Latest by:** Before any v1.0 push.
 
-### Pre-code marketing docs
-- **Status:** README done; `explanation/what-is-negative-space.md`, `explanation/why-no-llm.md`, and `explanation/how-mining-works.md` are now real (the "punch above their weight" trio). `tutorial/quickstart.md` remains a stub — it'll write better with a real, end-to-end-runnable walkthrough once we have the demo GIF.
-- **Why deferred:** Quickstart needs the demo GIF for the full story; the rest are done.
-- **Resolution:** Fill in `tutorial/quickstart.md` with a runnable 5-minute walkthrough alongside the demo GIF work.
-- **Latest by:** Before any v1.0 push.
 
 ### Public domain + docs site
 - **Status:** README and `mkdocs.yml` reference `lacuna.dev` as a placeholder.
@@ -74,6 +69,17 @@ Four jobs on every push and PR:
 4. **docs-build** — `mkdocs build --strict` verifies the docs site builds cleanly
 
 All four pass locally before commit. Doctest of tutorial examples deferred until the tutorial has real (executable) examples.
+
+### ~~Pre-code marketing docs~~ → all four shipped
+**Resolved 2026-05-05.**
+
+The trio of explanation docs (`what-is-negative-space.md`,
+`why-no-llm.md`, `how-mining-works.md`) plus a runnable
+`tutorial/quickstart.md`. Combined ~3,800 words of prose answering
+the three questions that decide whether someone adopts lacuna: what
+is this, can I trust it, how does it work. Quickstart was verified
+end-to-end: every command in the tutorial was executed in sequence
+and produced the documented output.
 
 ### ~~License~~ → Apache 2.0
 **Resolved 2026-05-04.**
