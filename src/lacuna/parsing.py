@@ -1,19 +1,13 @@
-"""Tree-sitter parsing for Python sources.
+"""Source-file discovery — language-agnostic.
 
-Thin wrapper that hides the (occasionally moving) tree-sitter API surface
-from the rest of the engine. Parsers are reused; nothing is cached on disk
-in the MVP.
+Per-language parsing lives in the per-language Extractor; this module
+just walks the filesystem and yields candidate source paths.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Iterator
-
-import tree_sitter_python
-from tree_sitter import Language, Node, Parser
-
-_PY_LANGUAGE = Language(tree_sitter_python.language())
-_parser = Parser(_PY_LANGUAGE)
 
 
 _NOISE_DIR_NAMES = frozenset({
@@ -21,30 +15,30 @@ _NOISE_DIR_NAMES = frozenset({
     "node_modules", ".mypy_cache", ".pytest_cache", ".ruff_cache",
     "build", "dist", ".tox", ".eggs", "site",
     ".lacuna",
+    # Common compiled/output dirs across languages
+    "target",       # Rust / Java
+    ".gradle",      # Java
+    ".next", ".nuxt", "out",   # JS/TS frameworks
+    ".cargo",       # Rust
+    "vendor",       # Go (and others by convention)
 })
 
 
-def parse_source(source: bytes) -> Node:
-    """Parse Python source bytes; return the root AST node.
+def find_source_files(
+    root: Path, extensions: Iterable[str]
+) -> Iterator[Path]:
+    """Yield every file under ``root`` whose extension is in ``extensions``,
+    skipping common noise directories.
 
-    Use this when you've already read the file (e.g. for content hashing)
-    so we don't read the same bytes twice.
+    ``extensions`` should include the leading dot, e.g. ``(".py", ".js")``.
+    Comparison is case-insensitive.
     """
-    return _parser.parse(source).root_node
-
-
-def parse_file(path: Path) -> Node | None:
-    """Parse a Python file; return the root AST node, or None on read failure."""
-    try:
-        source = path.read_bytes()
-    except OSError:
-        return None
-    return parse_source(source)
-
-
-def find_python_files(root: Path) -> Iterator[Path]:
-    """Yield every .py file under root, skipping common noise directories."""
-    for path in root.rglob("*.py"):
+    wanted = {ext.lower() for ext in extensions}
+    for path in root.rglob("*"):
+        if path.is_dir():
+            continue
+        if path.suffix.lower() not in wanted:
+            continue
         if any(part in _NOISE_DIR_NAMES for part in path.parts):
             continue
         yield path

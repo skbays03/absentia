@@ -2,7 +2,7 @@
 from tree_sitter import Language, Parser
 import tree_sitter_python
 
-from lacuna.features import extract_python_entities
+from lacuna.extractors.python import extract_python_entities
 
 PY = Language(tree_sitter_python.language())
 

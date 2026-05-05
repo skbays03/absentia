@@ -20,10 +20,10 @@ import json
 from . import __version__
 from .config import Config, find_config
 from .entities import Entity, FeatureSet
-from .features import extract_python_entities
+from .extractors import discover_extractors, extension_dispatch
 from .mining import mine
 from .output import format_gaps, format_gaps_json
-from .parsing import find_python_files, parse_source
+from .parsing import find_source_files
 from .selectors import decorator_groups, directory_groups, parent_class_groups
 from .storage import StateLock, StateLockError, Storage
 
@@ -206,9 +206,23 @@ def _run_check(
     started: float,
     started_iso: str,
 ) -> int:
+    extractors = discover_extractors(config.scan.languages)
+    if not extractors:
+        msg = (
+            f"no extractors available for languages={list(config.scan.languages)}"
+        )
+        if as_json:
+            print(json.dumps({"error": msg}))
+        else:
+            print(f"lacuna: {msg}", file=sys.stderr)
+        return 2
+    ext_to_extractor = extension_dispatch(extractors)
+
     with Storage(state_dir) as storage:
         run_id = storage.begin_run()
-        files_seen, files_unchanged = _scan_incremental(root, storage, run_id)
+        files_seen, files_unchanged = _scan_incremental(
+            root, storage, run_id, ext_to_extractor
+        )
         entities, feature_index = storage.load_all()
         storage.commit()
 
@@ -284,7 +298,10 @@ def _run_check(
 
 
 def _scan_incremental(
-    root: Path, storage: Storage, run_id: int
+    root: Path,
+    storage: Storage,
+    run_id: int,
+    ext_to_extractor: dict,
 ) -> tuple[int, int]:
     """Walk the corpus, reusing cached entities/features for unchanged files.
 
@@ -294,7 +311,11 @@ def _scan_incremental(
     seen_paths: set[str] = set()
     files_unchanged = 0
 
-    for path in find_python_files(root):
+    for path in find_source_files(root, ext_to_extractor.keys()):
+        extractor = ext_to_extractor.get(path.suffix.lower())
+        if extractor is None:
+            continue  # find_source_files already filtered, but be defensive
+
         try:
             rel = path.relative_to(root).as_posix()
         except ValueError:
@@ -315,10 +336,10 @@ def _scan_incremental(
 
         # Changed or new — re-parse and replace this file's rows.
         storage.delete_entities_for_file(rel)
-        tree_root = parse_source(content)
+        tree_root = extractor.parse(content)
         new_entities: dict[str, Entity] = {}
         new_features: dict[str, FeatureSet] = {}
-        for entity, features in extract_python_entities(tree_root, rel):
+        for entity, features in extractor.extract(tree_root, rel):
             new_entities[entity.id] = entity
             new_features[entity.id] = features
         storage.save_entities_and_features(new_entities, new_features)

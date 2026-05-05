@@ -1,22 +1,46 @@
-"""Feature extractors — turn AST nodes into structural facts about entities.
+"""Python extractor.
 
-Entity kinds extracted today:
+Extracts top-level functions, top-level classes, and methods inside
+those classes. Nested functions, async functions inside classes, and
+classes-inside-functions are out of scope for the MVP.
 
-  - ``function`` — top-level functions (with ``decorator`` and ``calls`` features)
-  - ``class``    — top-level classes (with ``decorator`` and ``parent_class``)
-  - ``method``   — functions inside a class body (with ``decorator`` and ``calls``)
+Feature kinds emitted:
 
-Nested functions, async functions, and classes nested inside functions are
-out of scope for the MVP. Extractors are a stable seam — additional ones
-plug in here.
+  - functions/methods: ``decorator``, ``calls``
+  - classes:           ``decorator``, ``parent_class``
 """
 from __future__ import annotations
 
-from typing import Iterator
+from collections.abc import Iterable, Iterator
+from typing import ClassVar
 
-from tree_sitter import Node
+import tree_sitter_python
+from tree_sitter import Language, Node, Parser
 
-from .entities import Entity, FeatureSet
+from ..entities import Entity, FeatureSet
+from .base import Extractor
+
+
+_PY_LANGUAGE = Language(tree_sitter_python.language())
+
+
+class PythonExtractor(Extractor):
+    language_name: ClassVar[str] = "python"
+    file_extensions: ClassVar[tuple[str, ...]] = (".py", ".pyw")
+
+    def __init__(self) -> None:
+        self._parser = Parser(_PY_LANGUAGE)
+
+    def parse(self, source: bytes) -> Node:
+        return self._parser.parse(source).root_node
+
+    def extract(
+        self, root: Node, file_path: str
+    ) -> Iterable[tuple[Entity, FeatureSet]]:
+        return extract_python_entities(root, file_path)
+
+
+# ── Module-level extraction (used directly in tests + by the class) ────
 
 
 def extract_python_entities(

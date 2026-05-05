@@ -38,6 +38,9 @@ docs = [
 [project.scripts]
 lacuna = "lacuna.cli:main"
 
+[project.entry-points."lacuna.extractors"]
+python = "lacuna.extractors.python:PythonExtractor"
+
 [project.urls]
 # Homepage   = "https://lacuna.dev"      # Deferred — see DEFERRALS.md
 # Repository = "https://github.com/..."  # Deferred — see DEFERRALS.md
