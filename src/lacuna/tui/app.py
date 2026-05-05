@@ -200,6 +200,7 @@ class HelpScreen(ModalScreen[None]):
                 "  Esc          back (pops nav stack)\n\n"
                 "[b]Actions[/]\n"
                 "  /            filter current view\n"
+                "  e            explain why selected gap was flagged\n"
                 "  s            suppress selected gap\n"
                 "  Ctrl+R       rescan now\n"
                 "  w            toggle watch (auto-rescan)\n\n"
@@ -207,6 +208,99 @@ class HelpScreen(ModalScreen[None]):
                 "  ?            this help\n"
                 "  q            quit"
             )
+
+    def action_dismiss(self) -> None:  # type: ignore[override]
+        self.dismiss(None)
+
+
+class ExplainScreen(ModalScreen[None]):
+    """Plain-text "why was this flagged?" modal for a gap.
+
+    Different from the f / follow action: follow navigates to the
+    rule view (you change context); explain pops a peek that shows
+    the rule sentence, support, conformers, and divergence — then
+    returns you to your spot in the gaps list when dismissed.
+    """
+
+    DEFAULT_CSS = """
+    ExplainScreen { align: center middle; }
+    #explain_dialog {
+        width: 86; height: 24;
+        background: $surface;
+        border: thick $accent;
+        padding: 1 2;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Close"),
+        Binding("e", "dismiss", "Close"),
+        Binding("q", "dismiss", "Close"),
+    ]
+
+    def __init__(
+        self,
+        gap: Gap,
+        rule: Rule,
+        entity: Entity,
+        group: Group | None,
+        feature_index: dict,
+        min_confidence: float,
+    ) -> None:
+        super().__init__()
+        self._gap = gap
+        self._rule = rule
+        self._entity = entity
+        self._group = group
+        self._feature_index = feature_index
+        self._min_confidence = min_confidence
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="explain_dialog"):
+            yield Static(self._render_text())
+
+    def _render_text(self) -> str:
+        rule = self._rule
+        entity = self._entity
+        short = entity.qualified_name.rsplit("::", 1)[-1]
+
+        conformers: list[str] = []
+        if self._group is not None:
+            for mid in self._group.members:
+                if mid == entity.qualified_name:
+                    continue
+                fset = self._feature_index.get(mid)
+                if fset is None:
+                    continue
+                if rule.feature_value in fset.get_set(rule.feature_kind):
+                    conformers.append(mid.rsplit("::", 1)[-1])
+
+        if conformers:
+            shown = ", ".join(conformers[:8])
+            if len(conformers) > 8:
+                shown += f", … (+{len(conformers) - 8} more)"
+            conformer_block = shown
+        else:
+            conformer_block = "[dim](no other conformers visible)[/]"
+
+        return (
+            f"[b cyan]Why flagged[/]   [b]{short}[/]   "
+            f"[dim]({entity.kind})[/]\n"
+            f"               {entity.file_path}:{entity.line}\n\n"
+            f"[b]Rule[/]      {rule.support_n} of {rule.support_total} "
+            f"members of [yellow]{rule.group_id}[/]\n"
+            f"          have [b]{rule.feature_kind}[/] = "
+            f"[cyan]{rule.feature_value}[/]\n"
+            f"          confidence [b]{rule.confidence:.2f}[/] "
+            f"(threshold {self._min_confidence:.2f})\n\n"
+            f"[b]Conforms[/]  {conformer_block}\n\n"
+            f"[b]Diverges[/]  [b red]{short}[/]   ← this gap\n\n"
+            "[dim]Most members of this group exhibit the pattern; this\n"
+            "one doesn't. To follow the convention, edit the file. To\n"
+            "accept the divergence, press [/][b]s[/][dim] to record a\n"
+            "suppression reason.[/]\n\n"
+            "[dim]e / Esc to close · f to drill into the rule view[/]"
+        )
 
     def action_dismiss(self) -> None:  # type: ignore[override]
         self.dismiss(None)
@@ -253,6 +347,7 @@ class LacunaApp(App[None]):
         Binding("3", "view_groups", "Groups"),
         Binding("4", "view_stats", "Stats"),
         Binding("s", "suppress", "Suppress"),
+        Binding("e", "explain", "Explain"),
         Binding("f", "follow", "Follow"),
         Binding("escape", "back", "Back"),
         Binding("slash", "filter", "Filter"),
@@ -277,6 +372,7 @@ class LacunaApp(App[None]):
         self._groups: list[Group] = []
         self._groups_by_id: dict[str, Group] = {}
         self._entities: dict[str, Entity] = {}
+        self._feature_index: dict = {}
         self._scan_stats: dict = {}
         self._view: str = "gaps"
         self._filter: dict[str, str] = {"gaps": "", "rules": "", "groups": ""}
@@ -326,6 +422,7 @@ class LacunaApp(App[None]):
         self._groups = result["groups"]
         self._groups_by_id = {g.id: g for g in self._groups}
         self._entities = result["entities"]
+        self._feature_index = result["feature_index"]
         self._scan_stats = result["scan_stats"]
         self._render_current_view()
         self._update_subtitle()
@@ -678,8 +775,8 @@ class LacunaApp(App[None]):
             f"         confidence [b]{rule.confidence:.2f}[/]\n\n"
             f"[b]Verdict[/]  this entity does not have "
             f"[cyan]{rule.feature_value}[/].\n"
-            f"         [b]s[/] suppress · [b]Enter[/] open · "
-            f"[b]f[/] follow to rule"
+            f"         [b]e[/] explain · [b]s[/] suppress · "
+            f"[b]Enter[/] open · [b]f[/] follow to rule"
         )
 
     # ── View switching ────────────────────────────────────────────────
@@ -756,6 +853,30 @@ class LacunaApp(App[None]):
             return
         self._filter[self._view] = value
         self._render_current_view()
+
+    def action_explain(self) -> None:
+        if self._view != "gaps":
+            self.notify("Explain only applies to gaps.")
+            return
+        sel = self._selected_id()
+        if sel is None:
+            return
+        gap = next((g for g in self._gaps if g.short_id == sel), None)
+        if gap is None:
+            return
+        rule = self._rules_by_id.get(gap.rule_id)
+        entity = self._entities.get(gap.entity_id)
+        if rule is None or entity is None:
+            return
+        group = self._groups_by_id.get(rule.group_id)
+        self.push_screen(ExplainScreen(
+            gap=gap,
+            rule=rule,
+            entity=entity,
+            group=group,
+            feature_index=self._feature_index,
+            min_confidence=self.config.mining.min_confidence,
+        ))
 
     def action_suppress(self) -> None:
         if self._view != "gaps":
