@@ -17,11 +17,13 @@ from typing import Iterable
 from .base import Extractor
 from .javascript import JavaScriptExtractor
 from .python import PythonExtractor
+from .swift import SwiftExtractor
 
 
 _BUILTIN_EXTRACTORS: tuple[type[Extractor], ...] = (
     PythonExtractor,
     JavaScriptExtractor,
+    SwiftExtractor,
 )
 
 
@@ -68,6 +70,7 @@ __all__ = [
     "Extractor",
     "JavaScriptExtractor",
     "PythonExtractor",
+    "SwiftExtractor",
     "discover_extractor_classes",
     "discover_extractors",
     "extension_dispatch",

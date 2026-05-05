@@ -73,20 +73,32 @@ _DEFAULT_PARENT_CLASS_EXCLUDES: tuple[str, ...] = (
     "object",  # universal Python superclass; not a useful grouping
 )
 
+# Entity kinds that can carry a parent_class feature. Includes class for
+# Python/JS class inheritance and the Swift family (struct/enum/extension/
+# protocol all participate in protocol conformance, which we model as the
+# same feature kind).
+_DEFAULT_PARENT_CLASS_KINDS: tuple[str, ...] = (
+    "class", "struct", "enum", "extension", "protocol",
+)
+
 
 def parent_class_groups(
     items: Iterable[tuple[Entity, FeatureSet]],
     *,
     min_members: int = 3,
     exclude: tuple[str, ...] = _DEFAULT_PARENT_CLASS_EXCLUDES,
+    kind_filter: tuple[str, ...] = _DEFAULT_PARENT_CLASS_KINDS,
 ) -> list[Group]:
-    """One group per unique parent class. Members are CLASSES that inherit
-    from that parent. A class with multiple parents is a member of every
-    corresponding group, enabling co-occurrence rules across mixins."""
+    """One group per unique parent class / conformed protocol. Members are
+    type-defining entities (classes, structs, enums, extensions, protocols)
+    whose ``parent_class`` feature contains that name. An entity with
+    multiple parents is a member of every corresponding group, enabling
+    co-occurrence rules across mixins / protocol conformances."""
     by_parent: dict[str, list[str]] = defaultdict(list)
     excluded = frozenset(exclude)
+    eligible_kinds = frozenset(kind_filter)
     for entity, features in items:
-        if entity.kind != "class":
+        if entity.kind not in eligible_kinds:
             continue
         for parent in features.get_set("parent_class"):
             if parent in excluded:

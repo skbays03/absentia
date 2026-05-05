@@ -52,6 +52,9 @@ class ParentClassSelectorConfig:
     enabled: bool = True
     min_members: int = 3
     exclude: tuple[str, ...] = _DEFAULT_PARENT_CLASS_EXCLUDES
+    kind_filter: tuple[str, ...] = (
+        "class", "struct", "enum", "extension", "protocol",
+    )
 
 
 @dataclass(frozen=True)
@@ -112,6 +115,8 @@ class Config:
                 "min_members", ParentClassSelectorConfig.min_members),
             exclude=tuple(sels_raw.get("parent_class", {}).get(
                 "exclude", ParentClassSelectorConfig.exclude)),
+            kind_filter=tuple(sels_raw.get("parent_class", {}).get(
+                "kind_filter", ParentClassSelectorConfig.kind_filter)),
         )
         return cls(
             scan=scan,

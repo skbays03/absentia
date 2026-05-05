@@ -245,6 +245,7 @@ def _run_check(
                 items,
                 min_members=config.selectors.parent_class.min_members,
                 exclude=config.selectors.parent_class.exclude,
+                kind_filter=config.selectors.parent_class.kind_filter,
             ))
 
         rules: list = []
