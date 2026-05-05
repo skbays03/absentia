@@ -26,6 +26,7 @@ nav:
       - CLI: reference/cli.md
       - TUI keybindings: reference/tui-keys.md
       - Configuration: reference/lacuna-toml.md
+      - Selectors: reference/selectors.md
   - Explanation:
       - What is negative-space search?: explanation/what-is-negative-space.md
       - Why no LLM: explanation/why-no-llm.md

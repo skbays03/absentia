@@ -27,9 +27,9 @@ _None currently._
 - **Latest by:** Before any v1.0 push.
 
 ### Pre-code marketing docs
-- **Status:** README done; `tutorial/quickstart.md`, `explanation/what-is-negative-space.md`, `explanation/why-no-llm.md`, and `explanation/how-mining-works.md` are stubs.
-- **Why deferred:** They'll write better once the engine is real enough to demo against.
-- **Resolution:** Fill in each stub with real content. (See `project_lacuna_docs_to_scaffold.md` in memory for the full pending list.)
+- **Status:** README done; `explanation/what-is-negative-space.md`, `explanation/why-no-llm.md`, and `explanation/how-mining-works.md` are now real (the "punch above their weight" trio). `tutorial/quickstart.md` remains a stub — it'll write better with a real, end-to-end-runnable walkthrough once we have the demo GIF.
+- **Why deferred:** Quickstart needs the demo GIF for the full story; the rest are done.
+- **Resolution:** Fill in `tutorial/quickstart.md` with a runnable 5-minute walkthrough alongside the demo GIF work.
 - **Latest by:** Before any v1.0 push.
 
 ### Public domain + docs site
