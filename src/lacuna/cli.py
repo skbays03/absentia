@@ -513,6 +513,16 @@ def scan_corpus(
             rules.extend(rs)
             gaps.extend(gs)
 
+        # Symmetry pairs — second mining strategy. Detects
+        # "left without right" structurally (every __enter__ should
+        # have __exit__, every upgrade() a downgrade()). Doesn't
+        # consult min_confidence; pair rules are asserted, not
+        # statistical.
+        from .symmetry import find_symmetry_gaps
+        sym_rules, sym_gaps = find_symmetry_gaps(entities)
+        rules.extend(sym_rules)
+        gaps.extend(sym_gaps)
+
         suppressions = storage.load_suppressions()
         suppressed_short_ids = set(suppressions.keys())
         suppressed_full_ids = {

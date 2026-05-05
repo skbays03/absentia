@@ -66,6 +66,47 @@ Mining `sibling_test` over the directory selector then surfaces
 gaps like "8 of 10 functions in `src/api/` have a sibling test;
 this one doesn't."
 
+## A second mining strategy: symmetry pairs
+
+Frequency mining catches "most do X, this doesn't." That's one
+flavor of gap. There's another flavor that doesn't depend on what
+the rest of the codebase does:
+
+> A class with `__enter__` should have `__exit__`. The *concept*
+> of an enter implies an exit. A single context-manager class
+> with the asymmetry is a gap regardless of how many other
+> classes use the protocol.
+
+This is what the latin "lacuna" gestures at — a void implied by
+everything around it, not just by frequency. The symmetry-pair
+pass produces these gaps. It runs alongside frequency mining,
+emits the same `Rule` and `Gap` shapes, but consults its own
+configured pair table rather than the corpus's statistical
+distribution.
+
+Built-in pairs (in `src/lacuna/symmetry.py`):
+
+| Pair | Scope | Rule |
+|---|---|---|
+| `__enter__` / `__exit__` | class | Context-manager protocol |
+| `__aenter__` / `__aexit__` | class | Async context-manager |
+| `setUp` / `tearDown` | class | unittest setup/teardown |
+| `upgrade` / `downgrade` | file | Alembic migrations |
+| `up` / `down` | file | Short-form migrations |
+
+For each pair the engine finds every scope (class or file) where
+`left` is present, then flags any of those scopes that don't also
+have `right`. The output reads naturally:
+
+```text
+src/contexts.py:6           method `BrokenContext.__enter__`  missing __exit__
+migrations/0002_broken.py:1 function `upgrade`                missing downgrade
+```
+
+Symmetry pairs aren't gated by `min_confidence` — even a 1-of-1
+violation surfaces (a single broken context-manager is the gap;
+the rule isn't asking for a majority).
+
 A few things worth noting:
 
 - **Decorator arguments are dropped.** `@app.route("/users")` becomes

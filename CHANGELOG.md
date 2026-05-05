@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Symmetry-pair detection.** A second mining strategy that catches
+  structural gaps the frequency engine misses — a class with
+  ``__enter__`` and no ``__exit__``, an alembic migration with
+  ``upgrade()`` and no ``downgrade()``, a unittest class with ``setUp``
+  and no ``tearDown``. Five built-in pairs ship: context-manager,
+  async-context-manager, unittest setup/teardown, alembic
+  upgrade/downgrade (and short-form up/down). Symmetry rules are
+  asserted (not statistical): a single class with the asymmetry is
+  a gap regardless of what the rest of the codebase does.
 - **Sibling-test detection.** A new corpus-level enrichment pass
   computes a `sibling_test` feature for every non-test function;
   mining over it produces "8/10 functions in src/api/ have a sibling
