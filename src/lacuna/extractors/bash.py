@@ -18,7 +18,7 @@ from typing import ClassVar
 import tree_sitter_bash
 from tree_sitter import Language, Node, Parser
 
-from ..entities import Entity, FeatureSet
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
@@ -84,7 +84,7 @@ def _walk_calls(node: Node) -> Iterator[str]:
                 if sub.type == "command_name":
                     for grand in sub.children:
                         if grand.type == "word":
-                            yield grand.text.decode("utf-8").strip()
+                            yield clean_call_name(grand.text.decode("utf-8").strip())
                             break
                     break
         yield from _walk_calls(child)

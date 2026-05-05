@@ -12,7 +12,7 @@ from typing import ClassVar
 import tree_sitter_c
 from tree_sitter import Language, Node, Parser
 
-from ..entities import Entity, FeatureSet
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
@@ -113,5 +113,5 @@ def _walk_calls(node: Node) -> Iterator[str]:
         if child.type == "call_expression":
             target = child.child_by_field_name("function")
             if target is not None:
-                yield target.text.decode("utf-8").strip()
+                yield clean_call_name(target.text.decode("utf-8").strip())
         yield from _walk_calls(child)

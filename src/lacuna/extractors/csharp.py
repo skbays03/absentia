@@ -28,7 +28,7 @@ from typing import ClassVar
 import tree_sitter_c_sharp
 from tree_sitter import Language, Node, Parser
 
-from ..entities import Entity, FeatureSet
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
@@ -195,7 +195,7 @@ def _walk_calls(node: Node) -> Iterator[str]:
         if child.type == "invocation_expression":
             target = child.child_by_field_name("function")
             if target is not None:
-                yield target.text.decode("utf-8").strip()
+                yield clean_call_name(target.text.decode("utf-8").strip())
         elif child.type == "object_creation_expression":
             type_node = child.child_by_field_name("type")
             if type_node is not None:

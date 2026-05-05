@@ -19,7 +19,7 @@ from typing import ClassVar
 import tree_sitter_ruby
 from tree_sitter import Language, Node, Parser
 
-from ..entities import Entity, FeatureSet
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
@@ -208,7 +208,7 @@ def _walk_calls(node: Node) -> Iterator[str]:
     """
     for child in node.children:
         if child.type == "call":
-            yield _call_name(child)
+            yield clean_call_name(_call_name(child))
         yield from _walk_calls(child)
 
 

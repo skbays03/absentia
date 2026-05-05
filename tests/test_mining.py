@@ -113,6 +113,32 @@ def test_mining_skips_members_without_the_feature_kind():
     assert gaps == []  # no eligible member is missing the value
 
 
+def test_self_reference_parent_class_gap_filtered():
+    """If a class is the dominant parent_class within a directory group,
+    the base class itself can't be flagged as 'missing' itself."""
+    members = ["a.py::HttpException", "a.py::NotFound", "a.py::ServerError",
+               "a.py::Unauthorized", "a.py::BadRequest"]
+    group = Group(name="a", selector_type="directory", members=tuple(members))
+    feature_index = {
+        # Subclasses extend HttpException
+        "a.py::NotFound":     FeatureSet(by_kind={"parent_class": frozenset({"HttpException"})}),
+        "a.py::ServerError":  FeatureSet(by_kind={"parent_class": frozenset({"HttpException"})}),
+        "a.py::Unauthorized": FeatureSet(by_kind={"parent_class": frozenset({"HttpException"})}),
+        "a.py::BadRequest":   FeatureSet(by_kind={"parent_class": frozenset({"HttpException"})}),
+        # Base class itself extends Exception (or similar)
+        "a.py::HttpException": FeatureSet(by_kind={"parent_class": frozenset({"Exception"})}),
+    }
+    rules, gaps = mine([group], feature_index, min_confidence=0.8,
+                       feature_kind="parent_class")
+    # A rule for HttpException (4/5 = 0.8) should fire; but the base class
+    # itself shouldn't be flagged as a self-reference gap.
+    assert any(r.feature_value == "HttpException" for r in rules)
+    flagged = {g.entity_id for g in gaps}
+    assert "a.py::HttpException" not in flagged, (
+        "the base class should never be flagged as missing itself"
+    )
+
+
 def test_decorator_group_finds_co_occurring_decorator():
     """In an @audit group, if 4/5 also have @route, that's a useful rule."""
     members = ["a", "b", "c", "d", "e"]

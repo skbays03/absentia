@@ -17,7 +17,7 @@ from typing import ClassVar
 import tree_sitter_lua
 from tree_sitter import Language, Node, Parser
 
-from ..entities import Entity, FeatureSet
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
@@ -89,6 +89,6 @@ def _walk_calls(node: Node) -> Iterator[str]:
             for sub in child.children:
                 if sub.type in ("identifier", "dot_index_expression",
                                 "method_index_expression"):
-                    yield sub.text.decode("utf-8").strip()
+                    yield clean_call_name(sub.text.decode("utf-8").strip())
                     break
         yield from _walk_calls(child)

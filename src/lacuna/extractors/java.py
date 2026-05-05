@@ -24,7 +24,7 @@ from typing import ClassVar
 import tree_sitter_java
 from tree_sitter import Language, Node, Parser
 
-from ..entities import Entity, FeatureSet
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
@@ -259,7 +259,7 @@ def _walk_calls(node: Node) -> Iterator[str]:
             name_node = child.child_by_field_name("name")
             obj_node = child.child_by_field_name("object")
             if obj_node is not None and name_node is not None:
-                yield (
+                yield clean_call_name(
                     obj_node.text.decode("utf-8").strip()
                     + "."
                     + name_node.text.decode("utf-8").strip()

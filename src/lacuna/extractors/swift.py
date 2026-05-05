@@ -29,7 +29,7 @@ from typing import ClassVar
 import tree_sitter_swift
 from tree_sitter import Language, Node, Parser
 
-from ..entities import Entity, FeatureSet
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
@@ -243,5 +243,5 @@ def _walk_calls(node: Node) -> Iterator[str]:
             callee = child.children[0]
             text = callee.text.decode("utf-8").strip()
             if text:
-                yield text
+                yield clean_call_name(text)
         yield from _walk_calls(child)

@@ -33,3 +33,31 @@ class FeatureSet:
         if value is None:
             return frozenset()
         return frozenset(value)
+
+
+def clean_call_name(text: str) -> str:
+    """Collapse the first parenthesized run in a call expression's textual
+    name to ``(...)`` so chained calls stay short.
+
+    ``parse_low_raw(None::<&str>).unwrap`` → ``parse_low_raw(...).unwrap``
+    ``foo``                                  → ``foo``  (no change)
+    ``self.update``                          → ``self.update``  (no parens)
+
+    Used by every extractor that yields call names — keeps mining stable
+    (the same chained pattern still produces the same feature value) while
+    making output readable when receivers are themselves calls with
+    complex argument lists.
+    """
+    if "(" not in text:
+        return text
+    open_idx = text.index("(")
+    depth = 0
+    for i in range(open_idx, len(text)):
+        ch = text[i]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return text[:open_idx] + "(...)" + text[i + 1:]
+    return text

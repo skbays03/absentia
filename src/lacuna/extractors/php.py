@@ -18,7 +18,7 @@ from typing import ClassVar
 import tree_sitter_php
 from tree_sitter import Language, Node, Parser
 
-from ..entities import Entity, FeatureSet
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
@@ -182,7 +182,7 @@ def _walk_calls(node: Node) -> Iterator[str]:
         if child.type == "function_call_expression":
             for sub in child.children:
                 if sub.type in ("name", "qualified_name"):
-                    yield sub.text.decode("utf-8").strip()
+                    yield clean_call_name(sub.text.decode("utf-8").strip())
                     break
         elif child.type == "member_call_expression":
             for sub in child.children:
@@ -199,7 +199,7 @@ def _walk_calls(node: Node) -> Iterator[str]:
                         break
                     obj_part = sub.text.decode("utf-8").strip()
             if obj_part and method_part:
-                yield f"{obj_part}.{method_part}"
+                yield clean_call_name(f"{obj_part}.{method_part}")
         elif child.type == "object_creation_expression":
             for sub in child.children:
                 if sub.type in ("name", "qualified_name"):

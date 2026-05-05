@@ -108,6 +108,19 @@ def mine(
 
             for mid in eligible:
                 if value not in feature_index[mid].get_set(feature_kind):
+                    if _is_self_reference(feature_kind, mid, value):
+                        continue
                     gaps.append(Gap(rule_id=rule.id, entity_id=mid))
 
     return rules, gaps
+
+
+def _is_self_reference(feature_kind: str, entity_id: str, value: str) -> bool:
+    """Skip ``parent_class`` gaps where the entity's own name matches the
+    rule's feature_value. A class that's the base of a directory's
+    inheritance pattern can't be flagged as 'missing' itself — it can't
+    extend itself in any language."""
+    if feature_kind != "parent_class":
+        return False
+    leaf = entity_id.rsplit("::", 1)[-1] if "::" in entity_id else entity_id
+    return leaf == value
