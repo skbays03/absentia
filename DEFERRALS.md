@@ -43,11 +43,6 @@ _None currently._
 
 ## Nice-to-have before marketing
 
-### Performance benchmarks
-- **Status:** No real numbers.
-- **Why deferred:** Engine doesn't exist yet.
-- **Resolution:** Once MVP runs, benchmark on Dev-Dashboard (~750 files) and a larger corpus (~10k files). Publish results in `docs/explanation/architecture.md` and reference from README.
-- **Latest by:** Before any v1.0 push.
 
 ### Logo / wordmark
 - **Status:** None.
@@ -69,6 +64,19 @@ Four jobs on every push and PR:
 4. **docs-build** — `mkdocs build --strict` verifies the docs site builds cleanly
 
 All four pass locally before commit. Doctest of tutorial examples deferred until the tutorial has real (executable) examples.
+
+### ~~Performance benchmarks~~ → docs/explanation/architecture.md
+**Resolved 2026-05-05.**
+
+Benchmarked across 16 large public repos covering all supported
+languages, totaling ~2.4M entities scanned. Headline: lacuna scans
+the entire Linux kernel (666,574 entities, ~30M LOC of C) in 96.7s
+on a single Python process on an M-series MacBook. Numbers, table,
+and methodology in `docs/explanation/architecture.md`. Surfaced and
+fixed a real bug along the way: 15 of 16 extractors had a recursive
+call walker that overflowed Python's stack on deeply nested ASTs
+(rust-lang/rust + dotnet/runtime). Generic iterative `walk_subtree`
+in entities.py replaces the pattern uniformly.
 
 ### ~~Pre-code marketing docs~~ → all four shipped
 **Resolved 2026-05-05.**

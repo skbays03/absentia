@@ -31,6 +31,7 @@ nav:
       - What is negative-space search?: explanation/what-is-negative-space.md
       - Why no LLM: explanation/why-no-llm.md
       - How mining works: explanation/how-mining-works.md
+      - Architecture and performance: explanation/architecture.md
 
 plugins:
   - search
