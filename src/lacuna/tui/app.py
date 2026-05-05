@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 import subprocess
 from pathlib import Path
+from typing import Callable
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -42,6 +43,44 @@ from ..mining import Gap, Rule
 from ..entities import Entity
 from ..selectors import Group
 from ..storage import StateLock, StateLockError, Storage, StorageVersionError
+
+
+# Callback signature for opening a file at a line. Standalone runs use
+# the default subprocess+`$EDITOR` strategy; embedded hosts (e.g. a
+# Dev-Dashboard panel) inject a callback that forwards to their own
+# editor surface.
+OpenEditorCallback = Callable[[Path, int], None]
+
+
+def editor_command(editor: str, file_path: Path, line: int) -> list[str]:
+    """Build argv for opening ``file_path`` at ``line`` in ``editor``.
+
+    Different editors use different conventions for the line jump:
+
+    - vi / vim / nvim / nano / emacs / pico — ``editor +<line> <file>``
+    - code / code-insiders / cursor       — ``editor --goto <file>:<line>``
+    - subl / hx / helix / micro / atom    — ``editor <file>:<line>``
+    - mate (TextMate)                     — ``editor -l <line> <file>``
+
+    The ``editor`` argument may include extra flags (e.g.
+    ``"code --wait"``); they're preserved before the file/line args.
+    Falls back to the vi-family form for unknown editors, which works
+    for any traditional Unix editor.
+    """
+    parts = editor.split() if editor else ["vi"]
+    if not parts:
+        parts = ["vi"]
+    binary = Path(parts[0]).name
+    fp = str(file_path)
+
+    if binary in ("code", "code-insiders", "cursor", "windsurf"):
+        return parts + ["--goto", f"{fp}:{line}"]
+    if binary in ("subl", "sublime_text", "hx", "helix", "micro", "atom"):
+        return parts + [f"{fp}:{line}"]
+    if binary == "mate":
+        return parts + ["-l", str(line), fp]
+    # vi-family default — works for vi, vim, nvim, nano, emacs, pico, ed.
+    return parts + [f"+{line}", fp]
 
 
 # ── Modals ───────────────────────────────────────────────────────────
@@ -222,10 +261,16 @@ class LacunaApp(App[None]):
         Binding("enter", "open_in_editor", "Open"),
     ]
 
-    def __init__(self, root: Path, config: Config) -> None:
+    def __init__(
+        self,
+        root: Path,
+        config: Config,
+        on_open_editor: OpenEditorCallback | None = None,
+    ) -> None:
         super().__init__()
         self.root = root
         self.config = config
+        self._on_open_editor = on_open_editor
         self._gaps: list[Gap] = []
         self._rules: list[Rule] = []
         self._rules_by_id: dict[str, Rule] = {}
@@ -590,6 +635,13 @@ class LacunaApp(App[None]):
             return None
         return row_key.value if row_key else None
 
+    def on_data_table_row_selected(
+        self, event: DataTable.RowSelected,
+    ) -> None:
+        """DataTable owns Enter; route it to our open-in-editor action so
+        the App's binding works with the table focused."""
+        self.action_open_in_editor()
+
     def on_data_table_row_highlighted(
         self, event: DataTable.RowHighlighted,
     ) -> None:
@@ -765,27 +817,50 @@ class LacunaApp(App[None]):
             self._open_entity_in_editor(self._entities[gap.entity_id])
 
     def _open_entity_in_editor(self, entity: Entity) -> None:
-        editor = os.environ.get("EDITOR") or "vi"
         target = self.root / entity.file_path
+        if self._on_open_editor is not None:
+            # Embedded mode (e.g. Dev-Dashboard panel) — host owns the
+            # editor surface; we just forward the file + line.
+            try:
+                self._on_open_editor(target, entity.line)
+            except Exception as exc:
+                self.notify(
+                    f"Editor callback failed: {exc}",
+                    severity="error",
+                )
+            return
+
+        # Standalone mode — spawn $EDITOR via subprocess.
+        editor = os.environ.get("EDITOR") or "vi"
+        cmd = editor_command(editor, target, entity.line)
         try:
             with self.suspend():
-                subprocess.run(
-                    [editor, f"+{entity.line}", str(target)],
-                    check=False,
-                )
+                subprocess.run(cmd, check=False)
         except FileNotFoundError:
             self.notify(
-                f"Editor '{editor}' not found in $PATH",
+                f"Editor '{cmd[0]}' not found in $PATH",
                 severity="error",
             )
 
 
-def run_tui(root: Path, config: Config) -> int:
-    """Acquire the state lock and run the TUI."""
+def run_tui(
+    root: Path,
+    config: Config,
+    on_open_editor: OpenEditorCallback | None = None,
+) -> int:
+    """Acquire the state lock and run the TUI.
+
+    Hosts that embed lacuna can pass ``on_open_editor`` to redirect
+    Enter / open-in-editor actions to their own editor surface
+    (e.g. a Dev-Dashboard ``code_editor`` panel) instead of spawning
+    ``$EDITOR`` via subprocess.
+    """
     state_dir = root / ".lacuna"
     try:
         with StateLock(state_dir / "lockfile"):
-            LacunaApp(root=root, config=config).run()
+            LacunaApp(
+                root=root, config=config, on_open_editor=on_open_editor,
+            ).run()
     except StateLockError as exc:
         print(f"lacuna: {exc}", file=__import__("sys").stderr)
         return 2
