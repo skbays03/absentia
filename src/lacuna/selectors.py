@@ -74,11 +74,12 @@ _DEFAULT_PARENT_CLASS_EXCLUDES: tuple[str, ...] = (
 )
 
 # Entity kinds that can carry a parent_class feature. Includes class for
-# Python/JS class inheritance and the Swift family (struct/enum/extension/
-# protocol all participate in protocol conformance, which we model as the
-# same feature kind).
+# Python/JS/TS class inheritance, the Swift family (struct/enum/extension/
+# protocol all participate in protocol conformance), Rust (trait/impl carry
+# supertraits and trait conformance), and TS interfaces.
 _DEFAULT_PARENT_CLASS_KINDS: tuple[str, ...] = (
     "class", "struct", "enum", "extension", "protocol",
+    "interface", "trait", "impl",
 )
 
 

@@ -25,7 +25,7 @@ class ScanConfig:
     include: tuple[str, ...] = (".",)
     exclude: tuple[str, ...] = ()
     languages: tuple[str, ...] = (
-        "python", "javascript", "typescript", "tsx", "swift",
+        "python", "javascript", "typescript", "tsx", "rust", "swift",
     )
 
 
@@ -56,6 +56,7 @@ class ParentClassSelectorConfig:
     exclude: tuple[str, ...] = _DEFAULT_PARENT_CLASS_EXCLUDES
     kind_filter: tuple[str, ...] = (
         "class", "struct", "enum", "extension", "protocol",
+        "interface", "trait", "impl",
     )
 
 

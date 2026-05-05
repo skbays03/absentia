@@ -17,6 +17,7 @@ from typing import Iterable
 from .base import Extractor
 from .javascript import JavaScriptExtractor
 from .python import PythonExtractor
+from .rust import RustExtractor
 from .swift import SwiftExtractor
 from .typescript import TSXExtractor, TypeScriptExtractor
 
@@ -26,6 +27,7 @@ _BUILTIN_EXTRACTORS: tuple[type[Extractor], ...] = (
     JavaScriptExtractor,
     TypeScriptExtractor,
     TSXExtractor,
+    RustExtractor,
     SwiftExtractor,
 )
 
@@ -73,6 +75,7 @@ __all__ = [
     "Extractor",
     "JavaScriptExtractor",
     "PythonExtractor",
+    "RustExtractor",
     "SwiftExtractor",
     "TSXExtractor",
     "TypeScriptExtractor",
