@@ -19,7 +19,7 @@ from typing import ClassVar
 import tree_sitter_ruby
 from tree_sitter import Language, Node, Parser
 
-from ..entities import Entity, FeatureSet, clean_call_name
+from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
 from .base import Extractor
 
 
@@ -195,7 +195,7 @@ def _mixins_in(body: Node) -> frozenset[str]:
     return frozenset(out)
 
 
-def _walk_calls(node: Node) -> Iterator[str]:
+def _walk_calls(root: Node) -> Iterator[str]:
     """Ruby's ``call`` node either:
 
     - Starts with an ``identifier`` (bare call: ``helper(x)``)
@@ -206,10 +206,9 @@ def _walk_calls(node: Node) -> Iterator[str]:
     Ruby allows for method calls but is ambiguous with local variables)
     are NOT counted — only explicit ``call`` nodes.
     """
-    for child in node.children:
-        if child.type == "call":
-            yield clean_call_name(_call_name(child))
-        yield from _walk_calls(child)
+    for node in walk_subtree(root):
+        if node.type == "call":
+            yield clean_call_name(_call_name(node))
 
 
 def _call_name(call_node: Node) -> str:

@@ -35,6 +35,27 @@ class FeatureSet:
         return frozenset(value)
 
 
+def walk_subtree(root):
+    """Iterative DFS yielding every descendant of ``root`` (excluding
+    root itself).
+
+    Use this instead of the recursive ``for child in node.children: ...
+    yield from walk(child)`` pattern to avoid stack overflow on deeply
+    nested code. Real-world: the Rust compiler's source crashed
+    lacuna's recursive call walker at >1000 levels deep. Order is
+    unspecified — callers that collect into a set don't care; callers
+    that care should sort.
+
+    Takes ``Any`` for ``root`` rather than tree_sitter.Node to avoid an
+    import cycle at module load.
+    """
+    stack = list(root.children)
+    while stack:
+        node = stack.pop()
+        yield node
+        stack.extend(node.children)
+
+
 def clean_call_name(text: str) -> str:
     """Collapse the first parenthesized run in a call expression's textual
     name to ``(...)`` so chained calls stay short.

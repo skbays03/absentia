@@ -24,7 +24,7 @@ from typing import ClassVar
 import tree_sitter_java
 from tree_sitter import Language, Node, Parser
 
-from ..entities import Entity, FeatureSet, clean_call_name
+from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
 from .base import Extractor
 
 
@@ -243,7 +243,7 @@ def _types_from_list(type_list: Node) -> Iterator[str]:
                     break
 
 
-def _walk_calls(node: Node) -> Iterator[str]:
+def _walk_calls(root: Node) -> Iterator[str]:
     """Java method invocations and constructor calls.
 
     ``method_invocation`` nodes have a ``name`` field for the method
@@ -254,10 +254,10 @@ def _walk_calls(node: Node) -> Iterator[str]:
     ``new Foo`` so users can find groups of "things that construct
     Logger" or similar.
     """
-    for child in node.children:
-        if child.type == "method_invocation":
-            name_node = child.child_by_field_name("name")
-            obj_node = child.child_by_field_name("object")
+    for node in walk_subtree(root):
+        if node.type == "method_invocation":
+            name_node = node.child_by_field_name("name")
+            obj_node = node.child_by_field_name("object")
             if obj_node is not None and name_node is not None:
                 yield clean_call_name(
                     obj_node.text.decode("utf-8").strip()
@@ -266,8 +266,7 @@ def _walk_calls(node: Node) -> Iterator[str]:
                 )
             elif name_node is not None:
                 yield name_node.text.decode("utf-8").strip()
-        elif child.type == "object_creation_expression":
-            type_node = child.child_by_field_name("type")
+        elif node.type == "object_creation_expression":
+            type_node = node.child_by_field_name("type")
             if type_node is not None:
                 yield "new " + type_node.text.decode("utf-8").strip()
-        yield from _walk_calls(child)

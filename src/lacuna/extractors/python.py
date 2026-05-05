@@ -17,7 +17,7 @@ from typing import ClassVar
 import tree_sitter_python
 from tree_sitter import Language, Node, Parser
 
-from ..entities import Entity, FeatureSet, clean_call_name
+from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
 from .base import Extractor
 
 
@@ -159,13 +159,12 @@ def _name_of(definition_node: Node) -> str:
     return name_node.text.decode("utf-8") if name_node else "<anonymous>"
 
 
-def _walk_calls(node: Node) -> Iterator[str]:
-    for child in node.children:
-        if child.type == "call":
-            target = child.child_by_field_name("function")
+def _walk_calls(root: Node) -> Iterator[str]:
+    for node in walk_subtree(root):
+        if node.type == "call":
+            target = node.child_by_field_name("function")
             if target is not None:
                 yield clean_call_name(target.text.decode("utf-8").strip())
-        yield from _walk_calls(child)
 
 
 def _decorators_of(decorated_node: Node) -> Iterator[str]:

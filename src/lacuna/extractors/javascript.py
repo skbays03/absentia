@@ -20,7 +20,7 @@ from typing import ClassVar
 import tree_sitter_javascript
 from tree_sitter import Language, Node, Parser
 
-from ..entities import Entity, FeatureSet, clean_call_name
+from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
 from .base import Extractor
 
 
@@ -166,10 +166,9 @@ def _extends_of(class_node: Node) -> Iterator[str]:
                     yield sub.text.decode("utf-8").strip()
 
 
-def _walk_calls(node: Node) -> Iterator[str]:
-    for child in node.children:
-        if child.type == "call_expression":
-            target = child.child_by_field_name("function")
+def _walk_calls(root: Node) -> Iterator[str]:
+    for node in walk_subtree(root):
+        if node.type == "call_expression":
+            target = node.child_by_field_name("function")
             if target is not None:
                 yield clean_call_name(target.text.decode("utf-8").strip())
-        yield from _walk_calls(child)

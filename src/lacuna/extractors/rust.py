@@ -27,7 +27,7 @@ from typing import ClassVar
 import tree_sitter_rust
 from tree_sitter import Language, Node, Parser
 
-from ..entities import Entity, FeatureSet, clean_call_name
+from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
 from .base import Extractor
 
 
@@ -280,19 +280,21 @@ def _attribute_name(attr_item: Node) -> str | None:
     return None
 
 
-def _walk_calls(node: Node) -> Iterator[str]:
-    """Rust call expressions are ``call_expression`` nodes whose first
-    child is the callee. We also include ``macro_invocation`` (e.g.
-    ``println!()``, ``vec![]``) since those are user-visible call-shaped
-    operations."""
-    for child in node.children:
-        if child.type == "call_expression" and child.children:
-            target = child.child_by_field_name("function")
+def _walk_calls(root: Node) -> Iterator[str]:
+    """Iterative DFS over ``root``'s subtree.
+
+    We also include ``macro_invocation`` (e.g. ``println!()``,
+    ``vec![]``) since those are user-visible call-shaped operations.
+    Iterative because the Rust compiler's source has expression trees
+    deeper than Python's default recursion limit.
+    """
+    for node in walk_subtree(root):
+        if node.type == "call_expression" and node.children:
+            target = node.child_by_field_name("function")
             if target is not None:
                 yield clean_call_name(target.text.decode("utf-8").strip())
-        elif child.type == "macro_invocation":
-            for sub in child.children:
+        elif node.type == "macro_invocation":
+            for sub in node.children:
                 if sub.type in ("identifier", "scoped_identifier"):
                     yield sub.text.decode("utf-8").strip() + "!"
                     break
-        yield from _walk_calls(child)

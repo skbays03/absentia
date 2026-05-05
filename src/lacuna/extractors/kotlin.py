@@ -19,7 +19,7 @@ from typing import ClassVar
 import tree_sitter_kotlin
 from tree_sitter import Language, Node, Parser
 
-from ..entities import Entity, FeatureSet, clean_call_name
+from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
 from .base import Extractor
 
 
@@ -193,11 +193,10 @@ def _delegation_targets(class_node: Node) -> Iterator[str]:
                             break
 
 
-def _walk_calls(node: Node) -> Iterator[str]:
-    for child in node.children:
-        if child.type == "call_expression" and child.children:
-            callee = child.children[0]
+def _walk_calls(root: Node) -> Iterator[str]:
+    for node in walk_subtree(root):
+        if node.type == "call_expression" and node.children:
+            callee = node.children[0]
             text = callee.text.decode("utf-8").strip()
             if text:
                 yield clean_call_name(text)
-        yield from _walk_calls(child)

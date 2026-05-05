@@ -18,7 +18,7 @@ from typing import ClassVar
 import tree_sitter_php
 from tree_sitter import Language, Node, Parser
 
-from ..entities import Entity, FeatureSet, clean_call_name
+from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
 from .base import Extractor
 
 
@@ -170,7 +170,7 @@ def _attributes_of(node: Node) -> frozenset[str]:
     return frozenset(out)
 
 
-def _walk_calls(node: Node) -> Iterator[str]:
+def _walk_calls(root: Node) -> Iterator[str]:
     """PHP calls come in several shapes:
 
     - ``function_call_expression``  : ``foo()``
@@ -178,21 +178,21 @@ def _walk_calls(node: Node) -> Iterator[str]:
     - ``scoped_call_expression``    : ``Bar::baz()`` → ``Bar.baz``
     - ``object_creation_expression``: ``new Logger()`` → ``new Logger``
     """
-    for child in node.children:
-        if child.type == "function_call_expression":
-            for sub in child.children:
+    for node in walk_subtree(root):
+        if node.type == "function_call_expression":
+            for sub in node.children:
                 if sub.type in ("name", "qualified_name"):
                     yield clean_call_name(sub.text.decode("utf-8").strip())
                     break
-        elif child.type == "member_call_expression":
-            for sub in child.children:
+        elif node.type == "member_call_expression":
+            for sub in node.children:
                 if sub.type == "name":
                     yield sub.text.decode("utf-8").strip()
                     break
-        elif child.type == "scoped_call_expression":
+        elif node.type == "scoped_call_expression":
             obj_part = ""
             method_part = ""
-            for sub in child.children:
+            for sub in node.children:
                 if sub.type in ("name", "relative_scope"):
                     if obj_part:
                         method_part = sub.text.decode("utf-8").strip()
@@ -200,9 +200,8 @@ def _walk_calls(node: Node) -> Iterator[str]:
                     obj_part = sub.text.decode("utf-8").strip()
             if obj_part and method_part:
                 yield clean_call_name(f"{obj_part}.{method_part}")
-        elif child.type == "object_creation_expression":
-            for sub in child.children:
+        elif node.type == "object_creation_expression":
+            for sub in node.children:
                 if sub.type in ("name", "qualified_name"):
                     yield "new " + sub.text.decode("utf-8").strip()
                     break
-        yield from _walk_calls(child)

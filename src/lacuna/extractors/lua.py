@@ -17,7 +17,7 @@ from typing import ClassVar
 import tree_sitter_lua
 from tree_sitter import Language, Node, Parser
 
-from ..entities import Entity, FeatureSet, clean_call_name
+from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
 from .base import Extractor
 
 
@@ -83,12 +83,11 @@ def _function_name_and_kind(fn_node: Node) -> tuple[str, bool]:
     return "<anonymous>", False
 
 
-def _walk_calls(node: Node) -> Iterator[str]:
-    for child in node.children:
-        if child.type == "function_call":
-            for sub in child.children:
+def _walk_calls(root: Node) -> Iterator[str]:
+    for node in walk_subtree(root):
+        if node.type == "function_call":
+            for sub in node.children:
                 if sub.type in ("identifier", "dot_index_expression",
                                 "method_index_expression"):
                     yield clean_call_name(sub.text.decode("utf-8").strip())
                     break
-        yield from _walk_calls(child)

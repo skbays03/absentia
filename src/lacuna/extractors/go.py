@@ -20,7 +20,7 @@ from typing import ClassVar
 import tree_sitter_go
 from tree_sitter import Language, Node, Parser
 
-from ..entities import Entity, FeatureSet, clean_call_name
+from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
 from .base import Extractor
 
 
@@ -180,13 +180,12 @@ def _receiver_type_of(method_node: Node) -> str | None:
     return None
 
 
-def _walk_calls(node: Node) -> Iterator[str]:
+def _walk_calls(root: Node) -> Iterator[str]:
     """Go's call_expression's first child (the function field) is the
     callee — either an identifier (``helper``), a selector_expression
     (``fmt.Sprintf``, ``p.Name``), or some other expression."""
-    for child in node.children:
-        if child.type == "call_expression":
-            target = child.child_by_field_name("function")
+    for node in walk_subtree(root):
+        if node.type == "call_expression":
+            target = node.child_by_field_name("function")
             if target is not None:
                 yield clean_call_name(target.text.decode("utf-8").strip())
-        yield from _walk_calls(child)

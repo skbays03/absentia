@@ -18,7 +18,7 @@ from typing import ClassVar
 import tree_sitter_bash
 from tree_sitter import Language, Node, Parser
 
-from ..entities import Entity, FeatureSet, clean_call_name
+from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
 from .base import Extractor
 
 
@@ -75,16 +75,15 @@ def _name_of(fn_node: Node) -> str:
     return "<anonymous>"
 
 
-def _walk_calls(node: Node) -> Iterator[str]:
+def _walk_calls(root: Node) -> Iterator[str]:
     """Bash ``command`` nodes have a ``command_name`` child whose first
     ``word`` is the executable being invoked."""
-    for child in node.children:
-        if child.type == "command":
-            for sub in child.children:
+    for node in walk_subtree(root):
+        if node.type == "command":
+            for sub in node.children:
                 if sub.type == "command_name":
                     for grand in sub.children:
                         if grand.type == "word":
                             yield clean_call_name(grand.text.decode("utf-8").strip())
                             break
                     break
-        yield from _walk_calls(child)

@@ -28,7 +28,7 @@ from typing import ClassVar
 import tree_sitter_c_sharp
 from tree_sitter import Language, Node, Parser
 
-from ..entities import Entity, FeatureSet, clean_call_name
+from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
 from .base import Extractor
 
 
@@ -186,18 +186,17 @@ def _base_types(node: Node) -> Iterator[str]:
                     break
 
 
-def _walk_calls(node: Node) -> Iterator[str]:
+def _walk_calls(root: Node) -> Iterator[str]:
     """C# call expressions are ``invocation_expression`` (the function
     field is the callee — identifier, member_access_expression, etc.)
     and ``object_creation_expression`` for ``new T()`` constructor calls.
     """
-    for child in node.children:
-        if child.type == "invocation_expression":
-            target = child.child_by_field_name("function")
+    for node in walk_subtree(root):
+        if node.type == "invocation_expression":
+            target = node.child_by_field_name("function")
             if target is not None:
                 yield clean_call_name(target.text.decode("utf-8").strip())
-        elif child.type == "object_creation_expression":
-            type_node = child.child_by_field_name("type")
+        elif node.type == "object_creation_expression":
+            type_node = node.child_by_field_name("type")
             if type_node is not None:
                 yield "new " + type_node.text.decode("utf-8").strip()
-        yield from _walk_calls(child)
