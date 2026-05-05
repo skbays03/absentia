@@ -49,6 +49,7 @@ javascript = "lacuna.extractors.javascript:JavaScriptExtractor"
 typescript = "lacuna.extractors.typescript:TypeScriptExtractor"
 tsx        = "lacuna.extractors.typescript:TSXExtractor"
 rust       = "lacuna.extractors.rust:RustExtractor"
+go         = "lacuna.extractors.go:GoExtractor"
 swift      = "lacuna.extractors.swift:SwiftExtractor"
 
 [project.urls]

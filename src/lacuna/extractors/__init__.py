@@ -15,6 +15,7 @@ from importlib.metadata import entry_points
 from typing import Iterable
 
 from .base import Extractor
+from .go import GoExtractor
 from .javascript import JavaScriptExtractor
 from .python import PythonExtractor
 from .rust import RustExtractor
@@ -28,6 +29,7 @@ _BUILTIN_EXTRACTORS: tuple[type[Extractor], ...] = (
     TypeScriptExtractor,
     TSXExtractor,
     RustExtractor,
+    GoExtractor,
     SwiftExtractor,
 )
 
@@ -73,6 +75,7 @@ def extension_dispatch(extractors: dict[str, Extractor]) -> dict[str, Extractor]
 
 __all__ = [
     "Extractor",
+    "GoExtractor",
     "JavaScriptExtractor",
     "PythonExtractor",
     "RustExtractor",

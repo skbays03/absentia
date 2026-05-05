@@ -25,7 +25,8 @@ class ScanConfig:
     include: tuple[str, ...] = (".",)
     exclude: tuple[str, ...] = ()
     languages: tuple[str, ...] = (
-        "python", "javascript", "typescript", "tsx", "rust", "swift",
+        "python", "javascript", "typescript", "tsx",
+        "rust", "go", "swift",
     )
 
 
