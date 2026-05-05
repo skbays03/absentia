@@ -104,6 +104,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Remove every lacuna state directory under your home + the "
              "machine-wide calibration cache. Confirms before deleting.",
     )
+    parser.add_argument(
+        "--yes", "-y",
+        action="store_true",
+        help="Skip the [y/N] confirmation prompt on --purge / --purge-all. "
+             "Use only when you're sure (and ideally in a script).",
+    )
     sub = parser.add_subparsers(dest="cmd")
 
     init = sub.add_parser("init", help="Create lacuna.toml + .lacuna/ in the current dir.")
@@ -165,9 +171,12 @@ def main(argv: list[str] | None = None) -> int:
 
     # Top-level purge flags run before subcommand dispatch.
     if args.purge_all:
-        return cmd_purge_all()
+        return cmd_purge_all(confirm=not args.yes)
     if args.purge is not None:
-        return cmd_purge(Path(args.purge).expanduser().resolve())
+        return cmd_purge(
+            Path(args.purge).expanduser().resolve(),
+            confirm=not args.yes,
+        )
 
     if args.cmd is None:
         # No subcommand: launch the TUI when run from a TTY, otherwise
@@ -545,12 +554,17 @@ def scan_corpus(
     }
 
 
-def cmd_purge(root: Path) -> int:
+def cmd_purge(root: Path, *, confirm: bool = True) -> int:
     """Remove lacuna state from a single project root.
 
     Only removes ``.lacuna/`` (the gitignored state directory).
     Leaves ``lacuna.toml`` in place — that's a versioned config the
     user might want to keep for re-running scans later.
+
+    When ``confirm`` is True (the default), prompts ``[y/N]`` with a
+    disclaimer of what's about to be deleted. Refuses outright in
+    non-interactive contexts unless ``confirm=False`` (set by
+    ``--yes``/``-y``).
     """
     import shutil
 
@@ -583,6 +597,35 @@ def cmd_purge(root: Path) -> int:
         )
         return 1
 
+    if confirm:
+        print("About to delete:")
+        print(f"  {target}")
+        print()
+        print("This is the per-project state directory. It contains:")
+        print("  - state.db   — entity cache + feature index + scan history")
+        print("  - suppressions you've added with `lacuna suppress`")
+        print("  - last_run.json — timing/stats from the previous scan")
+        print()
+        print("Your source code and lacuna.toml are NOT touched. The next")
+        print("scan will be a full cold scan instead of incremental.")
+        print()
+        if not sys.stdin.isatty():
+            print(
+                "lacuna --purge: refusing to delete in non-interactive "
+                "context. Re-run from a terminal, or pass --yes to skip "
+                "this prompt.",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            response = input("Remove? [y/N]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return 1
+        if not response.startswith("y"):
+            print("Aborted; nothing removed.")
+            return 0
+
     shutil.rmtree(target)
     print(f"Removed {target}")
     if (root / "lacuna.toml").exists():
@@ -593,11 +636,12 @@ def cmd_purge(root: Path) -> int:
     return 0
 
 
-def cmd_purge_all() -> int:
+def cmd_purge_all(*, confirm: bool = True) -> int:
     """Remove every lacuna state dir under $HOME + the machine-wide cache.
 
     Confirms before deleting; prints what will be removed first so the
-    user can sanity-check.
+    user can sanity-check. ``confirm=False`` (set by ``--yes``/``-y``)
+    skips the prompt — use only in scripted contexts.
     """
     import shutil
 
@@ -646,31 +690,43 @@ def cmd_purge_all() -> int:
         return 0
 
     print()
+    print("About to delete:")
     if project_state_dirs:
-        print(f"Project state directories ({len(project_state_dirs)}):")
+        print(f"\n  Project state directories ({len(project_state_dirs)}):")
         for d in sorted(project_state_dirs):
-            print(f"  {d}")
+            print(f"    {d}")
     if machine_cache_present:
-        print("\nMachine-wide cache:")
-        print(f"  {machine_cache}/calibration.json")
+        print("\n  Machine-wide cache:")
+        print(f"    {machine_cache}/calibration.json")
+    print()
+    print("This will:")
+    print("  - Wipe per-project entity caches, feature indexes, and")
+    print("    suppressions across every project listed above.")
+    print("  - Wipe the machine-wide calibration cache, so the next")
+    print("    `lacuna est` will re-prompt for first-run calibration.")
+    print()
+    print("Source code, lacuna.toml configs, and the lacuna binary itself")
+    print("are NOT touched.")
     print()
 
-    if not sys.stdin.isatty():
-        print(
-            "lacuna --purge-all: refusing to delete in non-interactive "
-            "context. Re-run from a terminal to confirm.",
-            file=sys.stderr,
-        )
-        return 1
+    if confirm:
+        if not sys.stdin.isatty():
+            print(
+                "lacuna --purge-all: refusing to delete in non-interactive "
+                "context. Re-run from a terminal, or pass --yes to skip "
+                "this prompt.",
+                file=sys.stderr,
+            )
+            return 1
 
-    try:
-        response = input("Remove all of these? [y/N]: ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        print()
-        return 1
-    if not response.startswith("y"):
-        print("Aborted; nothing removed.")
-        return 0
+        try:
+            response = input("Remove all of these? [y/N]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return 1
+        if not response.startswith("y"):
+            print("Aborted; nothing removed.")
+            return 0
 
     removed = 0
     failed = 0
