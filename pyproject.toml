@@ -21,6 +21,7 @@ dependencies = [
     "tree-sitter >= 0.21",
     "tree-sitter-python >= 0.21",
     "tree-sitter-javascript >= 0.21",
+    "tree-sitter-typescript >= 0.21",
     "tree-sitter-swift >= 0.5",
     # "textual >= 0.50",  # added when TUI lands
 ]
@@ -43,6 +44,8 @@ lacuna = "lacuna.cli:main"
 [project.entry-points."lacuna.extractors"]
 python     = "lacuna.extractors.python:PythonExtractor"
 javascript = "lacuna.extractors.javascript:JavaScriptExtractor"
+typescript = "lacuna.extractors.typescript:TypeScriptExtractor"
+tsx        = "lacuna.extractors.typescript:TSXExtractor"
 swift      = "lacuna.extractors.swift:SwiftExtractor"
 
 [project.urls]

@@ -18,11 +18,14 @@ from .base import Extractor
 from .javascript import JavaScriptExtractor
 from .python import PythonExtractor
 from .swift import SwiftExtractor
+from .typescript import TSXExtractor, TypeScriptExtractor
 
 
 _BUILTIN_EXTRACTORS: tuple[type[Extractor], ...] = (
     PythonExtractor,
     JavaScriptExtractor,
+    TypeScriptExtractor,
+    TSXExtractor,
     SwiftExtractor,
 )
 
@@ -71,6 +74,8 @@ __all__ = [
     "JavaScriptExtractor",
     "PythonExtractor",
     "SwiftExtractor",
+    "TSXExtractor",
+    "TypeScriptExtractor",
     "discover_extractor_classes",
     "discover_extractors",
     "extension_dispatch",
