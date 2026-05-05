@@ -440,11 +440,21 @@ def scan_corpus(
 def cmd_est(*, root: Path, recalibrate: bool) -> int:
     """Estimate cold-scan time without actually scanning.
 
-    Phase 1 (this commit): walks the corpus, applies the M-series
-    baseline cost model, prints the jobs-vs-time table. Phase 2
-    will add the first-run interactive calibration prompt that
-    refines the model for the user's specific hardware.
+    Walks the corpus, applies the cost model (calibrated if available,
+    M-series baseline otherwise), prints the jobs-vs-time table.
+
+    First-run flow: if no calibration cache exists at
+    ``~/.lacuna/calibration.json`` and we're attached to a TTY, prompt
+    the user once to run calibration. Result is cached forever (until
+    invalidated by version/core-count change or ``--recalibrate``).
     """
+    from .calibration import (
+        calibrated_bps_table,
+        calibration_path,
+        is_stale,
+        load_calibration,
+        save_calibration,
+    )
     from .estimator import (
         cpu_count_for_estimator,
         format_estimate_report,
@@ -455,17 +465,6 @@ def cmd_est(*, root: Path, recalibrate: bool) -> int:
     if not root.is_dir():
         print(f"lacuna: not a directory: {root}", file=sys.stderr)
         return 2
-
-    if recalibrate:
-        # Phase 2 will run a real calibration here. Keep the flag
-        # accepted so the docs and prompts that reference it don't
-        # have to change when we ship calibration.
-        print(
-            "lacuna est: --recalibrate is a placeholder until "
-            "first-run calibration ships (phase 2). Continuing "
-            "with the M-series baseline.\n",
-            file=sys.stderr,
-        )
 
     config = _load_config(root, None)
     extractors = discover_extractors(config.scan.languages)
@@ -486,10 +485,50 @@ def cmd_est(*, root: Path, recalibrate: bool) -> int:
         )
         return 1
 
-    # Reality check: if a prior cold scan exists, surface the actual
-    # time so the user can compare against the prediction. Phase 1
-    # estimates are uncalibrated; this lets the user see how off the
-    # placeholder model is for their hardware/codebase shape.
+    # ── Calibration: load, decide whether to run or re-run ─────────
+    cal_path = calibration_path()
+    calibration = None if recalibrate else load_calibration(cal_path)
+
+    interactive = sys.stdin.isatty() and sys.stdout.isatty()
+
+    # Stale check: if cached but version/cores changed, prompt or
+    # silently re-run depending on the reason.
+    if calibration is not None:
+        stale, reason = is_stale(calibration)
+        if stale and interactive:
+            print(f"Calibration is out of date — {reason}.", file=sys.stderr)
+            if _prompt_yn("Re-run calibration?", default=True):
+                calibration = None
+            # If user declines, keep the stale calibration in use.
+
+    # First-run / explicit-recalibrate flow
+    if calibration is None and (recalibrate or interactive):
+        calibration = _interactive_calibrate(
+            cwd=root, config=config, force=recalibrate,
+        )
+        if calibration is not None:
+            try:
+                save_calibration(calibration, cal_path)
+                print(
+                    f"Calibration cached at {cal_path}.\n",
+                    file=sys.stderr,
+                )
+            except OSError as e:
+                print(
+                    f"warning: could not save calibration ({e}); "
+                    f"running uncached.\n",
+                    file=sys.stderr,
+                )
+    elif calibration is None and not interactive:
+        # Non-TTY (CI, piped output): skip prompts, fall through to
+        # uncalibrated output with a note.
+        print(
+            "(running uncalibrated — pipe to a terminal or run "
+            "`lacuna est` interactively to calibrate)\n",
+            file=sys.stderr,
+        )
+
+    # ── Reality check from prior scan ───────────────────────────────
     observed_cold_scan_s: float | None = None
     last_run_path = root / ".lacuna" / "last_run.json"
     if last_run_path.exists():
@@ -500,17 +539,137 @@ def cmd_est(*, root: Path, recalibrate: bool) -> int:
         except (OSError, ValueError, KeyError):
             pass
 
+    bps_table = (
+        calibrated_bps_table(calibration.machine_speed_factor)
+        if calibration is not None else None
+    )
+
     report = format_estimate_report(
         root=root,
         shape=shape,
         cpu_count=cpu_count_for_estimator(),
         default_jobs=default_jobs(),
-        calibrated=False,  # phase 2 fills this in from ~/.lacuna/calibration.json
-        calibrated_at=None,
+        calibrated=calibration is not None,
+        calibrated_at=calibration.calibrated_at if calibration else None,
         observed_cold_scan_s=observed_cold_scan_s,
+        bps_table=bps_table,
     )
     print(report, end="")
     return 0
+
+
+def _prompt_yn(question: str, *, default: bool = True) -> bool:
+    """[Y/n] / [y/N] prompt; default on empty input."""
+    suffix = " [Y/n]: " if default else " [y/N]: "
+    try:
+        response = input(question + suffix).strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()  # newline so the next prompt isn't on the same line
+        return False
+    if not response:
+        return default
+    return response.startswith("y")
+
+
+def _interactive_calibrate(
+    *, cwd: Path, config: Any, force: bool,
+) -> Any:
+    """Walk the user through first-run calibration; return CalibrationData
+    or None if they decline / it fails.
+    """
+    from .calibration import (
+        MIN_CALIBRATION_BYTES,
+        MIN_CALIBRATION_FILES,
+        run_calibration,
+    )
+    from .estimator import _format_seconds, _format_size, serial_time_for, walk_corpus
+
+    if not force:
+        print(
+            "First time on this machine — run a one-time calibration?\n"
+            "This measures your CPU's scanning throughput so estimates\n"
+            "match your hardware. Result is cached at\n"
+            "~/.lacuna/calibration.json (only runs once)."
+        )
+        if not _prompt_yn("Calibrate now?", default=True):
+            print("Skipping calibration; using M-series baseline.\n")
+            return None
+
+    # Pick a corpus path
+    target: Path | None = cwd
+    while True:
+        if target is None:
+            return None
+        if not target.is_dir():
+            print(f"lacuna: not a directory: {target}")
+            target = _prompt_path("Enter a calibration corpus path: ")
+            if target is None:
+                return None
+            continue
+
+        from .extractors import discover_extractors, extension_dispatch
+        extractors = discover_extractors(config.scan.languages)
+        ext_to = extension_dispatch(extractors)
+        shape = walk_corpus(target, ext_to)
+
+        if shape.files < MIN_CALIBRATION_FILES or shape.bytes < MIN_CALIBRATION_BYTES:
+            print(
+                f"\n{target} has only {shape.files} files / "
+                f"{_format_size(shape.bytes)} — too small for reliable "
+                f"calibration (need ≥ {MIN_CALIBRATION_FILES} files / "
+                f"{_format_size(MIN_CALIBRATION_BYTES)}).\n"
+            )
+            target = _prompt_path("Enter a different path: ")
+            if target is None:
+                return None
+            continue
+
+        # Show predicted time so the user knows what they're agreeing to
+        predicted = serial_time_for(shape.by_language_bytes)
+        print(
+            f"\nCalibrating against {target}\n"
+            f"  files: {shape.files:,d}   "
+            f"bytes: {_format_size(shape.bytes)}   "
+            f"est. duration: ~{_format_seconds(predicted)} "
+            f"(uncalibrated estimate)"
+        )
+        if not _prompt_yn("Proceed?", default=True):
+            target = _prompt_path("Enter a different path (or empty to abort): ")
+            if target is None:
+                return None
+            continue
+
+        # Run it
+        try:
+            print("Running calibration… (press Ctrl+C to abort)")
+            data = run_calibration(corpus_root=target, config=config)
+        except KeyboardInterrupt:
+            print("\nCalibration aborted.")
+            return None
+        except ValueError as e:
+            print(f"Calibration failed: {e}")
+            return None
+
+        print(
+            f"\nCalibration complete:\n"
+            f"  scanned:        {data.calibration_files:,d} files in "
+            f"{_format_seconds(data.calibration_duration_s)}\n"
+            f"  speed factor:   {data.machine_speed_factor:.2f}× "
+            f"baseline (1.00× = M-series MacBook)\n"
+        )
+        return data
+
+
+def _prompt_path(question: str) -> Path | None:
+    """Read a path from the user; return None on empty/cancel."""
+    try:
+        raw = input(question).strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return None
+    if not raw:
+        return None
+    return Path(raw).expanduser().resolve()
 
 
 def cmd_suppress(

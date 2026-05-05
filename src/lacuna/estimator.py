@@ -250,6 +250,7 @@ def format_estimate_report(
     calibrated: bool,
     calibrated_at: str | None = None,
     observed_cold_scan_s: float | None = None,
+    bps_table: dict[str, int] | None = None,
 ) -> str:
     """Human-readable ASCII report — the body of ``lacuna est`` output.
 
@@ -257,8 +258,14 @@ def format_estimate_report(
     default workers row is marked. A trailing footer notes whether
     the cost model is calibrated and links to the methodology doc
     for users who want to dig in.
+
+    Pass ``bps_table`` to use a calibrated per-language throughput
+    table (typically from ``calibration.calibrated_bps_table``);
+    omitted means "use M-series baseline".
     """
-    curve = jobs_curve(shape.by_language_bytes, max_jobs=cpu_count)
+    curve = jobs_curve(
+        shape.by_language_bytes, max_jobs=cpu_count, bps_table=bps_table,
+    )
 
     lines: list[str] = []
     lines.append(f"lacuna est — cold-scan estimate for {root}")
