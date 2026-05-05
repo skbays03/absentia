@@ -126,43 +126,47 @@ extractor works on real code as the codebase evolves.
 
 ## Conventions
 
+The full project-wide convention list lives in
+[`CONTRIBUTING.md`](CONTRIBUTING.md) at the repo root. Read it before
+making non-trivial code changes. Topics covered there:
+
+- Progress UI (`ProgressBar` / `StepIndicator` / `Spinner`) — when to
+  use which; never let an operation feel hung.
+- Commit message format (subject ≤72, `Authored-by:` trailer required,
+  enforced by `.githooks/commit-msg`).
+- Destructive operations (disclaimer + `[y/N]` default-no + non-TTY
+  refusal + `--yes` bypass).
+- Local CI before commit (`pytest && ruff && mypy && mkdocs --strict`).
+- Editable install for development.
+- Doc-with-feature — which docs to update for which kind of change.
+- Defensive UI hooks (progress callbacks must never break the work).
+- Stable IDs across runs (suppressions and external integrations
+  depend on it).
+
+**When to update `CONTRIBUTING.md`:** when a new project-wide
+convention emerges — typically during code review or while shipping
+a feature whose pattern future contributors should follow. Add a
+new section in the same commit that establishes the convention.
+
+**When to read `CONTRIBUTING.md`:** before adding code that touches
+shared infrastructure (CLI surface, progress UI, destructive flags,
+ID generation, etc.) or before introducing patterns other
+contributors will copy.
+
+A few project-level rules that aren't in `CONTRIBUTING.md`:
+
 - Docs live in this repo. PRs that need docs are caught in review.
-- ADRs go in `docs/explanation/decisions/` and are written **when the decision
-  is made**, not retroactively.
+- ADRs go in `docs/explanation/decisions/` and are written **when
+  the decision is made**, not retroactively.
 - Tutorial code blocks must be runnable and tested in CI.
 - Deferred publication-blockers go in `DEFERRALS.md`.
-- Resolved deferrals get struck through (not deleted) and moved to the
-  Resolved section at the bottom of `DEFERRALS.md`.
+- Resolved deferrals get struck through (not deleted) and moved to
+  the Resolved section at the bottom of `DEFERRALS.md`.
 
 ## Commit format
 
-Enforced by `.githooks/commit-msg` (Python). Rules:
+Enforced by `.githooks/commit-msg`. Full rules + example + hook
+installation steps live in [`CONTRIBUTING.md`](CONTRIBUTING.md#2-commit-messages).
 
-1. Subject ≤72 chars, imperative mood (the hook only checks length; mood is
-   on you).
-2. Blank line between subject and body if body exists.
-3. Body lines ≤100 chars.
-4. **Every commit must include an `Authored-by:` trailer** identifying the
-   human author. AI-assisted commits add `Co-Authored-By:` for the assistant.
-
-Example:
-
-```
-Add foo to bar
-
-Body explaining the *why* of the change. Body lines are wrapped at
-100 chars to match the ruff line-length.
-
-Authored-by: Shawn Bays <shawnbays2003@gmail.com>
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
-```
-
-### Enabling the hook in a fresh clone
-
-The hook is tracked in `.githooks/`. Wire it up with:
-
-```bash
-ln -sf ../../.githooks/commit-msg .git/hooks/commit-msg
-```
-
-(Or globally for all hooks: `git config core.hooksPath .githooks`.)
+Quick recap: subject ≤72 chars, `Authored-by:` trailer required,
+`Co-Authored-By:` when AI-assisted.
