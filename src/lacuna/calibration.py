@@ -27,10 +27,11 @@ import json
 import os
 import tempfile
 import time
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from . import __version__
 
@@ -230,14 +231,25 @@ def run_calibration(
         _select_amdahl_points(cores) if fit_amdahl and cores >= 2 else [1]
     )
 
+    # Eligible per-language scans we'll also run later. Pre-compute
+    # so the StepIndicator's total step count is accurate.
+    eligible_langs = sorted(
+        (
+            lang for lang, n in shape.by_language_bytes.items()
+            if n >= MIN_BYTES_PER_LANGUAGE
+        ),
+        key=lambda lang: -shape.by_language_bytes[lang],
+    )
+    total_steps = len(jobs_to_measure) + len(eligible_langs)
+    indicator = (
+        progress if progress is not None
+        else _make_step_indicator(total_steps)
+    )
+
     observations: list[tuple[int, float]] = []
     primary_elapsed = 0.0
     for n_jobs in jobs_to_measure:
-        if progress is not None:
-            try:
-                progress(n_jobs, len(jobs_to_measure))
-            except Exception:
-                pass  # progress callback must never break calibration
+        _step(indicator, f"scanning at jobs={n_jobs}")
 
         with tempfile.TemporaryDirectory(prefix="lacuna-cal-") as tmpd:
             tmp_state = Path(tmpd) / "state"
@@ -245,15 +257,17 @@ def run_calibration(
             (tmp_state / "version").write_text(f"{SCHEMA_VERSION}\n")
 
             from .cli import scan_corpus  # late import: avoid cycle
+            from .progress import ticking as _ticking
 
             started = time.perf_counter()
-            scan_corpus(
-                root=corpus_root,
-                state_dir=tmp_state,
-                config=config,
-                jobs=n_jobs,
-                extractors=extractors,
-            )
+            with _ticker_if_indicator(indicator, _ticking):
+                scan_corpus(
+                    root=corpus_root,
+                    state_dir=tmp_state,
+                    config=config,
+                    jobs=n_jobs,
+                    extractors=extractors,
+                )
             elapsed = time.perf_counter() - started
         observations.append((n_jobs, elapsed))
         if n_jobs == 1:
@@ -273,8 +287,15 @@ def run_calibration(
         corpus_root=corpus_root,
         config=config,
         shape=shape,
-        progress=progress,
+        progress=indicator,
     )
+
+    # Finish the indicator we created (caller-provided ones stay open).
+    if progress is None and indicator is not None:
+        try:
+            indicator.finish()
+        except Exception:
+            pass
 
     return CalibrationData(
         calibrated_at=datetime.now(timezone.utc).isoformat(),
@@ -328,12 +349,8 @@ def calibrate_per_language(
         return {}
 
     per_lang_bps: dict[str, int] = {}
-    for idx, lang in enumerate(eligible):
-        if progress is not None:
-            try:
-                progress(f"lang:{lang}", len(eligible))
-            except Exception:
-                pass
+    for lang in eligible:
+        _step(progress, f"per-language scan: {lang}")
 
         sub_config = replace(
             config,
@@ -349,15 +366,17 @@ def calibrate_per_language(
             (tmp_state / "version").write_text(f"{SCHEMA_VERSION}\n")
 
             from .cli import scan_corpus  # late import: avoid cycle
+            from .progress import ticking as _ticking
 
             started = time.perf_counter()
-            scan_corpus(
-                root=corpus_root,
-                state_dir=tmp_state,
-                config=sub_config,
-                jobs=1,
-                extractors=sub_extractors,
-            )
+            with _ticker_if_indicator(progress, _ticking):
+                scan_corpus(
+                    root=corpus_root,
+                    state_dir=tmp_state,
+                    config=sub_config,
+                    jobs=1,
+                    extractors=sub_extractors,
+                )
             elapsed = time.perf_counter() - started
 
         if elapsed > 0:
@@ -366,6 +385,37 @@ def calibrate_per_language(
             )
 
     return per_lang_bps
+
+
+def _make_step_indicator(total_steps: int) -> Any:
+    """Build the default StepIndicator for calibration progress."""
+    from .progress import StepIndicator
+    return StepIndicator(total_steps=total_steps, prefix="[calibrating]")
+
+
+def _step(indicator: Any, label: str) -> None:
+    """Best-effort step transition; never break calibration on a UI bug."""
+    if indicator is None:
+        return
+    try:
+        indicator.step(label)
+    except Exception:
+        pass
+
+
+@contextmanager
+def _ticker_if_indicator(indicator: Any, ticking_fn: Any) -> Iterator[None]:
+    """Wrap ``ticking_fn(indicator)`` only when ``indicator`` looks
+    tick-able. Otherwise yield immediately (no-op)."""
+    if indicator is None or not hasattr(indicator, "tick"):
+        yield
+        return
+    try:
+        with ticking_fn(indicator):
+            yield
+    except Exception:
+        # If the ticker setup explodes, just run the work without it.
+        yield
 
 
 def _select_amdahl_points(cores: int) -> list[int]:

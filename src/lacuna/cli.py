@@ -299,17 +299,38 @@ def _run_check(
     # CI logs and machine-readable output clean. Gated on stderr
     # (where the line lands) — that way `lacuna check | grep ...`
     # still surfaces the preamble for the human watching the terminal.
-    if not as_json and not quiet and sys.stderr.isatty():
+    interactive_text_mode = (
+        not as_json and not quiet and sys.stderr.isatty()
+    )
+    if interactive_text_mode:
         from .estimator import quick_estimate_line
         line = quick_estimate_line(root=root, config=config, jobs=jobs)
         if line is not None:
             print(line, file=sys.stderr)
 
-    result = scan_corpus(
-        root=root, state_dir=state_dir, config=config,
-        started=started, started_iso=started_iso, extractors=extractors,
-        jobs=jobs,
-    )
+    # Live progress bar for the scan loop, in interactive text mode.
+    # We need a total file count to render percent/ETA — get it from
+    # walk_corpus, which is sub-second even on the Linux kernel.
+    progress_bar = None
+    progress_callback = None
+    if interactive_text_mode:
+        from .estimator import walk_corpus
+        from .progress import ProgressBar
+        ext_to = extension_dispatch(extractors)
+        shape = walk_corpus(root, ext_to)
+        if shape.files > 0:
+            progress_bar = ProgressBar(total=shape.files, label="Scanning")
+            progress_callback = progress_bar.update
+
+    try:
+        result = scan_corpus(
+            root=root, state_dir=state_dir, config=config,
+            started=started, started_iso=started_iso, extractors=extractors,
+            jobs=jobs, progress_callback=progress_callback,
+        )
+    finally:
+        if progress_bar is not None:
+            progress_bar.finish()
     gaps = result["gaps"]
     rules_by_id = result["rules_by_id"]
     entities = result["entities"]
@@ -346,6 +367,7 @@ def scan_corpus(
     started_iso: str | None = None,
     extractors: dict | None = None,
     jobs: int | None = None,
+    progress_callback: Any = None,
 ) -> dict:
     """Run a full scan + mine cycle and return the result.
 
@@ -355,6 +377,11 @@ def scan_corpus(
 
     ``jobs`` controls parse/extract parallelism. ``None`` means
     auto-detect (half of available cores via :func:`parallel.default_jobs`).
+
+    ``progress_callback``, if provided, is called as
+    ``progress_callback(files_done, files_total)`` after each file is
+    processed during the scan. Used by ``lacuna check`` to drive a
+    live progress bar; passed through to ``_scan_incremental``.
     """
     from datetime import datetime, timezone
 
@@ -375,6 +402,7 @@ def scan_corpus(
         run_id = storage.begin_run()
         files_seen, files_unchanged = _scan_incremental(
             root, storage, run_id, ext_to_extractor, jobs=jobs,
+            progress_callback=progress_callback,
         )
         entities, feature_index = storage.load_all()
         storage.commit()
@@ -833,6 +861,7 @@ def _scan_incremental(
     run_id: int,
     ext_to_extractor: dict,
     jobs: int = 1,
+    progress_callback: Any = None,
 ) -> tuple[int, int]:
     """Walk the corpus, reusing cached entities/features for unchanged files.
 
@@ -843,6 +872,10 @@ def _scan_incremental(
     writes always stay on the main process (SQLite is single-writer).
     The worker pool is created lazily on the first chunk that needs it,
     so projects with no changed files (or very few) pay no overhead.
+
+    ``progress_callback``, if provided, is called with ``(n)`` after
+    each batch of n files has been processed. The caller-side
+    ProgressBar handles total/percent/ETA rendering.
     """
     from .parallel import parse_one, should_parallelize
 
@@ -894,6 +927,11 @@ def _scan_incremental(
                 new_features[entity.id] = features
             storage.save_entities_and_features(new_entities, new_features)
             storage.upsert_file(rel, current_hash, run_id)
+        if progress_callback is not None:
+            try:
+                progress_callback(len(chunk))
+            except Exception:
+                pass  # progress UI must never break a scan
         chunk.clear()
 
     try:
@@ -918,6 +956,11 @@ def _scan_incremental(
             if cached.get(rel) == current_hash:
                 storage.upsert_file(rel, current_hash, run_id)
                 files_unchanged += 1
+                if progress_callback is not None:
+                    try:
+                        progress_callback(1)
+                    except Exception:
+                        pass
                 continue
 
             chunk.append((rel, content, current_hash, extractor))
