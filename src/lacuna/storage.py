@@ -27,7 +27,7 @@ from pathlib import Path
 from .entities import Entity, FeatureSet
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 _SCHEMA = """
@@ -62,6 +62,13 @@ CREATE TABLE IF NOT EXISTS runs (
     rules_discovered INTEGER,
     gaps_found INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS suppressions (
+    short_id TEXT PRIMARY KEY,
+    full_id TEXT,
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -91,19 +98,28 @@ class Storage:
 
     def _check_version_file(self) -> None:
         version_file = self.state_dir / "version"
-        if version_file.exists():
-            try:
-                on_disk = int(version_file.read_text().strip())
-            except ValueError:
-                on_disk = -1
-            if on_disk != SCHEMA_VERSION:
-                raise StorageVersionError(
-                    f"State at {self.state_dir} was written with schema v{on_disk}; "
-                    f"this lacuna binary expects v{SCHEMA_VERSION}. "
-                    f"Delete the .lacuna/ directory to rebuild from scratch."
-                )
-        else:
+        if not version_file.exists():
             version_file.write_text(f"{SCHEMA_VERSION}\n")
+            return
+
+        try:
+            on_disk = int(version_file.read_text().strip())
+        except ValueError:
+            on_disk = -1
+
+        if on_disk == SCHEMA_VERSION:
+            return
+        if on_disk > SCHEMA_VERSION:
+            raise StorageVersionError(
+                f"State at {self.state_dir} was written by a newer lacuna "
+                f"(schema v{on_disk}); this binary expects v{SCHEMA_VERSION}. "
+                f"Upgrade lacuna or delete the .lacuna/ directory."
+            )
+        # Forward migration: on_disk < SCHEMA_VERSION.
+        # Currently every schema bump only adds tables (with IF NOT EXISTS),
+        # so simply re-applying the schema is enough; bump the version file
+        # after _apply_schema runs.
+        version_file.write_text(f"{SCHEMA_VERSION}\n")
 
     def _apply_schema(self) -> None:
         self.conn.executescript(_SCHEMA)
@@ -239,6 +255,39 @@ class Storage:
             (duration_ms, entities_scanned, rules_discovered, gaps_found, run_id),
         )
         self.conn.commit()
+
+    # ── Suppressions ─────────────────────────────────────────────────
+
+    def add_suppression(
+        self, *, short_id: str, full_id: str | None, reason: str,
+    ) -> None:
+        self.conn.execute(
+            "INSERT OR REPLACE INTO suppressions "
+            "(short_id, full_id, reason, created_at) VALUES (?, ?, ?, ?)",
+            (short_id, full_id, reason,
+             datetime.now(timezone.utc).isoformat()),
+        )
+        self.conn.commit()
+
+    def remove_suppression(self, short_id: str) -> bool:
+        cur = self.conn.execute(
+            "DELETE FROM suppressions WHERE short_id = ?", (short_id,)
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def load_suppressions(self) -> dict[str, dict[str, str | None]]:
+        """Return {short_id: {full_id, reason, created_at}}."""
+        out: dict[str, dict[str, str | None]] = {}
+        for row in self.conn.execute(
+            "SELECT short_id, full_id, reason, created_at FROM suppressions"
+        ):
+            out[row[0]] = {
+                "full_id": row[1],
+                "reason": row[2],
+                "created_at": row[3],
+            }
+        return out
 
 
 # ── Lockfile ─────────────────────────────────────────────────────────

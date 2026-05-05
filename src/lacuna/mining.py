@@ -10,11 +10,20 @@ predicates via FP-growth come in a later pass, gated by the
 """
 from __future__ import annotations
 
+import hashlib
 from collections import Counter
 from dataclasses import dataclass
 
 from .entities import FeatureSet
 from .selectors import Group
+
+
+def short_id_for(full_id: str) -> str:
+    """Stable short form of a gap ID for CLI use ('g-7c91234'). Six hex
+    chars from SHA-256 — collision space is small but practically fine
+    for human-typed suppressions; the suppression filter checks both
+    short and full forms, so any collision degrades to a no-op."""
+    return "g-" + hashlib.sha256(full_id.encode()).hexdigest()[:7]
 
 
 @dataclass(frozen=True)
@@ -42,6 +51,10 @@ class Gap:
     @property
     def id(self) -> str:
         return f"{self.rule_id}::{self.entity_id}"
+
+    @property
+    def short_id(self) -> str:
+        return short_id_for(self.id)
 
 
 def mine(

@@ -21,7 +21,7 @@ from . import __version__
 from .config import Config, find_config
 from .entities import Entity, FeatureSet
 from .extractors import discover_extractors, extension_dispatch
-from .mining import mine
+from .mining import mine, short_id_for
 from .output import format_gaps, format_gaps_json
 from .parsing import find_source_files
 from .selectors import decorator_groups, directory_groups, parent_class_groups
@@ -79,6 +79,23 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument("--quiet", action="store_true",
                        help="Suppress the stats footer (text mode only)")
 
+    suppress = sub.add_parser(
+        "suppress",
+        help="Mark a gap as known/intentional so it stops appearing in check.",
+    )
+    suppress.add_argument("gap_id", nargs="?", default=None,
+                          help="Short ('g-7c91234') or full gap id from "
+                               "`lacuna check` output")
+    suppress.add_argument("--reason", default=None,
+                          help="Required unless --list/--remove. Describes why "
+                               "this gap is intentional.")
+    suppress.add_argument("--remove", action="store_true",
+                          help="Remove an existing suppression instead of adding one")
+    suppress.add_argument("--list", action="store_true", dest="as_list",
+                          help="List current suppressions and exit")
+    suppress.add_argument("--path", default=".",
+                          help="Project root (default: cwd)")
+
     args = parser.parse_args(argv)
 
     if args.cmd is None:
@@ -105,6 +122,15 @@ def main(argv: list[str] | None = None) -> int:
             config=config,
             quiet=args.quiet,
             as_json=args.as_json,
+        )
+
+    if args.cmd == "suppress":
+        return cmd_suppress(
+            root=Path(args.path).resolve(),
+            gap_id=args.gap_id,
+            reason=args.reason,
+            remove=args.remove,
+            as_list=args.as_list,
         )
 
     return 0
@@ -135,7 +161,8 @@ def cmd_init(*, root: Path, force: bool) -> int:
     config_path.write_text(_INIT_TEMPLATE)
     state_dir.mkdir(exist_ok=True)
     (state_dir / ".gitignore").write_text("*\n")
-    (state_dir / "version").write_text("1\n")
+    from .storage import SCHEMA_VERSION as _V
+    (state_dir / "version").write_text(f"{_V}\n")
 
     gitignore = root / ".gitignore"
     if gitignore.exists():
@@ -256,6 +283,26 @@ def _run_check(
                           feature_kind=kind)
             rules.extend(rs)
             gaps.extend(gs)
+
+        # Filter out gaps the user has explicitly suppressed.
+        suppressions = storage.load_suppressions()
+        suppressed_short_ids = set(suppressions.keys())
+        suppressed_full_ids = {
+            v["full_id"] for v in suppressions.values() if v["full_id"]
+        }
+        suppressed_count = 0
+        if suppressed_short_ids or suppressed_full_ids:
+            kept = []
+            for gap in gaps:
+                if (
+                    gap.short_id in suppressed_short_ids
+                    or gap.id in suppressed_full_ids
+                ):
+                    suppressed_count += 1
+                    continue
+                kept.append(gap)
+            gaps = kept
+
         elapsed = time.perf_counter() - started
 
         storage.end_run(
@@ -276,6 +323,7 @@ def _run_check(
         "files_unchanged": files_unchanged,
         "groups": len(groups),
         "rules": len(rules),
+        "suppressed": suppressed_count,
         "min_confidence": config.mining.min_confidence,
         "min_group_size": config.mining.min_group_size,
     }
@@ -290,12 +338,83 @@ def _run_check(
             cache_note = (
                 f" ({files_unchanged} unchanged)" if files_unchanged else ""
             )
+            suppressed_note = (
+                f", {suppressed_count} suppressed" if suppressed_count else ""
+            )
             print(f"  {len(entities)} entities scanned, "
                   f"{len(groups)} groups, {len(rules)} rules in "
-                  f"{elapsed:.2f}s{cache_note}")
+                  f"{elapsed:.2f}s{cache_note}{suppressed_note}")
             print()
 
     return 1 if gaps else 0
+
+
+def cmd_suppress(
+    *,
+    root: Path,
+    gap_id: str | None,
+    reason: str | None,
+    remove: bool,
+    as_list: bool,
+) -> int:
+    state_dir = root / ".lacuna"
+    if not state_dir.is_dir():
+        print(f"lacuna: no .lacuna/ in {root}. Run `lacuna check` first.",
+              file=sys.stderr)
+        return 2
+
+    with Storage(state_dir) as storage:
+        if as_list:
+            existing = storage.load_suppressions()
+            if not existing:
+                print("(no suppressions)")
+                return 0
+            for short_id, info in sorted(existing.items()):
+                created = info["created_at"] or ""
+                print(f"  {short_id}  {created}")
+                print(f"    reason: {info['reason']}")
+                if info["full_id"]:
+                    print(f"    full:   {info['full_id']}")
+                print()
+            return 0
+
+        if not gap_id:
+            print("lacuna: gap_id required (or --list to show existing).",
+                  file=sys.stderr)
+            return 2
+
+        if remove:
+            removed = storage.remove_suppression(_normalize_short(gap_id))
+            if removed:
+                print(f"Removed suppression {_normalize_short(gap_id)}.")
+                return 0
+            print(f"No suppression found for {gap_id!r}.", file=sys.stderr)
+            return 1
+
+        if not reason:
+            print("lacuna: --reason required when adding a suppression.",
+                  file=sys.stderr)
+            return 2
+
+        # User may pass either a short id ('g-7c91234') or a full one.
+        if gap_id.startswith("g-"):
+            short = gap_id
+            full: str | None = None
+        else:
+            short = short_id_for(gap_id)
+            full = gap_id
+
+        storage.add_suppression(short_id=short, full_id=full, reason=reason)
+        print(f"Suppressed {short}.")
+        print(f"  reason: {reason}")
+        return 0
+
+
+def _normalize_short(gap_id: str) -> str:
+    """Accept a short id as-is, derive one from a full id."""
+    if gap_id.startswith("g-"):
+        return gap_id
+    return short_id_for(gap_id)
 
 
 def _scan_incremental(

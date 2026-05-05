@@ -57,6 +57,51 @@ def test_check_on_nonexistent_path_returns_two(tmp_path, capsys):
     assert code == 2
 
 
+def test_suppress_then_check_silences_the_gap(tmp_path, capsys):
+    """End-to-end: scan a synthetic corpus, suppress the gap, re-scan and
+    confirm it's gone."""
+    import json as json_module
+    from lacuna.cli import cmd_suppress
+
+    _write_corpus(tmp_path)
+    cmd_check(root=tmp_path, config=Config(), quiet=True, as_json=True)
+    payload = json_module.loads(capsys.readouterr().out)
+    assert payload["summary"]["gaps"] == 1
+    short = payload["gaps"][0]["short_id"]
+
+    code = cmd_suppress(
+        root=tmp_path, gap_id=short, reason="test suppression",
+        remove=False, as_list=False,
+    )
+    assert code == 0
+    capsys.readouterr()  # clear suppress output
+
+    cmd_check(root=tmp_path, config=Config(), quiet=True, as_json=True)
+    after = json_module.loads(capsys.readouterr().out)
+    assert after["summary"]["gaps"] == 0
+    assert after["scan"]["suppressed"] == 1
+
+
+def test_suppress_list_shows_existing_suppressions(tmp_path, capsys):
+    from lacuna.cli import cmd_suppress
+    _write_corpus(tmp_path)
+    # Run check once to populate state.db
+    cmd_check(root=tmp_path, config=Config(), quiet=True)
+    capsys.readouterr()
+
+    cmd_suppress(
+        root=tmp_path, gap_id="g-aaaaaaa", reason="abc",
+        remove=False, as_list=False,
+    )
+    capsys.readouterr()
+    cmd_suppress(
+        root=tmp_path, gap_id=None, reason=None, remove=False, as_list=True,
+    )
+    out = capsys.readouterr().out
+    assert "g-aaaaaaa" in out
+    assert "abc" in out
+
+
 def test_json_output_is_parseable_with_expected_shape(tmp_path, capsys):
     import json as json_module
 
@@ -73,12 +118,13 @@ def test_json_output_is_parseable_with_expected_shape(tmp_path, capsys):
 
 
 def test_init_creates_config_and_state_dir(tmp_path, capsys):
+    from lacuna.storage import SCHEMA_VERSION
     code = cmd_init(root=tmp_path, force=False)
     assert code == 0
     assert (tmp_path / "lacuna.toml").is_file()
     assert (tmp_path / ".lacuna").is_dir()
     assert (tmp_path / ".lacuna" / ".gitignore").read_text() == "*\n"
-    assert (tmp_path / ".lacuna" / "version").read_text() == "1\n"
+    assert (tmp_path / ".lacuna" / "version").read_text() == f"{SCHEMA_VERSION}\n"
     assert "Initialized lacuna" in capsys.readouterr().out
 
 

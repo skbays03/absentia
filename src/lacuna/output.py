@@ -35,7 +35,8 @@ def format_gaps(
         kind_label = f"{entity.kind} `{short}`"
         missing = f"missing {rule.feature_value}"
         lines.append(
-            f"  {loc:<40s} {kind_label:<32s} {missing:<32s} {rule.confidence:.2f}"
+            f"  {loc:<40s} {kind_label:<32s} {missing:<32s} "
+            f"{rule.confidence:.2f}  {gap.short_id}"
         )
 
     lines.append("")
@@ -66,6 +67,7 @@ def format_gaps_json(
         "gaps": [
             {
                 "id": gap.id,
+                "short_id": gap.short_id,
                 "rule": {
                     "id": rule.id,
                     "group_id": rule.group_id,
