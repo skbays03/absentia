@@ -74,6 +74,23 @@ In **user projects** (not this repo):
 - `lacuna.toml` — committed per-project config + project-wide suppressions
 - `.lacuna/` — gitignored runtime state directory (entity DB, parse cache, etc.)
 
+## Dev scripts
+
+`scripts/update_ts.py` discovers every installed `tree-sitter*` package and
+checks pip for updates. Run periodically as new lacuna extractors are added —
+keeps grammars current without hardcoding the list. Default is a dry run;
+pass `--apply` to actually upgrade.
+
+```bash
+python scripts/update_ts.py            # show outdated
+python scripts/update_ts.py --apply    # upgrade outdated
+```
+
+The script is *deliberately* dynamic: it discovers tree-sitter packages by
+name prefix rather than reading from a hardcoded list or `pyproject.toml`.
+Adding a new language means installing its grammar; the script picks it up
+on the next run.
+
 ## Conventions
 
 - Docs live in this repo. PRs that need docs are caught in review.
