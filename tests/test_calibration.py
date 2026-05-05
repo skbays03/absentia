@@ -208,6 +208,48 @@ def test_select_amdahl_points_includes_all_low_cores():
     assert _select_amdahl_points(8) == [1, 2, 4, 8]
 
 
+def test_make_synthetic_corpus_meets_minimums(tmp_path):
+    """The bundled synthetic corpus should always satisfy calibration thresholds."""
+    from lacuna.calibration import (
+        MIN_CALIBRATION_BYTES,
+        MIN_CALIBRATION_FILES,
+        make_synthetic_corpus,
+    )
+
+    corpus = make_synthetic_corpus(tmp_path / "synth")
+    files = list(corpus.glob("*.py"))
+    total_bytes = sum(f.stat().st_size for f in files)
+
+    assert len(files) >= MIN_CALIBRATION_FILES
+    assert total_bytes >= MIN_CALIBRATION_BYTES
+
+
+def test_make_synthetic_corpus_is_idempotent(tmp_path):
+    """Calling twice into the same dir doesn't blow up or duplicate."""
+    from lacuna.calibration import make_synthetic_corpus
+
+    target = tmp_path / "synth"
+    make_synthetic_corpus(target)
+    count1 = len(list(target.glob("*.py")))
+    make_synthetic_corpus(target)
+    count2 = len(list(target.glob("*.py")))
+    assert count1 == count2  # same files, overwritten not appended
+
+
+def test_synthetic_corpus_extracts_real_entities(tmp_path):
+    """Sanity check: the synthetic files actually parse and yield entities."""
+    from lacuna.calibration import make_synthetic_corpus
+    from lacuna.estimator import walk_corpus
+    from lacuna.extractors import discover_extractors, extension_dispatch
+
+    corpus = make_synthetic_corpus(tmp_path / "synth", num_files=10)
+    extractors = discover_extractors(["python"])
+    ext_to = extension_dispatch(extractors)
+    shape = walk_corpus(corpus, ext_to)
+    assert shape.files == 10
+    assert shape.bytes > 0
+
+
 def test_run_calibration_succeeds_on_sufficient_corpus(tmp_path):
     """End-to-end: scan a synthetic corpus, derive a speed factor."""
     from lacuna.calibration import (

@@ -327,6 +327,65 @@ def fit_amdahl_p(
     return round(best_p, 3)
 
 
+def make_synthetic_corpus(
+    target_dir: Path, num_files: int = 60,
+) -> Path:
+    """Generate a small synthetic Python corpus suitable for calibration.
+
+    Produces ``num_files`` files (~3 KB each) with realistic-shaped
+    Python: a couple of free functions, a class with methods, type
+    hints, and decorator uses. Enough AST structure to exercise the
+    Python extractor; bounded enough to bundle conceptually (we
+    materialize at runtime — no package data needed).
+
+    Returns ``target_dir`` for convenience.
+    """
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    template = (
+        '"""Synthetic file {i} for lacuna calibration."""\n'
+        'from __future__ import annotations\n'
+        '\n'
+        'from typing import Any\n'
+        '\n'
+        '\n'
+        'def alpha_{i}(x: int) -> int:\n'
+        '    """Increment x."""\n'
+        '    return x + 1\n'
+        '\n'
+        '\n'
+        'def beta_{i}(y: int) -> int:\n'
+        '    return alpha_{i}(y) * 2\n'
+        '\n'
+        '\n'
+        'class Calc_{i}:\n'
+        '    """Synthetic calculator."""\n'
+        '\n'
+        '    def __init__(self, base: int = 0) -> None:\n'
+        '        self.base = base\n'
+        '\n'
+        '    def add(self, x: int) -> int:\n'
+        '        return self.base + alpha_{i}(x)\n'
+        '\n'
+        '    def mul(self, x: int, y: int) -> int:\n'
+        '        return alpha_{i}(x) * beta_{i}(y)\n'
+        '\n'
+        '\n'
+        'def gamma_{i}() -> list[int]:\n'
+        '    """Build a small list using the helpers above."""\n'
+        '    return [alpha_{i}(i) for i in range(10)]\n'
+        '\n'
+        # Padding to push each file above ~3 KB so the corpus comfortably
+        # exceeds MIN_CALIBRATION_BYTES (100 KB) at 60 files.
+        + ("# " + "x" * 200 + "\n") * 12
+    )
+
+    for i in range(num_files):
+        (target_dir / f"synth_{i:03d}.py").write_text(template.format(i=i))
+
+    return target_dir
+
+
 def calibrated_bps_table(machine_speed_factor: float) -> dict[str, int]:
     """Apply the speed factor to the baseline BPS table.
 

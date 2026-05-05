@@ -92,8 +92,13 @@ def main(argv: list[str] | None = None) -> int:
     est.add_argument("path", nargs="?", default=".",
                      help="Project root (default: cwd)")
     est.add_argument("--recalibrate", action="store_true",
-                     help="Force re-running the calibration "
-                          "(phase 2 — currently a no-op stub)")
+                     help="Force re-running the calibration even if a "
+                          "fresh cache exists.")
+    est.add_argument("--use-synthetic", action="store_true",
+                     help="Calibrate against a bundled synthetic Python "
+                          "corpus instead of cwd. Useful when the current "
+                          "directory is empty or too small for reliable "
+                          "calibration.")
 
     suppress = sub.add_parser(
         "suppress",
@@ -152,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_est(
             root=Path(args.path).resolve(),
             recalibrate=args.recalibrate,
+            use_synthetic=args.use_synthetic,
         )
 
     if args.cmd == "suppress":
@@ -459,7 +465,9 @@ def scan_corpus(
     }
 
 
-def cmd_est(*, root: Path, recalibrate: bool) -> int:
+def cmd_est(
+    *, root: Path, recalibrate: bool, use_synthetic: bool = False,
+) -> int:
     """Estimate cold-scan time without actually scanning.
 
     Walks the corpus, applies the cost model (calibrated if available,
@@ -499,7 +507,10 @@ def cmd_est(*, root: Path, recalibrate: bool) -> int:
 
     ext_to_extractor = extension_dispatch(extractors)
     shape = walk_corpus(root, ext_to_extractor)
-    if shape.files == 0:
+    # When --use-synthetic is requested we calibrate on a bundled
+    # synthetic corpus regardless of whether `root` has source files.
+    # An empty root just means "no estimate report at the end."
+    if shape.files == 0 and not use_synthetic:
         print(
             f"lacuna: found no source files under {root} for "
             f"languages={list(config.scan.languages)}.",
@@ -527,6 +538,7 @@ def cmd_est(*, root: Path, recalibrate: bool) -> int:
     if calibration is None and (recalibrate or interactive):
         calibration = _interactive_calibrate(
             cwd=root, config=config, force=recalibrate,
+            use_synthetic=use_synthetic,
         )
         if calibration is not None:
             try:
@@ -568,6 +580,16 @@ def cmd_est(*, root: Path, recalibrate: bool) -> int:
     from .estimator import PARALLEL_FRACTION
     p_value = calibration.amdahl_p if calibration is not None else PARALLEL_FRACTION
 
+    # Synthetic-only case: calibration ran but root has no source files,
+    # so there's nothing to estimate. Calibration result is what they
+    # came for; report it and exit.
+    if shape.files == 0:
+        print(
+            f"\nNo source files in {root} to estimate against. "
+            f"Calibration is cached for future `lacuna est` runs."
+        )
+        return 0
+
     report = format_estimate_report(
         root=root,
         shape=shape,
@@ -597,14 +619,21 @@ def _prompt_yn(question: str, *, default: bool = True) -> bool:
 
 
 def _interactive_calibrate(
-    *, cwd: Path, config: Any, force: bool,
+    *, cwd: Path, config: Any, force: bool, use_synthetic: bool = False,
 ) -> Any:
     """Walk the user through first-run calibration; return CalibrationData
     or None if they decline / it fails.
+
+    When ``use_synthetic`` is True, generate a bundled synthetic Python
+    corpus in a temp directory and calibrate against that instead of
+    prompting for a path.
     """
+    import tempfile
+
     from .calibration import (
         MIN_CALIBRATION_BYTES,
         MIN_CALIBRATION_FILES,
+        make_synthetic_corpus,
         run_calibration,
     )
     from .estimator import _format_seconds, _format_size, serial_time_for, walk_corpus
@@ -619,6 +648,27 @@ def _interactive_calibrate(
         if not _prompt_yn("Calibrate now?", default=True):
             print("Skipping calibration; using M-series baseline.\n")
             return None
+
+    # Synthetic-corpus shortcut: skip the path-prompt loop entirely.
+    if use_synthetic:
+        with tempfile.TemporaryDirectory(prefix="lacuna-synth-") as tmpd:
+            synth_root = make_synthetic_corpus(Path(tmpd) / "corpus")
+            print(
+                f"\nCalibrating against bundled synthetic corpus "
+                f"({len(list(synth_root.glob('*.py')))} files)…"
+            )
+            try:
+                data = run_calibration(corpus_root=synth_root, config=config)
+            except (ValueError, KeyboardInterrupt) as e:
+                print(f"Calibration failed: {e}")
+                return None
+        print(
+            f"\nCalibration complete:\n"
+            f"  speed factor:   {data.machine_speed_factor:.2f}× "
+            f"baseline (1.00× = M-series MacBook)\n"
+            f"  fitted Amdahl:  p = {data.amdahl_p:.2f}\n"
+        )
+        return data
 
     # Pick a corpus path
     target: Path | None = cwd
@@ -643,6 +693,8 @@ def _interactive_calibrate(
                 f"{_format_size(shape.bytes)} — too small for reliable "
                 f"calibration (need ≥ {MIN_CALIBRATION_FILES} files / "
                 f"{_format_size(MIN_CALIBRATION_BYTES)}).\n"
+                f"Tip: rerun with `--use-synthetic` to calibrate against "
+                f"a bundled corpus."
             )
             target = _prompt_path("Enter a different path: ")
             if target is None:
