@@ -84,6 +84,17 @@ def main(argv: list[str] | None = None) -> int:
                        help="Parse files across N worker processes "
                             "(default: half of CPU cores)")
 
+    est = sub.add_parser(
+        "est",
+        aliases=["estimate"],
+        help="Estimate cold-scan time without scanning.",
+    )
+    est.add_argument("path", nargs="?", default=".",
+                     help="Project root (default: cwd)")
+    est.add_argument("--recalibrate", action="store_true",
+                     help="Force re-running the calibration "
+                          "(phase 2 — currently a no-op stub)")
+
     suppress = sub.add_parser(
         "suppress",
         help="Mark a gap as known/intentional so it stops appearing in check.",
@@ -135,6 +146,12 @@ def main(argv: list[str] | None = None) -> int:
             quiet=args.quiet,
             as_json=args.as_json,
             jobs=args.jobs,
+        )
+
+    if args.cmd in ("est", "estimate"):
+        return cmd_est(
+            root=Path(args.path).resolve(),
+            recalibrate=args.recalibrate,
         )
 
     if args.cmd == "suppress":
@@ -418,6 +435,82 @@ def scan_corpus(
         "gaps": gaps,
         "scan_stats": scan_stats,
     }
+
+
+def cmd_est(*, root: Path, recalibrate: bool) -> int:
+    """Estimate cold-scan time without actually scanning.
+
+    Phase 1 (this commit): walks the corpus, applies the M-series
+    baseline cost model, prints the jobs-vs-time table. Phase 2
+    will add the first-run interactive calibration prompt that
+    refines the model for the user's specific hardware.
+    """
+    from .estimator import (
+        cpu_count_for_estimator,
+        format_estimate_report,
+        walk_corpus,
+    )
+    from .parallel import default_jobs
+
+    if not root.is_dir():
+        print(f"lacuna: not a directory: {root}", file=sys.stderr)
+        return 2
+
+    if recalibrate:
+        # Phase 2 will run a real calibration here. Keep the flag
+        # accepted so the docs and prompts that reference it don't
+        # have to change when we ship calibration.
+        print(
+            "lacuna est: --recalibrate is a placeholder until "
+            "first-run calibration ships (phase 2). Continuing "
+            "with the M-series baseline.\n",
+            file=sys.stderr,
+        )
+
+    config = _load_config(root, None)
+    extractors = discover_extractors(config.scan.languages)
+    if not extractors:
+        msg = (
+            f"no extractors available for languages={list(config.scan.languages)}"
+        )
+        print(f"lacuna: {msg}", file=sys.stderr)
+        return 2
+
+    ext_to_extractor = extension_dispatch(extractors)
+    shape = walk_corpus(root, ext_to_extractor)
+    if shape.files == 0:
+        print(
+            f"lacuna: found no source files under {root} for "
+            f"languages={list(config.scan.languages)}.",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Reality check: if a prior cold scan exists, surface the actual
+    # time so the user can compare against the prediction. Phase 1
+    # estimates are uncalibrated; this lets the user see how off the
+    # placeholder model is for their hardware/codebase shape.
+    observed_cold_scan_s: float | None = None
+    last_run_path = root / ".lacuna" / "last_run.json"
+    if last_run_path.exists():
+        try:
+            last = json.loads(last_run_path.read_text())
+            if last.get("files_unchanged", -1) == 0 and last.get("duration_ms"):
+                observed_cold_scan_s = float(last["duration_ms"]) / 1000.0
+        except (OSError, ValueError, KeyError):
+            pass
+
+    report = format_estimate_report(
+        root=root,
+        shape=shape,
+        cpu_count=cpu_count_for_estimator(),
+        default_jobs=default_jobs(),
+        calibrated=False,  # phase 2 fills this in from ~/.lacuna/calibration.json
+        calibrated_at=None,
+        observed_cold_scan_s=observed_cold_scan_s,
+    )
+    print(report, end="")
+    return 0
 
 
 def cmd_suppress(
