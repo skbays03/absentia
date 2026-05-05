@@ -15,11 +15,13 @@ from importlib.metadata import entry_points
 from typing import Iterable
 
 from .base import Extractor
+from .javascript import JavaScriptExtractor
 from .python import PythonExtractor
 
 
 _BUILTIN_EXTRACTORS: tuple[type[Extractor], ...] = (
     PythonExtractor,
+    JavaScriptExtractor,
 )
 
 
@@ -64,6 +66,7 @@ def extension_dispatch(extractors: dict[str, Extractor]) -> dict[str, Extractor]
 
 __all__ = [
     "Extractor",
+    "JavaScriptExtractor",
     "PythonExtractor",
     "discover_extractor_classes",
     "discover_extractors",

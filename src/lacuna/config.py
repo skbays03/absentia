@@ -24,7 +24,7 @@ _DEFAULT_PARENT_CLASS_EXCLUDES: tuple[str, ...] = (
 class ScanConfig:
     include: tuple[str, ...] = (".",)
     exclude: tuple[str, ...] = ()
-    languages: tuple[str, ...] = ("python",)
+    languages: tuple[str, ...] = ("python", "javascript", "swift")
 
 
 @dataclass(frozen=True)
