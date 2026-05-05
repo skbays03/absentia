@@ -403,6 +403,24 @@ def format_estimate_report(
             "      across the board because that's the truth, not a bug."
         )
         lines.append("")
+    elif len(curve) > 1:
+        # Default explainer: parallel scaling on this corpus is real
+        # but the efficiency column tapers — that's Amdahl's law, not
+        # a bug. Steer the user toward the speedup column for picking
+        # --jobs since efficiency-on-its-own can read like degradation.
+        lines.append(
+            "Reading efficiency: it's speedup ÷ N. The decline is"
+        )
+        lines.append(
+            "Amdahl's law — the serial tail (group + mine + storage)"
+        )
+        lines.append(
+            "can't shrink with more cores. Pick --jobs by the speedup"
+        )
+        lines.append(
+            "column's row-to-row gain, not by the efficiency number."
+        )
+        lines.append("")
 
     if calibrated:
         when = calibrated_at or "unknown"

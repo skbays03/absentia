@@ -713,11 +713,18 @@ def _interactive_calibrate(
             f"est. duration: ~{_format_seconds(predicted)} "
             f"(uncalibrated estimate)"
         )
-        if not _prompt_yn("Proceed?", default=True):
-            target = _prompt_path("Enter a different path (or empty to abort): ")
-            if target is None:
-                return None
-            continue
+        # When --recalibrate is set, the user already opted into a
+        # recalibration explicitly; skip the secondary "Proceed?"
+        # prompt so the flow works in non-interactive contexts (CI,
+        # piped scripts) without hanging on input.
+        if not force:
+            if not _prompt_yn("Proceed?", default=True):
+                target = _prompt_path(
+                    "Enter a different path (or empty to abort): "
+                )
+                if target is None:
+                    return None
+                continue
 
         # Run it
         try:
