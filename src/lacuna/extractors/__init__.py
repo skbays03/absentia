@@ -15,6 +15,7 @@ from importlib.metadata import entry_points
 from typing import Iterable
 
 from .base import Extractor
+from .csharp import CSharpExtractor
 from .go import GoExtractor
 from .java import JavaExtractor
 from .javascript import JavaScriptExtractor
@@ -34,6 +35,7 @@ _BUILTIN_EXTRACTORS: tuple[type[Extractor], ...] = (
     GoExtractor,
     JavaExtractor,
     RubyExtractor,
+    CSharpExtractor,
     SwiftExtractor,
 )
 
@@ -78,6 +80,7 @@ def extension_dispatch(extractors: dict[str, Extractor]) -> dict[str, Extractor]
 
 
 __all__ = [
+    "CSharpExtractor",
     "Extractor",
     "GoExtractor",
     "JavaExtractor",

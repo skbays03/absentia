@@ -79,7 +79,7 @@ _DEFAULT_PARENT_CLASS_EXCLUDES: tuple[str, ...] = (
 # supertraits and trait conformance), and TS interfaces.
 _DEFAULT_PARENT_CLASS_KINDS: tuple[str, ...] = (
     "class", "struct", "enum", "extension", "protocol",
-    "interface", "trait", "impl", "module",
+    "interface", "trait", "impl", "module", "record",
 )
 
 

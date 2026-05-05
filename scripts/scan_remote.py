@@ -95,6 +95,12 @@ KNOWN_CORPORA: dict[str, list[tuple[str, str]]] = {
         ("https://github.com/rack/rack",
          "Modular, lots of include-based mixins"),
     ],
+    "csharp": [
+        ("https://github.com/serilog/serilog",
+         "Idiomatic logging library, well-conventioned"),
+        ("https://github.com/StackExchange/StackExchange.Redis",
+         "Method-rich Redis client, real-world C# patterns"),
+    ],
     "swift": [
         ("https://github.com/Alamofire/Alamofire",
          "Real Swift idioms, structs + protocols"),
