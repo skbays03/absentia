@@ -83,10 +83,27 @@ def main(argv: list[str] | None = None) -> int:
             "  lacuna check             batch scan, print gaps, exit non-zero on failure\n"
             "  lacuna est               estimate cold-scan time without scanning\n"
             "  lacuna suppress GAP_ID   mark a gap as intentional\n"
+            "  lacuna --purge [PATH]    delete .lacuna/ from PATH (default: cwd)\n"
+            "  lacuna --purge-all       delete every .lacuna/ under $HOME + machine cache\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"lacuna {__version__}")
+    parser.add_argument(
+        "--purge",
+        nargs="?",
+        const=".",
+        default=None,
+        metavar="PATH",
+        help="Remove lacuna state (.lacuna/) from PATH (default: cwd). "
+             "Lacuna config files (lacuna.toml) are left in place.",
+    )
+    parser.add_argument(
+        "--purge-all",
+        action="store_true",
+        help="Remove every lacuna state directory under your home + the "
+             "machine-wide calibration cache. Confirms before deleting.",
+    )
     sub = parser.add_subparsers(dest="cmd")
 
     init = sub.add_parser("init", help="Create lacuna.toml + .lacuna/ in the current dir.")
@@ -145,6 +162,12 @@ def main(argv: list[str] | None = None) -> int:
                           help="Project root (default: cwd)")
 
     args = parser.parse_args(argv)
+
+    # Top-level purge flags run before subcommand dispatch.
+    if args.purge_all:
+        return cmd_purge_all()
+    if args.purge is not None:
+        return cmd_purge(Path(args.purge).expanduser().resolve())
 
     if args.cmd is None:
         # No subcommand: launch the TUI when run from a TTY, otherwise
@@ -520,6 +543,159 @@ def scan_corpus(
         "gaps": gaps,
         "scan_stats": scan_stats,
     }
+
+
+def cmd_purge(root: Path) -> int:
+    """Remove lacuna state from a single project root.
+
+    Only removes ``.lacuna/`` (the gitignored state directory).
+    Leaves ``lacuna.toml`` in place — that's a versioned config the
+    user might want to keep for re-running scans later.
+    """
+    import shutil
+
+    if not root.is_dir():
+        print(f"lacuna: not a directory: {root}", file=sys.stderr)
+        return 2
+
+    target = root / ".lacuna"
+    if not target.exists():
+        print(f"lacuna: no .lacuna/ directory at {root}; nothing to purge.")
+        return 0
+    if not target.is_dir():
+        print(
+            f"lacuna: {target} exists but isn't a directory; refusing to remove.",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Sanity check: verify it looks like a lacuna state dir before deleting.
+    # A real lacuna .lacuna/ has at least a `version` file and `state.db`.
+    looks_lacuna = (
+        (target / "version").exists() or (target / "state.db").exists()
+    )
+    if not looks_lacuna:
+        print(
+            f"lacuna: {target} doesn't look like a lacuna state directory "
+            f"(no version or state.db). Refusing to remove. Delete manually "
+            f"if you're sure.",
+            file=sys.stderr,
+        )
+        return 1
+
+    shutil.rmtree(target)
+    print(f"Removed {target}")
+    if (root / "lacuna.toml").exists():
+        print(
+            f"  (lacuna.toml at {root} kept; "
+            f"delete manually if you also want to remove config)"
+        )
+    return 0
+
+
+def cmd_purge_all() -> int:
+    """Remove every lacuna state dir under $HOME + the machine-wide cache.
+
+    Confirms before deleting; prints what will be removed first so the
+    user can sanity-check.
+    """
+    import shutil
+
+    home = Path.home()
+    print(f"Scanning {home} for lacuna state…", file=sys.stderr)
+
+    # Skip dirs that almost certainly aren't going to host a lacuna state
+    # and would otherwise slow the walk dramatically.
+    SKIP_DIR_NAMES = {
+        ".git", "node_modules", ".venv", "venv", "__pycache__",
+        "site-packages", "dist", "build", ".cache", ".npm", ".cargo",
+        ".rustup", "target", ".gradle", ".m2", ".tox", ".mypy_cache",
+        ".pytest_cache", ".ruff_cache", "Library",  # macOS app data
+    }
+
+    def is_skip_descendant(path: Path) -> bool:
+        return any(part in SKIP_DIR_NAMES for part in path.parts)
+
+    project_state_dirs: list[Path] = []
+    machine_cache = home / ".lacuna"
+
+    # Walk for project-level .lacuna/ dirs
+    try:
+        for path in home.rglob(".lacuna"):
+            if not path.is_dir():
+                continue
+            if is_skip_descendant(path):
+                continue
+            if path == machine_cache:
+                continue  # handled separately below
+            # Verify it looks like a project state dir
+            if (path / "version").exists() or (path / "state.db").exists():
+                project_state_dirs.append(path)
+    except OSError as e:
+        print(f"lacuna: scan failed: {e}", file=sys.stderr)
+        return 2
+
+    # Machine-wide cache (different shape — has calibration.json, no version)
+    machine_cache_present = (
+        machine_cache.is_dir()
+        and (machine_cache / "calibration.json").exists()
+    )
+
+    if not project_state_dirs and not machine_cache_present:
+        print("No lacuna state found.")
+        return 0
+
+    print()
+    if project_state_dirs:
+        print(f"Project state directories ({len(project_state_dirs)}):")
+        for d in sorted(project_state_dirs):
+            print(f"  {d}")
+    if machine_cache_present:
+        print("\nMachine-wide cache:")
+        print(f"  {machine_cache}/calibration.json")
+    print()
+
+    if not sys.stdin.isatty():
+        print(
+            "lacuna --purge-all: refusing to delete in non-interactive "
+            "context. Re-run from a terminal to confirm.",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        response = input("Remove all of these? [y/N]: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return 1
+    if not response.startswith("y"):
+        print("Aborted; nothing removed.")
+        return 0
+
+    removed = 0
+    failed = 0
+    for d in project_state_dirs:
+        try:
+            shutil.rmtree(d)
+            removed += 1
+        except OSError as e:
+            print(f"  failed: {d} ({e})", file=sys.stderr)
+            failed += 1
+
+    if machine_cache_present:
+        try:
+            shutil.rmtree(machine_cache)
+            removed += 1
+        except OSError as e:
+            print(f"  failed: {machine_cache} ({e})", file=sys.stderr)
+            failed += 1
+
+    print(f"\nRemoved {removed} location(s).", end="")
+    if failed:
+        print(f" {failed} failed.")
+    else:
+        print()
+    return 0 if failed == 0 else 1
 
 
 def cmd_est(
