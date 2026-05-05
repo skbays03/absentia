@@ -102,6 +102,28 @@ name prefix rather than reading from a hardcoded list or `pyproject.toml`.
 Adding a new language means installing its grammar; the script picks it up
 on the next run.
 
+### `scripts/scan_remote.py` — sanity-check against real codebases
+
+Clones a public repo into a temp dir, runs `lacuna check`, and cleans up.
+The default is `--depth 1` shallow clone, so even large repos use modest
+disk space. Use it to verify a freshly added extractor actually works on
+real-world code.
+
+```bash
+python scripts/scan_remote.py --list                       # show known corpora
+python scripts/scan_remote.py --language python            # pick a Python corpus
+python scripts/scan_remote.py URL                          # scan an arbitrary URL
+python scripts/scan_remote.py URL --keep                   # leave the clone in place
+python scripts/scan_remote.py URL --languages python,go    # restrict the scan
+```
+
+**Convention: when adding a new language extractor, add at least one entry
+to `KNOWN_CORPORA` in `scripts/scan_remote.py`.** Pick a public repo that's
+idiomatic for the language, small-to-medium sized, convention-rich, and
+well-maintained. The `KNOWN_CORPORA` dict is *the* sanity-check resource —
+if a language ships without an entry, we have no quick way to verify the
+extractor works on real code as the codebase evolves.
+
 ## Conventions
 
 - Docs live in this repo. PRs that need docs are caught in review.
