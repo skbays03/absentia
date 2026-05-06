@@ -160,3 +160,48 @@ def test_init_does_not_duplicate_lacuna_in_gitignore(tmp_path):
     cmd_init(root=tmp_path, force=False)
     contents = (tmp_path / ".gitignore").read_text()
     assert contents.count(".lacuna/") == 1
+
+
+# ── --max-gaps tolerance ─────────────────────────────────────────────
+
+
+def test_max_gaps_above_count_exits_zero(tmp_path, capsys):
+    """--max-gaps N where N >= len(gaps) should pass the build."""
+    _write_corpus(tmp_path)  # produces 1 gap
+    code = cmd_check(
+        root=tmp_path, config=Config(), quiet=True, max_gaps=5,
+    )
+    assert code == 0
+
+
+def test_max_gaps_zero_fails_on_any_gap(tmp_path, capsys):
+    """--max-gaps 0 fails on any gap (matches default behavior)."""
+    _write_corpus(tmp_path)  # produces 1 gap
+    code = cmd_check(
+        root=tmp_path, config=Config(), quiet=True, max_gaps=0,
+    )
+    assert code == 1
+
+
+def test_max_gaps_unset_fails_on_any_gap(tmp_path, capsys):
+    """No --max-gaps argument: any gap fails the build."""
+    _write_corpus(tmp_path)  # produces 1 gap
+    code = cmd_check(root=tmp_path, config=Config(), quiet=True)
+    assert code == 1
+
+
+def test_max_gaps_with_no_gaps_exits_zero(tmp_path, capsys):
+    """No gaps + any --max-gaps value → exit 0."""
+    api = tmp_path / "api"
+    api.mkdir()
+    (api / "x.py").write_text(
+        "def audit(fn):\n    return fn\n\n"
+        "@audit\ndef a():\n    pass\n\n"
+        "@audit\ndef b():\n    pass\n\n"
+        "@audit\ndef c():\n    pass\n"
+    )
+    for n in (0, 5, 100):
+        code = cmd_check(
+            root=tmp_path, config=Config(), quiet=True, max_gaps=n,
+        )
+        assert code == 0, f"--max-gaps {n} on no-gap corpus must exit 0"
