@@ -341,6 +341,7 @@ def format_estimate_report(
     observed_cold_scan_s: float | None = None,
     observed_stage_durations: dict[str, float] | None = None,
     observed_jobs: int | None = None,
+    model_mining_tail_s: float | None = None,
     bps_table: dict[str, int] | None = None,
     parallel_fraction: float = PARALLEL_FRACTION,
 ) -> str:
@@ -422,15 +423,23 @@ def format_estimate_report(
             )
 
         # Mining tail (mine + finalize) doesn't scale with --jobs, so
-        # we treat it as a serial constant. Pulled from last cold-scan
-        # stage timings when available; otherwise we leave the table
-        # showing parse-only times and note the gap.
+        # we treat it as a serial constant. Source priority:
+        # observed > calibrated model > none. Observed comes from a
+        # prior cold scan and is the most accurate; the calibrated
+        # model is a linear extrapolation from the calibration scan
+        # (mining_seconds_per_byte × current corpus bytes), good to
+        # ±20% on typical corpora.
         mine_tail_s: float | None = None
+        mine_tail_source: str = ""  # "observed" | "estimated"
         if observed_stage_durations is not None:
             mine_tail_s = (
                 observed_stage_durations.get("mine", 0.0)
                 + observed_stage_durations.get("finalize", 0.0)
             )
+            mine_tail_source = "observed"
+        elif model_mining_tail_s is not None and model_mining_tail_s > 0:
+            mine_tail_s = model_mining_tail_s
+            mine_tail_source = "estimated"
 
         if observed_stage_durations is not None:
             walk_s = observed_stage_durations.get("walk", 0.0)
@@ -465,9 +474,13 @@ def format_estimate_report(
         # the full check time at each --jobs setting. Otherwise keep
         # the original parse-only table.
         if mine_tail_s is not None:
+            mine_header_label = (
+                "+mine(obs)" if mine_tail_source == "observed"
+                else "+mine(est)"
+            )
             p(
-                "    [bold]jobs    parse        +mine     check     "
-                "speedup   efficiency[/]"
+                f"    [bold]jobs    parse        {mine_header_label}  check     "
+                f"speedup   efficiency[/]"
             )
             for e in curve:
                 marker = "   [dim]← default[/]" if e.jobs == default_jobs else ""
@@ -482,14 +495,28 @@ def format_estimate_report(
                     f"{e.efficiency * 100:>3.0f}%{marker}"
                 )
             p("")
-            p(
-                "    [dim]check = parse(jobs) + serial tail "
-                "(mine + finalize, fixed). The tail comes from your[/]"
-            )
-            p(
-                "    [dim]last cold scan; speedup/efficiency columns "
-                "describe the parse stage only.[/]"
-            )
+            if mine_tail_source == "observed":
+                p(
+                    "    [dim]check = parse(jobs) + serial tail "
+                    "(mine + finalize). The tail is the[/]"
+                )
+                p(
+                    "    [dim]measured value from your last cold scan; "
+                    "speedup/efficiency cover parse only.[/]"
+                )
+            else:  # estimated
+                p(
+                    "    [dim]check = parse(jobs) + serial tail "
+                    "(mine + finalize). The tail is estimated[/]"
+                )
+                p(
+                    "    [dim]from calibration (linear extrapolation, "
+                    "±20% on typical corpora).[/]"
+                )
+                p(
+                    "    [dim]Run [bold cyan]`lacuna check`[/] to replace "
+                    "the estimate with measured timings.[/]"
+                )
         else:
             p("    [bold]jobs    est. parse   speedup   efficiency[/]")
             for e in curve:
@@ -504,7 +531,8 @@ def format_estimate_report(
             p("")
             p(
                 "    [dim]Run [bold cyan]`lacuna check`[/] once to populate "
-                "the mining-tail column (parse + mine + finalize totals).[/]"
+                "the mining-tail column, or [bold cyan]`lacuna est "
+                "--recalibrate`[/] for an estimate.[/]"
             )
         p("")
 

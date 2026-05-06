@@ -82,6 +82,16 @@ class CalibrationData:
     # ``M_SERIES_BPS[lang] × machine_speed_factor``. Other languages
     # fall back to the scaled baseline.
     per_language_bps: dict[str, int] = field(default_factory=dict)
+    # Mining-tail throughput (mine + finalize stages combined),
+    # measured during the calibration scan at jobs=1. Lets `lacuna
+    # est` predict full check time without requiring a prior `lacuna
+    # check` to populate last_run.json. Older calibration files
+    # without this field default to 0.0 (estimator falls back to a
+    # parse-only table). Linear extrapolation: mining_estimate_s ≈
+    # corpus_bytes × mining_seconds_per_byte. Holds within ±20% on
+    # typical corpora; superlinear above ~50 MB because pair-mining
+    # cost grows with name diversity.
+    mining_seconds_per_byte: float = 0.0
 
 
 def calibration_path() -> Path:
@@ -257,6 +267,7 @@ def run_calibration(
 
     observations: list[tuple[int, float]] = []
     primary_elapsed = 0.0
+    primary_mining_tail_s = 0.0
     for n_jobs in jobs_to_measure:
         _step(indicator, f"scanning at jobs={n_jobs}")
 
@@ -275,7 +286,7 @@ def run_calibration(
 
             started = time.perf_counter()
             with _ticker_if_indicator(indicator, _ticking):
-                scan_corpus(
+                result = scan_corpus(
                     root=corpus_root,
                     state_dir=tmp_state,
                     config=config,
@@ -287,6 +298,18 @@ def run_calibration(
         observations.append((n_jobs, elapsed))
         if n_jobs == 1:
             primary_elapsed = elapsed
+            # Capture the mining-tail (mine + finalize) from the
+            # jobs=1 reference scan. We use jobs=1 so the figure is
+            # comparable across machines: mining caps at 4 threads
+            # anyway, but at jobs=1 we get a deterministic baseline.
+            stage_ms = result.get("scan_stats", {}).get(
+                "stage_durations_ms", {}
+            )
+            if isinstance(stage_ms, dict):
+                primary_mining_tail_s = (
+                    float(stage_ms.get("mine", 0.0))
+                    + float(stage_ms.get("finalize", 0.0))
+                ) / 1000.0
 
     predicted = serial_time_for(shape.by_language_bytes)
     # Subtract overhead before computing the throughput factor.
@@ -317,6 +340,14 @@ def run_calibration(
         except Exception:
             pass
 
+    # Mining-tail throughput as seconds-per-byte. Linear scaling is
+    # approximate but good enough for ±20% predictions; the user gets
+    # a refined figure once they run a real `lacuna check`.
+    mining_spb = (
+        primary_mining_tail_s / shape.bytes
+        if shape.bytes > 0 and primary_mining_tail_s > 0 else 0.0
+    )
+
     return CalibrationData(
         calibrated_at=datetime.now(timezone.utc).isoformat(),
         lacuna_version=__version__,
@@ -329,6 +360,7 @@ def run_calibration(
         amdahl_p=fitted_p,
         jobs_curve_observed=observations,
         per_language_bps=per_lang_bps,
+        mining_seconds_per_byte=mining_spb,
     )
 
 

@@ -1223,6 +1223,21 @@ def cmd_est(
     from .estimator import PARALLEL_FRACTION
     p_value = calibration.amdahl_p if calibration is not None else PARALLEL_FRACTION
 
+    # Calibrated mining-tail estimate for this corpus (used when no
+    # observed last_run.json data exists). Linear extrapolation:
+    # mining_spb measured during calibration × current corpus bytes.
+    # When observed_stage_durations is also present, that wins inside
+    # format_estimate_report — observed beats modeled.
+    model_mining_tail_s: float | None = None
+    if (
+        calibration is not None
+        and calibration.mining_seconds_per_byte > 0
+        and shape.bytes > 0
+    ):
+        model_mining_tail_s = (
+            shape.bytes * calibration.mining_seconds_per_byte
+        )
+
     # Synthetic-only case: calibration ran but root has no source files,
     # so there's nothing to estimate. Calibration result is what they
     # came for; report it and exit.
@@ -1243,6 +1258,7 @@ def cmd_est(
         observed_cold_scan_s=observed_cold_scan_s,
         observed_stage_durations=observed_stage_durations,
         observed_jobs=observed_jobs,
+        model_mining_tail_s=model_mining_tail_s,
         bps_table=bps_table,
         parallel_fraction=p_value,
     )
