@@ -381,39 +381,11 @@ def _run_check(
         if line is not None:
             print(line, file=sys.stderr)
 
-    # Live progress bar for the scan loop, in interactive text mode.
-    # We need a total file count to render percent/ETA — get it from
-    # walk_corpus, which is sub-second on small projects but ~1–2 s on
-    # the Linux kernel; show a spinner during that walk so the gap
-    # between "Scanning N files…" preamble and the live progress bar
-    # doesn't read as a hang.
-    progress_bar = None
-    progress_callback = None
-    if interactive_text_mode:
-        from .estimator import walk_corpus
-        from .progress import ProgressBar, Spinner, spinning
-        ext_to = extension_dispatch(extractors)
-        walk_spinner = Spinner(label="Walking corpus")
-        with spinning(walk_spinner):
-            shape = walk_corpus(
-                root, ext_to, on_file=walk_spinner.set_current_item,
-            )
-        walk_spinner.finish()
-        if shape.files > 0:
-            progress_bar = ProgressBar(total=shape.files, label="Scanning")
-            # bar.update accepts (n, item=...) so we just hand its
-            # method to the scan loop directly.
-            progress_callback = progress_bar.update
-
-    try:
-        result = scan_corpus(
-            root=root, state_dir=state_dir, config=config,
-            started=started, started_iso=started_iso, extractors=extractors,
-            jobs=jobs, progress_callback=progress_callback,
-        )
-    finally:
-        if progress_bar is not None:
-            progress_bar.finish()
+    result = scan_corpus(
+        root=root, state_dir=state_dir, config=config,
+        started=started, started_iso=started_iso, extractors=extractors,
+        jobs=jobs, interactive=interactive_text_mode,
+    )
     gaps = result["gaps"]
     rules_by_id = result["rules_by_id"]
     entities = result["entities"]
@@ -451,6 +423,7 @@ def scan_corpus(
     extractors: dict | None = None,
     jobs: int | None = None,
     progress_callback: Any = None,
+    interactive: bool = False,
 ) -> dict:
     """Run a full scan + mine cycle and return the result.
 
@@ -463,8 +436,16 @@ def scan_corpus(
 
     ``progress_callback``, if provided, is called as
     ``progress_callback(files_done, files_total)`` after each file is
-    processed during the scan. Used by ``lacuna check`` to drive a
-    live progress bar; passed through to ``_scan_incremental``.
+    processed during the scan. The TUI uses this to drive its own
+    widgets. Mutually exclusive with ``interactive=True``.
+
+    ``interactive`` controls per-stage TTY progress UI. When True (set
+    by ``cmd_check`` in interactive text mode), each pipeline stage
+    (walk, parse, store, mine, finalize) gets its own indicator that
+    finishes with a ✓ summary line + elapsed time — so the user can
+    see which stage just took N seconds and a hang is immediately
+    diagnosable. The TUI passes ``interactive=False`` and drives its
+    own widgets via ``progress_callback``.
     """
     from datetime import datetime, timezone
 
@@ -481,14 +462,61 @@ def scan_corpus(
 
     ext_to_extractor = extension_dispatch(extractors)
 
+    # ── Walk stage: count files up-front so the parse bar has a
+    # total. Skipped when the caller is driving its own progress UI
+    # (TUI). Even at 65 k files this is sub-second on Mac and ~1–2 s
+    # on the kernel; the spinner makes that wait visible.
+    parse_bar = None
+    if interactive:
+        from .estimator import _format_size, walk_corpus
+        from .progress import ProgressBar, Spinner, _format_time, spinning
+
+        walk_spinner = Spinner(label="Walking corpus")
+        walk_started = time.perf_counter()
+        with spinning(walk_spinner):
+            shape = walk_corpus(
+                root, ext_to_extractor,
+                on_file=walk_spinner.set_current_item,
+            )
+        walk_spinner.finish(
+            end_message=(
+                f"Walked corpus  ·  {shape.files:,d} files, "
+                f"{_format_size(shape.bytes)}  ·  "
+                f"{_format_time(time.perf_counter() - walk_started)}"
+            )
+        )
+
+        if shape.files > 0:
+            parse_bar = ProgressBar(total=shape.files, label="Scanning")
+            progress_callback = parse_bar.update
+
     with Storage(state_dir) as storage:
         run_id = storage.begin_run()
-        files_seen, files_unchanged = _scan_incremental(
-            root, storage, run_id, ext_to_extractor, jobs=jobs,
-            progress_callback=progress_callback,
-        )
-        entities, feature_index = storage.load_all()
-        storage.commit()
+        try:
+            files_seen, files_unchanged = _scan_incremental(
+                root, storage, run_id, ext_to_extractor, jobs=jobs,
+                progress_callback=progress_callback,
+            )
+        finally:
+            if parse_bar is not None:
+                parse_bar.finish()
+
+        # ── Storage-commit stage ──────────────────────────────────
+        if interactive:
+            store_spinner = Spinner(label="Loading entity store")
+            store_started = time.perf_counter()
+            with spinning(store_spinner):
+                entities, feature_index = storage.load_all()
+                storage.commit()
+            store_spinner.finish(
+                end_message=(
+                    f"Loaded store  ·  {len(entities):,d} entities  ·  "
+                    f"{_format_time(time.perf_counter() - store_started)}"
+                )
+            )
+        else:
+            entities, feature_index = storage.load_all()
+            storage.commit()
 
         # Corpus-level feature enrichment: features that need to know
         # about the whole corpus (e.g. sibling_test, which checks
@@ -520,6 +548,7 @@ def scan_corpus(
                 kind_filter=config.selectors.parent_class.kind_filter,
             ))
 
+        # ── Mining stage ──────────────────────────────────────────
         # Mining strategies are independent: each takes the same
         # read-only inputs and produces its own (rules, gaps). Run
         # them in parallel via threads. Pure-Python loops yield the
@@ -550,28 +579,64 @@ def scan_corpus(
         # Always at least 1 even on a single-core machine.
         mining_workers = max(1, min(4, jobs))
 
-        with ThreadPoolExecutor(max_workers=mining_workers) as ex:
-            mining_futures = []
-            # Frequency mining over each feature kind
-            for kind in ("decorator", "calls", "parent_class", "sibling_test"):
-                mining_futures.append(ex.submit(_mine_kind, kind))
-            # Symmetry pairs (definition-level: class/file scope)
-            mining_futures.append(
-                ex.submit(find_symmetry_gaps, entities)
-            )
-            # Call-pair mining (function scope)
-            mining_futures.append(
-                ex.submit(find_call_pair_gaps, entities, feature_index)
-            )
-            # Series-gap detection (numeric file sequences)
-            mining_futures.append(
-                ex.submit(find_series_gaps, entities)
-            )
+        # The mining tasks; a list of (label, callable) we'll submit
+        # as one batch. Labels surface in the spinner sub-line so the
+        # user can see which strategy just finished — and, if anything
+        # hangs, which one is the culprit.
+        mining_tasks: list[tuple[str, Any]] = [
+            ("frequency:decorator",     lambda: _mine_kind("decorator")),
+            ("frequency:calls",         lambda: _mine_kind("calls")),
+            ("frequency:parent_class",  lambda: _mine_kind("parent_class")),
+            ("frequency:sibling_test",  lambda: _mine_kind("sibling_test")),
+            ("symmetry pairs",          lambda: find_symmetry_gaps(entities)),
+            ("call-pair",               lambda: find_call_pair_gaps(entities, feature_index)),
+            ("series",                  lambda: find_series_gaps(entities)),
+        ]
 
-            for fut in mining_futures:
-                rs, gs = fut.result()
-                rules.extend(rs)
-                gaps.extend(gs)
+        if interactive:
+            mine_spinner = Spinner(label="Mining rules")
+            mine_started = time.perf_counter()
+            done = 0
+            total_tasks = len(mining_tasks)
+            with spinning(mine_spinner), \
+                    ThreadPoolExecutor(max_workers=mining_workers) as ex:
+                fut_to_label = {
+                    ex.submit(fn): label for label, fn in mining_tasks
+                }
+                from concurrent.futures import as_completed
+                for fut in as_completed(fut_to_label):
+                    rs, gs = fut.result()
+                    rules.extend(rs)
+                    gaps.extend(gs)
+                    done += 1
+                    mine_spinner.set_current_item(
+                        f"{done}/{total_tasks} done · last: "
+                        f"{fut_to_label[fut]} · {len(rules):,d} rules so far"
+                    )
+            mine_spinner.finish(
+                end_message=(
+                    f"Mined rules  ·  {len(rules):,d} rules, "
+                    f"{len(gaps):,d} candidate gaps  ·  "
+                    f"{_format_time(time.perf_counter() - mine_started)}"
+                )
+            )
+        else:
+            with ThreadPoolExecutor(max_workers=mining_workers) as ex:
+                futures = [ex.submit(fn) for _, fn in mining_tasks]
+                for fut in futures:
+                    rs, gs = fut.result()
+                    rules.extend(rs)
+                    gaps.extend(gs)
+
+        # ── Finalize stage: dedup, suppress, end_run ──────────────
+        if interactive:
+            final_spinner = Spinner(label="Finalizing")
+            final_started = time.perf_counter()
+            final_ctx: Any = spinning(final_spinner)
+            final_ctx.__enter__()
+        else:
+            final_spinner = None
+            final_ctx = None
 
         # Dedupe gaps across mining strategies. Frequency mining,
         # symmetry pairs, and call-pair mining can each independently
@@ -626,6 +691,20 @@ def scan_corpus(
             rules_discovered=len(rules),
             gaps_found=len(gaps),
         )
+
+        if final_spinner is not None and final_ctx is not None:
+            final_ctx.__exit__(None, None, None)
+            suppress_note = (
+                f", {suppressed_count} suppressed"
+                if suppressed_count else ""
+            )
+            final_spinner.finish(
+                end_message=(
+                    f"Finalized  ·  {len(gaps):,d} gaps after dedup"
+                    f"{suppress_note}  ·  "
+                    f"{_format_time(time.perf_counter() - final_started)}"
+                )
+            )
 
     rules_by_id = {r.id: r for r in rules}
     scan_stats = {
