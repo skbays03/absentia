@@ -77,14 +77,21 @@ def main(argv: list[str] | None = None) -> int:
         description="Find the holes your code already drew.",
         epilog=(
             "Quick reference:\n"
-            "  lacuna                   open the TUI in the current directory\n"
-            "  lacuna PATH              open the TUI in PATH (e.g. lacuna ~/myrepo)\n"
-            "  lacuna init              bootstrap a project here\n"
-            "  lacuna check             batch scan, print gaps, exit non-zero on failure\n"
-            "  lacuna est               estimate cold-scan time without scanning\n"
-            "  lacuna suppress GAP_ID   mark a gap as intentional\n"
-            "  lacuna --purge [PATH]    delete .lacuna/ from PATH (default: cwd)\n"
-            "  lacuna --purge-all       delete every .lacuna/ under $HOME + machine cache\n"
+            "  lacuna                          open the TUI in the current directory\n"
+            "  lacuna PATH                     open the TUI in PATH (e.g. lacuna ~/myrepo)\n"
+            "  lacuna init                     bootstrap a project here\n"
+            "  lacuna check                    batch scan, print gaps, exit non-zero on failure\n"
+            "  lacuna check --jobs N           override worker count (default: half of cores)\n"
+            "  lacuna est                      estimate cold-scan time without scanning\n"
+            "  lacuna est --recalibrate        force fresh calibration on this machine\n"
+            "  lacuna est --use-synthetic      calibrate against bundled corpus (empty cwd OK)\n"
+            "  lacuna suppress GAP_ID          mark a gap as intentional\n"
+            "  lacuna suppress --list          list current suppressions\n"
+            "  lacuna --purge [PATH]           delete .lacuna/ from PATH (default: cwd)\n"
+            "  lacuna --purge-all              delete every .lacuna/ under $HOME + machine cache\n"
+            "\n"
+            "Each subcommand has its own --help with the full flag list:\n"
+            "  lacuna check --help · lacuna est --help · lacuna suppress --help\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
