@@ -87,8 +87,8 @@ def main(argv: list[str] | None = None) -> int:
             "  lacuna init                     bootstrap a project here\n"
             "  lacuna check                    batch scan, print gaps, exit non-zero on failure\n"
             "  lacuna check --jobs N           override worker count (default: half of cores)\n"
-            "  lacuna est                      estimate cold-scan time without scanning\n"
-            "  lacuna est --recalibrate        force fresh calibration on this machine\n"
+            "  lacuna est                      headline total + per-jobs check breakdown\n"
+            "  lacuna est --recalibrate        re-run calibration (also recalibrates on PATH)\n"
             "  lacuna est --use-synthetic      calibrate against bundled corpus (empty cwd OK)\n"
             "  lacuna suppress GAP_ID          mark a gap as intentional\n"
             "  lacuna suppress --list          list current suppressions\n"
@@ -162,7 +162,12 @@ def main(argv: list[str] | None = None) -> int:
     est = sub.add_parser(
         "est",
         aliases=["estimate"],
-        help="Estimate cold-scan time without scanning.",
+        help=(
+            "Predict total `lacuna check` time without scanning. "
+            "Shows a headline total ± confidence band and a per-jobs "
+            "breakdown (parse + mine_tail = check). Confidence "
+            "tightens once you've actually run check on this corpus."
+        ),
     )
     est.add_argument("path", nargs="?", default=".",
                      help="Project root (default: cwd)")
@@ -1252,6 +1257,14 @@ def cmd_est(
         )
         return 0
 
+    # Coverage = languages with their own bps measurement OR any
+    # language that appeared in the calibration corpus (those got
+    # global-speed-factor scaling, which is wider-band but still
+    # better than uncalibrated baseline).
+    calibrated_languages: set[str] = set()
+    if calibration is not None:
+        calibrated_languages |= set(calibration.per_language_bps.keys())
+        calibrated_languages |= set(calibration.calibration_corpus_languages)
     report = format_estimate_report(
         root=root,
         shape=shape,
@@ -1263,6 +1276,7 @@ def cmd_est(
         observed_stage_durations=observed_stage_durations,
         observed_jobs=observed_jobs,
         model_mining_tail_s=model_mining_tail_s,
+        calibrated_languages=calibrated_languages,
         bps_table=bps_table,
         parallel_fraction=p_value,
     )

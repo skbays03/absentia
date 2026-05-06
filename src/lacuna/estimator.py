@@ -330,6 +330,111 @@ def _color_for_speedup(speedup: float) -> str:
     return "dim"
 
 
+def _estimate_confidence(
+    *,
+    has_observed: bool,
+    calibrated: bool,
+    calibrated_at: str | None,
+    target_by_language_bytes: dict[str, int],
+    calibrated_languages: set[str],
+) -> tuple[str, float, str]:
+    """Return ``(label, relative_error, reason)`` for the est headline.
+
+    Inputs:
+      - ``has_observed``: whether the user has a prior cold-scan
+        timing for this corpus (last_run.json present, files_unchanged
+        was 0). When True the answer is essentially measured, not
+        modeled; we get tight bounds and a "high" label.
+      - ``calibrated`` / ``calibrated_at``: did the user run
+        calibration, and how stale is it. Older calibration → wider
+        band.
+      - ``target_by_language_bytes`` / ``calibrated_languages``: how
+        much of the est target's byte mass falls in languages that
+        were actually measured during calibration. Low overlap means
+        we're falling back to the M-series baseline scaled by the
+        global speed factor — that's noisier than per-language
+        measurement.
+
+    The numbers are rough: a "medium ±25%" band is meant to signal
+    "trust the order of magnitude, expect 20-30% error". Don't read
+    the relative_error as a tight statistical CI.
+    """
+    if has_observed:
+        return ("high", 0.05, "ground-truth from prior cold scan")
+
+    if not calibrated:
+        return (
+            "low", 0.50,
+            "uncalibrated — using M-series baseline; run "
+            "`lacuna est --recalibrate` for accuracy"
+        )
+
+    # Age penalty
+    age_days: int | None = None
+    if calibrated_at:
+        try:
+            from datetime import datetime, timezone
+            ts = datetime.fromisoformat(calibrated_at)
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            age_days = max(0, (now - ts).days)
+        except ValueError:
+            age_days = None
+
+    # Language coverage in the calibration data
+    target_total = sum(target_by_language_bytes.values()) or 1
+    covered = sum(
+        n for lang, n in target_by_language_bytes.items()
+        if lang in calibrated_languages
+    )
+    coverage = covered / target_total
+
+    # Base error from coverage
+    if coverage >= 0.90:
+        base = 0.15
+        coverage_note = "calibration covers your language mix"
+    elif coverage >= 0.50:
+        base = 0.25
+        coverage_note = (
+            f"calibration partially covers your mix ({coverage * 100:.0f}%)"
+        )
+    else:
+        base = 0.40
+        coverage_note = (
+            f"calibration covers only {coverage * 100:.0f}% of your "
+            f"language mix; rest scaled from baseline"
+        )
+
+    # Age multiplier (capped)
+    if age_days is None:
+        age_mult = 1.0
+    elif age_days <= 30:
+        age_mult = 1.0
+    elif age_days <= 90:
+        age_mult = 1.2
+    else:
+        age_mult = 1.5
+
+    rel_err = min(0.60, base * age_mult)
+
+    if rel_err <= 0.18:
+        label = "high"
+    elif rel_err <= 0.30:
+        label = "medium"
+    else:
+        label = "low"
+
+    age_phrase = (
+        f"calibration is {age_days}d old"
+        if age_days is not None and age_days > 30 else None
+    )
+    reason_parts = [coverage_note]
+    if age_phrase:
+        reason_parts.append(age_phrase)
+    return label, rel_err, "; ".join(reason_parts)
+
+
 def format_estimate_report(
     *,
     root: Path,
@@ -342,6 +447,7 @@ def format_estimate_report(
     observed_stage_durations: dict[str, float] | None = None,
     observed_jobs: int | None = None,
     model_mining_tail_s: float | None = None,
+    calibrated_languages: set[str] | None = None,
     bps_table: dict[str, int] | None = None,
     parallel_fraction: float = PARALLEL_FRACTION,
 ) -> str:
@@ -402,6 +508,61 @@ def format_estimate_report(
         default_est = next(
             (e for e in curve if e.jobs == default_jobs), curve[-1]
         )
+
+        # ── Headline: total check estimate ──────────────────────────
+        # Single trustworthy number up top with a ± band derived from
+        # calibration freshness + language-mix overlap. When we have
+        # observed stage data this is essentially measured; otherwise
+        # it's parse(default jobs) + the modeled or observed mining
+        # tail. Detail tables follow below.
+        head_mine_tail = 0.0
+        head_mine_source = "none"
+        if observed_stage_durations is not None:
+            head_mine_tail = (
+                observed_stage_durations.get("mine", 0.0)
+                + observed_stage_durations.get("finalize", 0.0)
+            )
+            head_mine_source = "observed"
+        elif model_mining_tail_s is not None and model_mining_tail_s > 0:
+            head_mine_tail = model_mining_tail_s
+            head_mine_source = "estimated"
+
+        confidence_label, rel_err, conf_reason = _estimate_confidence(
+            has_observed=observed_stage_durations is not None,
+            calibrated=calibrated,
+            calibrated_at=calibrated_at,
+            target_by_language_bytes=shape.by_language_bytes,
+            calibrated_languages=calibrated_languages or set(),
+        )
+        conf_color = {
+            "high": "bright_green", "medium": "yellow", "low": "red",
+        }.get(confidence_label, "yellow")
+
+        if head_mine_tail > 0 or observed_cold_scan_s is not None:
+            total_s = (
+                observed_cold_scan_s
+                if observed_cold_scan_s is not None
+                else default_est.parallel_time_s + head_mine_tail
+            )
+            band_s = total_s * rel_err
+            tail_phrase = (
+                f"parse {_format_seconds(default_est.parallel_time_s)} + "
+                f"mine {_format_seconds(head_mine_tail)}"
+                if head_mine_tail > 0 else "from prior cold scan"
+            )
+            p(
+                f"[bold]Total check estimate[/]      "
+                f"[bright_green]~{_format_seconds(total_s)}[/] "
+                f"[dim]± {_format_seconds(band_s)}[/]   "
+                f"([{conf_color}]{confidence_label} confidence[/])"
+            )
+            p(
+                f"  components             [dim]{tail_phrase} at "
+                f"default jobs ({default_jobs}) · {head_mine_source}[/]"
+            )
+            p(f"  [dim]{conf_reason}[/]")
+            p("")
+
         p(f"Single-process baseline   {_format_seconds(serial)}")
         default_color = _color_for_speedup(default_est.speedup)
         p(

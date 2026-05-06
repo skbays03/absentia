@@ -92,6 +92,13 @@ class CalibrationData:
     # typical corpora; superlinear above ~50 MB because pair-mining
     # cost grows with name diversity.
     mining_seconds_per_byte: float = 0.0
+    # Languages that appeared in the calibration corpus, even those
+    # that didn't reach MIN_BYTES_PER_LANGUAGE for an independent
+    # bps measurement. Used by the est confidence model: a language
+    # in this list got at least scaled-baseline treatment (the
+    # calibration corpus was timed on it), so coverage is more
+    # generous than just `per_language_bps` keys.
+    calibration_corpus_languages: list[str] = field(default_factory=list)
 
 
 def calibration_path() -> Path:
@@ -361,6 +368,7 @@ def run_calibration(
         jobs_curve_observed=observations,
         per_language_bps=per_lang_bps,
         mining_seconds_per_byte=mining_spb,
+        calibration_corpus_languages=sorted(shape.by_language_bytes.keys()),
     )
 
 
