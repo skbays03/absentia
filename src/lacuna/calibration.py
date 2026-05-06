@@ -259,6 +259,11 @@ def run_calibration(
             from .cli import scan_corpus  # late import: avoid cycle
             from .progress import ticking as _ticking
 
+            # Bridge: scan_corpus's per-file progress callback feeds
+            # the StepIndicator's sub-line so the user sees files
+            # flash by during each calibration sub-scan.
+            cb = _make_indicator_progress_bridge(indicator)
+
             started = time.perf_counter()
             with _ticker_if_indicator(indicator, _ticking):
                 scan_corpus(
@@ -267,6 +272,7 @@ def run_calibration(
                     config=config,
                     jobs=n_jobs,
                     extractors=extractors,
+                    progress_callback=cb,
                 )
             elapsed = time.perf_counter() - started
         observations.append((n_jobs, elapsed))
@@ -368,6 +374,8 @@ def calibrate_per_language(
             from .cli import scan_corpus  # late import: avoid cycle
             from .progress import ticking as _ticking
 
+            cb = _make_indicator_progress_bridge(progress)
+
             started = time.perf_counter()
             with _ticker_if_indicator(progress, _ticking):
                 scan_corpus(
@@ -376,6 +384,7 @@ def calibrate_per_language(
                     config=sub_config,
                     jobs=1,
                     extractors=sub_extractors,
+                    progress_callback=cb,
                 )
             elapsed = time.perf_counter() - started
 
@@ -401,6 +410,30 @@ def _step(indicator: Any, label: str) -> None:
         indicator.step(label)
     except Exception:
         pass
+
+
+def _make_indicator_progress_bridge(indicator: Any) -> Any:
+    """Return a ``progress_callback(n, item=...)``-compatible function
+    that updates ``indicator``'s current-item sub-line.
+
+    Returns None when ``indicator`` is None or has no
+    ``set_current_item`` method (defensive for non-progress callers).
+    Calibration's StepIndicator is the typical target — the bridge
+    lets each sub-scan's per-file ticks flow into the step's sub-
+    display so the user sees what calibration is currently looking at.
+    """
+    if indicator is None or not hasattr(indicator, "set_current_item"):
+        return None
+
+    def bridge(n: int = 1, item: str | None = None) -> None:
+        if item is None:
+            return
+        try:
+            indicator.set_current_item(item)
+        except Exception:
+            pass  # UI bridge must never break the scan
+
+    return bridge
 
 
 @contextmanager
