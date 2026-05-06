@@ -455,11 +455,21 @@ class LacunaApp(App[None]):
     def _do_scan(self) -> None:
         from ..cli import scan_corpus
 
+        # jobs=1 inside the TUI is intentional: spawn-mode
+        # ProcessPoolExecutor (the macOS multiprocessing default) doesn't
+        # play nicely with Textual's running event loop — the spawn
+        # child's fd validation surfaces as `bad value(s) in
+        # fds_to_keep`. Mac users would hit this on any non-trivial
+        # corpus. Single-process scans avoid the issue entirely; the CLI
+        # path (`lacuna check`) still gets full parallelism. Most TUI
+        # scans are incremental anyway, so should_parallelize would skip
+        # the pool even at higher jobs.
         try:
             result = scan_corpus(
                 root=self.root,
                 state_dir=self.root / ".lacuna",
                 config=self.config,
+                jobs=1,
             )
         except Exception as exc:
             self.notify(f"Scan failed: {exc}", severity="error", timeout=8)
