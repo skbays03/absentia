@@ -37,7 +37,11 @@ _INIT_TEMPLATE = """\
 [scan]
 include   = ["."]
 exclude   = []
-languages = ["python"]
+# Languages to scan. Omitting this key enables every built-in
+# extractor (python, javascript, typescript, tsx, rust, go, java,
+# ruby, csharp, swift, c, cpp, php, kotlin, scala, lua, bash).
+# Set explicitly to restrict — e.g. languages = ["python", "rust"].
+# languages = ["python"]
 
 [mining]
 min_confidence = 0.8
