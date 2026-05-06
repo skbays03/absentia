@@ -477,6 +477,15 @@ def scan_corpus(
 
     ext_to_extractor = extension_dispatch(extractors)
 
+    # Per-stage wall times — populated whether or not we're rendering
+    # spinners. Persisted into last_run.json so `lacuna est` can show a
+    # real breakdown (parse N s + mine M s + finalize K s = total) and
+    # predict full check time, not just the parse stage.
+    stage_durations: dict[str, float] = {
+        "walk": 0.0, "parse": 0.0, "store": 0.0,
+        "mine": 0.0, "finalize": 0.0,
+    }
+
     # ── Walk stage: count files up-front so the parse bar has a
     # total. Skipped when the caller is driving its own progress UI
     # (TUI). Even at 65 k files this is sub-second on Mac and ~1–2 s
@@ -493,11 +502,12 @@ def scan_corpus(
                 root, ext_to_extractor,
                 on_file=walk_spinner.set_current_item,
             )
+        stage_durations["walk"] = time.perf_counter() - walk_started
         walk_spinner.finish(
             end_message=(
                 f"Walked corpus  ·  {shape.files:,d} files, "
                 f"{_format_size(shape.bytes)}  ·  "
-                f"{_format_time(time.perf_counter() - walk_started)}"
+                f"{_format_time(stage_durations['walk'])}"
             )
         )
 
@@ -507,6 +517,7 @@ def scan_corpus(
 
     with Storage(state_dir) as storage:
         run_id = storage.begin_run()
+        parse_started = time.perf_counter()
         try:
             files_seen, files_unchanged = _scan_incremental(
                 root, storage, run_id, ext_to_extractor, jobs=jobs,
@@ -515,23 +526,26 @@ def scan_corpus(
         finally:
             if parse_bar is not None:
                 parse_bar.finish()
+        stage_durations["parse"] = time.perf_counter() - parse_started
 
         # ── Storage-commit stage ──────────────────────────────────
+        store_started = time.perf_counter()
         if interactive:
             store_spinner = Spinner(label="Loading entity store")
-            store_started = time.perf_counter()
             with spinning(store_spinner):
                 entities, feature_index = storage.load_all()
                 storage.commit()
+            stage_durations["store"] = time.perf_counter() - store_started
             store_spinner.finish(
                 end_message=(
                     f"Loaded store  ·  {len(entities):,d} entities  ·  "
-                    f"{_format_time(time.perf_counter() - store_started)}"
+                    f"{_format_time(stage_durations['store'])}"
                 )
             )
         else:
             entities, feature_index = storage.load_all()
             storage.commit()
+            stage_durations["store"] = time.perf_counter() - store_started
 
         # Corpus-level feature enrichment: features that need to know
         # about the whole corpus (e.g. sibling_test, which checks
@@ -608,9 +622,9 @@ def scan_corpus(
             ("series",                  lambda: find_series_gaps(entities)),
         ]
 
+        mine_started = time.perf_counter()
         if interactive:
             mine_spinner = Spinner(label="Mining rules")
-            mine_started = time.perf_counter()
             done = 0
             total_tasks = len(mining_tasks)
             with spinning(mine_spinner), \
@@ -628,11 +642,12 @@ def scan_corpus(
                         f"{done}/{total_tasks} done · last: "
                         f"{fut_to_label[fut]} · {len(rules):,d} rules so far"
                     )
+            stage_durations["mine"] = time.perf_counter() - mine_started
             mine_spinner.finish(
                 end_message=(
                     f"Mined rules  ·  {len(rules):,d} rules, "
                     f"{len(gaps):,d} candidate gaps  ·  "
-                    f"{_format_time(time.perf_counter() - mine_started)}"
+                    f"{_format_time(stage_durations['mine'])}"
                 )
             )
         else:
@@ -642,11 +657,12 @@ def scan_corpus(
                     rs, gs = fut.result()
                     rules.extend(rs)
                     gaps.extend(gs)
+            stage_durations["mine"] = time.perf_counter() - mine_started
 
         # ── Finalize stage: dedup, suppress, end_run ──────────────
+        finalize_started = time.perf_counter()
         if interactive:
             final_spinner = Spinner(label="Finalizing")
-            final_started = time.perf_counter()
             final_ctx: Any = spinning(final_spinner)
             final_ctx.__enter__()
         else:
@@ -707,6 +723,7 @@ def scan_corpus(
             gaps_found=len(gaps),
         )
 
+        stage_durations["finalize"] = time.perf_counter() - finalize_started
         if final_spinner is not None and final_ctx is not None:
             final_ctx.__exit__(None, None, None)
             suppress_note = (
@@ -717,7 +734,7 @@ def scan_corpus(
                 end_message=(
                     f"Finalized  ·  {len(gaps):,d} gaps after dedup"
                     f"{suppress_note}  ·  "
-                    f"{_format_time(time.perf_counter() - final_started)}"
+                    f"{_format_time(stage_durations['finalize'])}"
                 )
             )
 
@@ -734,6 +751,11 @@ def scan_corpus(
         "suppressed": suppressed_count,
         "min_confidence": config.mining.min_confidence,
         "min_group_size": config.mining.min_group_size,
+        "stage_durations_ms": {
+            stage: round(secs * 1000, 2)
+            for stage, secs in stage_durations.items()
+        },
+        "jobs": jobs,
     }
     _write_last_run(state_dir, scan_stats, run_id, len(gaps))
 
@@ -1171,12 +1193,23 @@ def cmd_est(
 
     # ── Reality check from prior scan ───────────────────────────────
     observed_cold_scan_s: float | None = None
+    observed_stage_durations: dict[str, float] | None = None
+    observed_jobs: int | None = None
     last_run_path = root / ".lacuna" / "last_run.json"
     if last_run_path.exists():
         try:
             last = json.loads(last_run_path.read_text())
             if last.get("files_unchanged", -1) == 0 and last.get("duration_ms"):
                 observed_cold_scan_s = float(last["duration_ms"]) / 1000.0
+                stage_ms = last.get("stage_durations_ms")
+                if isinstance(stage_ms, dict):
+                    observed_stage_durations = {
+                        k: float(v) / 1000.0
+                        for k, v in stage_ms.items()
+                        if isinstance(v, (int, float))
+                    }
+                if isinstance(last.get("jobs"), int):
+                    observed_jobs = last["jobs"]
         except (OSError, ValueError, KeyError):
             pass
 
@@ -1208,6 +1241,8 @@ def cmd_est(
         calibrated=calibration is not None,
         calibrated_at=calibration.calibrated_at if calibration else None,
         observed_cold_scan_s=observed_cold_scan_s,
+        observed_stage_durations=observed_stage_durations,
+        observed_jobs=observed_jobs,
         bps_table=bps_table,
         parallel_fraction=p_value,
     )
@@ -1622,6 +1657,8 @@ def _write_last_run(
         "files_unchanged": scan_stats["files_unchanged"],
         "rules_discovered": scan_stats["rules"],
         "gaps_found": gaps_found,
+        "stage_durations_ms": scan_stats.get("stage_durations_ms"),
+        "jobs": scan_stats.get("jobs"),
     }
     (state_dir / "last_run.json").write_text(
         json.dumps(summary, indent=2) + "\n"

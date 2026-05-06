@@ -339,6 +339,8 @@ def format_estimate_report(
     calibrated: bool,
     calibrated_at: str | None = None,
     observed_cold_scan_s: float | None = None,
+    observed_stage_durations: dict[str, float] | None = None,
+    observed_jobs: int | None = None,
     bps_table: dict[str, int] | None = None,
     parallel_fraction: float = PARALLEL_FRACTION,
 ) -> str:
@@ -352,6 +354,14 @@ def format_estimate_report(
     Pass ``bps_table`` to use a calibrated per-language throughput
     table (typically from ``calibration.calibrated_bps_table``);
     omitted means "use M-series baseline".
+
+    ``observed_stage_durations`` (parse / store / mine / finalize, in
+    seconds, from ``last_run.json``) lets the report show a real
+    stage breakdown of the prior cold scan AND project a "with mine"
+    column on the per-jobs table — mine + finalize is a serial tail
+    that doesn't scale with workers, so total = parse(N) + tail. For
+    the kernel on a slow box this is the difference between the table
+    saying "21 s" and reality being 467 s.
     """
     from .output import _capturing_console
 
@@ -400,22 +410,101 @@ def format_estimate_report(
             f"{default_est.efficiency * 100:.0f}% efficiency)"
         )
         if observed_cold_scan_s is not None:
+            jobs_note = (
+                f", jobs={observed_jobs}"
+                if observed_jobs is not None else ""
+            )
             p(
                 f"Last actual cold scan     "
                 f"[green]{_format_seconds(observed_cold_scan_s)}[/]   "
-                f"([dim](from .lacuna/last_run.json — ground truth)[/]"
+                f"[dim](from .lacuna/last_run.json — ground truth"
+                f"{jobs_note})[/]"
+            )
+
+        # Mining tail (mine + finalize) doesn't scale with --jobs, so
+        # we treat it as a serial constant. Pulled from last cold-scan
+        # stage timings when available; otherwise we leave the table
+        # showing parse-only times and note the gap.
+        mine_tail_s: float | None = None
+        if observed_stage_durations is not None:
+            mine_tail_s = (
+                observed_stage_durations.get("mine", 0.0)
+                + observed_stage_durations.get("finalize", 0.0)
+            )
+
+        if observed_stage_durations is not None:
+            walk_s = observed_stage_durations.get("walk", 0.0)
+            parse_s = observed_stage_durations.get("parse", 0.0)
+            store_s = observed_stage_durations.get("store", 0.0)
+            mine_s = observed_stage_durations.get("mine", 0.0)
+            final_s = observed_stage_durations.get("finalize", 0.0)
+            p("Last cold-scan stage breakdown")
+            p(
+                f"               [yellow]walk[/]      {_format_seconds(walk_s):>9s}   "
+                f"[dim](enumerate files; serial)[/]"
+            )
+            p(
+                f"               [yellow]parse[/]     {_format_seconds(parse_s):>9s}   "
+                f"[dim](scales with --jobs)[/]"
+            )
+            p(
+                f"               [yellow]store[/]     {_format_seconds(store_s):>9s}   "
+                f"[dim](sqlite commit; serial)[/]"
+            )
+            p(
+                f"               [yellow]mine[/]      {_format_seconds(mine_s):>9s}   "
+                f"[dim](capped at 4 threads)[/]"
+            )
+            p(
+                f"               [yellow]finalize[/]  {_format_seconds(final_s):>9s}   "
+                f"[dim](dedup + commit; serial)[/]"
             )
         p("")
 
-        p("    [bold]jobs    est. time   speedup   efficiency[/]")
-        for e in curve:
-            marker = "   [dim]← default[/]" if e.jobs == default_jobs else ""
-            sp_color = _color_for_speedup(e.speedup)
+        # When we have a mining tail, render a 5-column table showing
+        # the full check time at each --jobs setting. Otherwise keep
+        # the original parse-only table.
+        if mine_tail_s is not None:
             p(
-                f"    [bold]{e.jobs:>4d}[/]   "
-                f"{_format_seconds(e.parallel_time_s):>10s}   "
-                f"[{sp_color}]{e.speedup:>5.2f}×[/]        "
-                f"{e.efficiency * 100:>3.0f}%{marker}"
+                "    [bold]jobs    parse        +mine     check     "
+                "speedup   efficiency[/]"
+            )
+            for e in curve:
+                marker = "   [dim]← default[/]" if e.jobs == default_jobs else ""
+                sp_color = _color_for_speedup(e.speedup)
+                check_s = e.parallel_time_s + mine_tail_s
+                p(
+                    f"    [bold]{e.jobs:>4d}[/]   "
+                    f"{_format_seconds(e.parallel_time_s):>9s}   "
+                    f"[dim]+{_format_seconds(mine_tail_s):>7s}[/]   "
+                    f"[bright_green]{_format_seconds(check_s):>8s}[/]   "
+                    f"[{sp_color}]{e.speedup:>5.2f}×[/]        "
+                    f"{e.efficiency * 100:>3.0f}%{marker}"
+                )
+            p("")
+            p(
+                "    [dim]check = parse(jobs) + serial tail "
+                "(mine + finalize, fixed). The tail comes from your[/]"
+            )
+            p(
+                "    [dim]last cold scan; speedup/efficiency columns "
+                "describe the parse stage only.[/]"
+            )
+        else:
+            p("    [bold]jobs    est. parse   speedup   efficiency[/]")
+            for e in curve:
+                marker = "   [dim]← default[/]" if e.jobs == default_jobs else ""
+                sp_color = _color_for_speedup(e.speedup)
+                p(
+                    f"    [bold]{e.jobs:>4d}[/]   "
+                    f"{_format_seconds(e.parallel_time_s):>10s}   "
+                    f"[{sp_color}]{e.speedup:>5.2f}×[/]        "
+                    f"{e.efficiency * 100:>3.0f}%{marker}"
+                )
+            p("")
+            p(
+                "    [dim]Run [bold cyan]`lacuna check`[/] once to populate "
+                "the mining-tail column (parse + mine + finalize totals).[/]"
             )
         p("")
 
