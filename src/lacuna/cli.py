@@ -528,6 +528,14 @@ def scan_corpus(
         rules.extend(cp_rules)
         gaps.extend(cp_gaps)
 
+        # Series gaps — fourth mining strategy. Detects missing
+        # numeric indices in same-directory file sequences
+        # (migrations/0001_*.py, 0002_*.py, 0004_*.py — implies 0003).
+        from .series import find_series_gaps
+        sr_rules, sr_gaps = find_series_gaps(entities)
+        rules.extend(sr_rules)
+        gaps.extend(sr_gaps)
+
         # Dedupe gaps across mining strategies. Frequency mining,
         # symmetry pairs, and call-pair mining can each independently
         # flag the same entity for the same missing thing

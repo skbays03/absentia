@@ -125,6 +125,34 @@ Symmetry pairs aren't gated by `min_confidence` — even a 1-of-1
 violation surfaces (a single broken context-manager is the gap;
 the rule isn't asking for a majority).
 
+## A fourth mining strategy: series gaps
+
+Frequency, symmetry, and call-pair all answer some flavor of "this
+member is divergent." Series asks a different question:
+
+> Is there a hole in a numbered sequence? `migrations/0001_*.py`,
+> `0002_*.py`, `0004_*.py` — where's `0003`?
+
+The detector groups files by directory, finds basenames with
+leading digits, clusters them by numeric proximity (default: a
+gap of >5 between consecutive numbers ends a cluster), and
+flags any non-contiguous indices inside each cluster's range as
+gaps. Output reads naturally:
+
+```text
+migrations/0002_orders.py  function `upgrade`  missing 0003_*.py  0.80
+```
+
+The anchor entity is the existing member just below the missing
+slot — when the user opens the gap, they see an example of the
+series's convention next to the missing slot.
+
+This is the latin "lacuna in a manuscript" sense: a void at a
+specific known position in a structured sequence. Different from
+frequency ("9 of 10 do X"), different from symmetry ("you have
+left without right"), and different from call-pair ("you call A
+without B"). All four shapes ship with lacuna.
+
 A few things worth noting:
 
 - **Decorator arguments are dropped.** `@app.route("/users")` becomes

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Series-gap detection.** Fourth mining strategy. Detects missing
+  numeric indices in same-directory file sequences:
+  ``migrations/0001_*.py``, ``0002_*.py``, ``0004_*.py`` →
+  ``missing 0003_*.py``. Clusters by sequential proximity (default
+  max gap = 5) so a stray ``0099_*`` doesn't create a 96-element
+  gap range against an early cluster. The fourth latin-flavored
+  category from lacuna_plan; lacuna now catches gaps in series,
+  not just gaps in patterns.
 - **Call-pair detection.** Mines paired-call symmetries within
   function scope: ``9 of 10 functions calling bus.subscribe also
   call bus.unsubscribe`` flags the 10th. Catches project-specific
