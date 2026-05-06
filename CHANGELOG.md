@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Call-pair detection.** Mines paired-call symmetries within
+  function scope: ``9 of 10 functions calling bus.subscribe also
+  call bus.unsubscribe`` flags the 10th. Catches project-specific
+  resource pairs (subscribe/unsubscribe, audit.begin/audit.commit,
+  trace.start/trace.stop, custom acquire/release APIs) that no
+  off-the-shelf linter knows about. Conservative defaults
+  (min_confidence=0.9, min_support=5) filter out noise from
+  language built-ins. Doesn't try control-flow analysis — that's
+  linter territory; lacuna stays at the project-convention layer.
+- **Cross-strategy gap dedup.** Frequency mining, symmetry pairs,
+  and call-pair mining can each independently flag the same entity
+  for the same missing thing. A post-mining pass collapses
+  duplicates so users see each gap once (highest-confidence rule
+  wins); rules stay distinct in the Rules view for transparency.
 - **Symmetry-pair detection.** A second mining strategy that catches
   structural gaps the frequency engine misses — a class with
   ``__enter__`` and no ``__exit__``, a migration with ``upgrade()``

@@ -41,7 +41,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 
-from .entities import Entity
+from .entities import Entity, FeatureSet
 from .mining import Gap, Rule
 
 
@@ -198,6 +198,106 @@ def _mine_pairs_for_scope(
                 ),
             ))
     return pairs
+
+
+def find_call_pair_gaps(
+    entities: dict[str, Entity],
+    feature_index: dict[str, FeatureSet],
+    *,
+    min_support: int = 5,
+    min_confidence: float = 0.9,
+) -> tuple[list[Rule], list[Gap]]:
+    """Mine paired-call symmetries within function scope.
+
+    For each pair of names called by the same function, compute the
+    directional confidence::
+
+        conf(left → right) = functions calling both / functions calling left
+
+    When ``conf ≥ min_confidence`` (default 0.9 — strict, because call
+    sets are noisy), the pair is treated as a project convention. Each
+    function that calls ``left`` but not ``right`` is a gap.
+
+    Examples this catches: ``bus.subscribe`` ↔ ``bus.unsubscribe``,
+    ``audit.begin`` ↔ ``audit.commit``, ``trace.start`` ↔ ``trace.stop``,
+    ``acquire`` ↔ ``release`` — project-specific resource pairs that
+    no off-the-shelf linter knows about.
+
+    Doesn't try control-flow analysis. The check is "this function
+    calls A but not B"; if you call B in the wrong place, lacuna
+    won't catch that — that's linter / type-system territory.
+
+    The default ``min_confidence=0.9`` and ``min_support=5`` are
+    conservative on purpose: call sets contain language built-ins
+    (``len``, ``print``, ``str``) that co-occur with nearly everything;
+    a strict threshold filters most spurious pairs.
+    """
+    # Index: function_id → set of call names
+    call_sets: dict[str, frozenset[str]] = {}
+    for entity_id, fs in feature_index.items():
+        if entity_id not in entities:
+            continue
+        if entities[entity_id].kind not in ("function", "method"):
+            continue
+        calls = fs.get_set("calls")
+        if calls:
+            call_sets[entity_id] = calls
+
+    if not call_sets:
+        return [], []
+
+    # Pass 1: name frequency. Filter to "popular enough to mine."
+    name_count: Counter[str] = Counter()
+    for calls in call_sets.values():
+        for c in calls:
+            name_count[c] += 1
+    popular = {n for n, c in name_count.items() if c >= min_support}
+    if not popular:
+        return [], []
+
+    # Pass 2: pair counts among popular names only
+    pair_count: Counter[tuple[str, str]] = Counter()
+    for calls in call_sets.values():
+        relevant = sorted(c for c in calls if c in popular)
+        for i, n1 in enumerate(relevant):
+            for n2 in relevant[i + 1:]:
+                pair_count[(n1, n2)] += 1
+
+    # Pass 3: emit rules + gaps
+    rules: list[Rule] = []
+    gaps: list[Gap] = []
+    seen: set[tuple[str, str]] = set()
+
+    for (n1, n2), both in pair_count.items():
+        for left, right in ((n1, n2), (n2, n1)):
+            count_left = name_count[left]
+            if count_left < min_support:
+                continue
+            conf = both / count_left
+            if conf < min_confidence:
+                continue
+            # Need at least one violator
+            if both >= count_left:
+                continue
+            if (left, right) in seen:
+                continue
+            seen.add((left, right))
+
+            rule = Rule(
+                group_id=f"call_pair:{left}",
+                feature_kind="call_pair",
+                feature_value=right,
+                support_n=both,
+                support_total=count_left,
+            )
+            rules.append(rule)
+
+            # Find violators
+            for caller_id, caller_calls in call_sets.items():
+                if left in caller_calls and right not in caller_calls:
+                    gaps.append(Gap(rule_id=rule.id, entity_id=caller_id))
+
+    return rules, gaps
 
 
 def find_symmetry_gaps(

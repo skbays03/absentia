@@ -514,14 +514,45 @@ def scan_corpus(
             gaps.extend(gs)
 
         # Symmetry pairs — second mining strategy. Detects
-        # "left without right" structurally (every __enter__ should
-        # have __exit__, every upgrade() a downgrade()). Doesn't
-        # consult min_confidence; pair rules are asserted, not
-        # statistical.
-        from .symmetry import find_symmetry_gaps
+        # "left without right" structurally:
+        #   - definition pairs (class/file scope): __enter__ without
+        #     __exit__, upgrade() without downgrade()
+        #   - call pairs (function scope): bus.subscribe() without
+        #     bus.unsubscribe(), audit.begin() without audit.commit()
+        from .symmetry import find_call_pair_gaps, find_symmetry_gaps
         sym_rules, sym_gaps = find_symmetry_gaps(entities)
         rules.extend(sym_rules)
         gaps.extend(sym_gaps)
+
+        cp_rules, cp_gaps = find_call_pair_gaps(entities, feature_index)
+        rules.extend(cp_rules)
+        gaps.extend(cp_gaps)
+
+        # Dedupe gaps across mining strategies. Frequency mining,
+        # symmetry pairs, and call-pair mining can each independently
+        # flag the same entity for the same missing thing
+        # (e.g. "leaky is missing bus.unsubscribe"). Users only want
+        # to see it once. Highest-confidence rule wins.
+        rules_by_id_for_dedup = {r.id: r for r in rules}
+        gaps_sorted = sorted(
+            gaps,
+            key=lambda g: (
+                -rules_by_id_for_dedup[g.rule_id].confidence
+                if g.rule_id in rules_by_id_for_dedup else 0
+            ),
+        )
+        seen_render_keys: set[tuple[str, str]] = set()
+        deduped: list = []
+        for gap in gaps_sorted:
+            rule = rules_by_id_for_dedup.get(gap.rule_id)
+            if rule is None:
+                continue
+            key = (gap.entity_id, rule.feature_value)
+            if key in seen_render_keys:
+                continue
+            seen_render_keys.add(key)
+            deduped.append(gap)
+        gaps = deduped
 
         suppressions = storage.load_suppressions()
         suppressed_short_ids = set(suppressions.keys())

@@ -1,10 +1,11 @@
 """Tests for src/lacuna/symmetry.py."""
 from __future__ import annotations
 
-from lacuna.entities import Entity
+from lacuna.entities import Entity, FeatureSet
 from lacuna.symmetry import (
     BUILTIN_PAIRS,
     SymmetryPair,
+    find_call_pair_gaps,
     find_symmetry_gaps,
     mine_symmetry_pairs,
 )
@@ -234,3 +235,125 @@ def test_builtin_pairs_have_descriptions():
     """Built-in pairs should be self-documenting for the user-facing report."""
     for pair in BUILTIN_PAIRS:
         assert pair.description, f"pair {pair.name} has no description"
+
+
+# ── Call-pair frequency mining (function scope) ──────────────────────
+
+
+def _function_with_calls(file_path: str, name: str, calls: list[str]) -> tuple[Entity, FeatureSet]:
+    ent = _func(file_path, name)
+    fs = FeatureSet(by_kind={"calls": frozenset(calls)})
+    return ent, fs
+
+
+def test_call_pair_subscribe_unsubscribe():
+    """Functions calling subscribe should also call unsubscribe.
+    A function that calls subscribe but not unsubscribe is a gap.
+    """
+    entities = {}
+    feature_index = {}
+    # 10 paired calls — comfortably above default min_confidence=0.9
+    for i in range(10):
+        ent, fs = _function_with_calls(
+            f"src/handler_{i}.py", f"handle_{i}",
+            ["bus.subscribe", "bus.unsubscribe", "logger.info"],
+        )
+        entities[ent.id] = ent
+        feature_index[ent.id] = fs
+    # 1 violator
+    bad, bad_fs = _function_with_calls(
+        "src/leaky.py", "leaky_handler",
+        ["bus.subscribe", "logger.info"],  # missing unsubscribe
+    )
+    entities[bad.id] = bad
+    feature_index[bad.id] = bad_fs
+
+    rules, gaps = find_call_pair_gaps(entities, feature_index)
+
+    # Rule with left=bus.subscribe, right=bus.unsubscribe
+    matching = [
+        r for r in rules
+        if r.feature_value == "bus.unsubscribe"
+        and "bus.subscribe" in r.group_id
+    ]
+    assert len(matching) == 1
+    rule = matching[0]
+    # 10 functions call both, 11 call subscribe → confidence 10/11 ≈ 0.91
+    assert rule.support_n == 10
+    assert rule.support_total == 11
+
+    # The leaky handler is a gap
+    leaky_gaps = [g for g in gaps if g.entity_id == bad.id and g.rule_id == rule.id]
+    assert len(leaky_gaps) == 1
+
+
+def test_call_pair_no_violators_no_rule():
+    """If every caller of left also calls right, there's no asymmetry."""
+    entities = {}
+    feature_index = {}
+    for i in range(5):
+        ent, fs = _function_with_calls(
+            f"src/h_{i}.py", f"handle_{i}",
+            ["lock", "release"],
+        )
+        entities[ent.id] = ent
+        feature_index[ent.id] = fs
+
+    rules, gaps = find_call_pair_gaps(entities, feature_index)
+    # No rules emitted because no violator
+    assert all(r.feature_value != "release" for r in rules)
+    assert all(r.feature_value != "lock" for r in rules)
+
+
+def test_call_pair_below_min_support():
+    """Pairs called by fewer than min_support functions don't fire."""
+    entities = {}
+    feature_index = {}
+    # Only 2 functions call begin/commit
+    for i in range(2):
+        ent, fs = _function_with_calls(
+            f"src/x_{i}.py", f"f_{i}",
+            ["audit.begin", "audit.commit"],
+        )
+        entities[ent.id] = ent
+        feature_index[ent.id] = fs
+    bad, bad_fs = _function_with_calls(
+        "src/bad.py", "bad",
+        ["audit.begin"],
+    )
+    entities[bad.id] = bad
+    feature_index[bad.id] = bad_fs
+
+    rules, gaps = find_call_pair_gaps(
+        entities, feature_index, min_support=5,
+    )
+    # 3 callers of audit.begin → below min_support=5
+    assert all(r.feature_value != "audit.commit" for r in rules)
+
+
+def test_call_pair_strict_confidence_filters_noise():
+    """At default min_confidence=0.9, weak co-occurrences are filtered."""
+    entities = {}
+    feature_index = {}
+    # 5 callers of A: 3 also call B (60%), 2 don't
+    for i in range(3):
+        ent, fs = _function_with_calls(f"src/y_{i}.py", f"yes_{i}", ["A", "B"])
+        entities[ent.id] = ent
+        feature_index[ent.id] = fs
+    for i in range(2):
+        ent, fs = _function_with_calls(f"src/n_{i}.py", f"no_{i}", ["A"])
+        entities[ent.id] = ent
+        feature_index[ent.id] = fs
+
+    rules, gaps = find_call_pair_gaps(
+        entities, feature_index, min_confidence=0.9,
+    )
+    # 60% confidence is well below 0.9 — no rule
+    assert all(r.feature_value != "B" or "A" not in r.group_id for r in rules)
+
+
+def test_call_pair_handles_empty_corpus():
+    """No functions, no crash."""
+    rules, gaps = find_call_pair_gaps({}, {})
+    assert rules == []
+    assert gaps == []
