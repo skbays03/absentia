@@ -319,6 +319,17 @@ def _format_seconds(s: float) -> str:
     return f"{int(h)} h {int(m)} m"
 
 
+def _color_for_speedup(speedup: float) -> str:
+    """Pick a rich color for a speedup value in the est table."""
+    if speedup >= 2.0:
+        return "bright_green"
+    if speedup >= 1.5:
+        return "green"
+    if speedup >= 1.0:
+        return "yellow"
+    return "dim"
+
+
 def format_estimate_report(
     *,
     root: Path,
@@ -342,6 +353,8 @@ def format_estimate_report(
     table (typically from ``calibration.calibrated_bps_table``);
     omitted means "use M-series baseline".
     """
+    from ._console import stdout_console
+
     curve = jobs_curve(
         shape.by_language_bytes,
         max_jobs=cpu_count,
@@ -349,118 +362,105 @@ def format_estimate_report(
         parallel_fraction=parallel_fraction,
     )
 
-    lines: list[str] = []
-    lines.append(f"lacuna est — cold-scan estimate for {root}")
-    lines.append("")
-    lines.append(
-        f"Files          {shape.files:>8,d}   ({_format_size(shape.bytes)})"
-    )
-
-    if shape.by_language_bytes:
-        items = sorted(
-            shape.by_language_bytes.items(), key=lambda kv: -kv[1]
+    with stdout_console.capture() as capture:
+        p = stdout_console.print
+        p(f"[bold]lacuna est[/] — cold-scan estimate for [cyan]{root}[/]")
+        p("")
+        p(
+            f"Files          [bold]{shape.files:>8,d}[/]   "
+            f"([dim]{_format_size(shape.bytes)}[/])"
         )
-        lines.append("By language")
-        for lang, byte_count in items:
-            lines.append(
-                f"               {lang:<14s} "
-                f"{shape.by_language_files.get(lang, 0):>5,d} files "
-                f"({_format_size(byte_count)})"
+
+        if shape.by_language_bytes:
+            items = sorted(
+                shape.by_language_bytes.items(), key=lambda kv: -kv[1]
             )
-        lines.append("")
+            p("By language")
+            for lang, byte_count in items:
+                files_n = shape.by_language_files.get(lang, 0)
+                p(
+                    f"               [yellow]{lang:<14s}[/] "
+                    f"{files_n:>5,d} files "
+                    f"([dim]{_format_size(byte_count)}[/])"
+                )
+            p("")
 
-    serial = curve[0].parallel_time_s
-    default_est = next(
-        (e for e in curve if e.jobs == default_jobs), curve[-1]
-    )
-    lines.append(
-        f"Single-process baseline   {_format_seconds(serial)}"
-    )
-    lines.append(
-        f"At default jobs (= {default_jobs:d})       "
-        f"~{_format_seconds(default_est.parallel_time_s)}   "
-        f"({default_est.speedup:.2f}× speedup, "
-        f"{default_est.efficiency * 100:.0f}% efficiency)"
-    )
-    if observed_cold_scan_s is not None:
-        lines.append(
-            f"Last actual cold scan     "
-            f"{_format_seconds(observed_cold_scan_s)}   "
-            f"(from .lacuna/last_run.json — ground truth)"
+        serial = curve[0].parallel_time_s
+        default_est = next(
+            (e for e in curve if e.jobs == default_jobs), curve[-1]
         )
-    lines.append("")
+        p(f"Single-process baseline   {_format_seconds(serial)}")
+        default_color = _color_for_speedup(default_est.speedup)
+        p(
+            f"At default jobs (= [bold]{default_jobs:d}[/])       "
+            f"[bright_green]~{_format_seconds(default_est.parallel_time_s)}[/]   "
+            f"([{default_color}]{default_est.speedup:.2f}× speedup[/], "
+            f"{default_est.efficiency * 100:.0f}% efficiency)"
+        )
+        if observed_cold_scan_s is not None:
+            p(
+                f"Last actual cold scan     "
+                f"[green]{_format_seconds(observed_cold_scan_s)}[/]   "
+                f"([dim](from .lacuna/last_run.json — ground truth)[/]"
+            )
+        p("")
 
-    lines.append("    jobs    est. time   speedup   efficiency")
-    for e in curve:
-        marker = "   ← default" if e.jobs == default_jobs else ""
-        lines.append(
-            f"    {e.jobs:>4d}   {_format_seconds(e.parallel_time_s):>10s}   "
-            f"{e.speedup:>5.2f}×        {e.efficiency * 100:>3.0f}%{marker}"
-        )
-    lines.append("")
+        p("    [bold]jobs    est. time   speedup   efficiency[/]")
+        for e in curve:
+            marker = "   [dim]← default[/]" if e.jobs == default_jobs else ""
+            sp_color = _color_for_speedup(e.speedup)
+            p(
+                f"    [bold]{e.jobs:>4d}[/]   "
+                f"{_format_seconds(e.parallel_time_s):>10s}   "
+                f"[{sp_color}]{e.speedup:>5.2f}×[/]        "
+                f"{e.efficiency * 100:>3.0f}%{marker}"
+            )
+        p("")
 
-    # Too-small-for-parallelism detector: when even the highest job
-    # count never beats serial, parallel mode genuinely won't help on
-    # this corpus. Tell the user explicitly so they don't read the
-    # flat 1.00× column as a bug.
-    parallel_never_helps = all(e.speedup <= 1.001 for e in curve)
-    if parallel_never_helps and len(curve) > 1:
-        lines.append(
-            "Note: this corpus is too small for parallelism to pay off."
-        )
-        lines.append(
-            "      Worker spawn cost (~0.15 s each) exceeds the work"
-        )
-        lines.append(
-            "      itself, so lacuna will stay single-process here even"
-        )
-        lines.append(
-            "      at higher --jobs values. Speedup column reads 1.00×"
-        )
-        lines.append(
-            "      across the board because that's the truth, not a bug."
-        )
-        lines.append("")
-    elif len(curve) > 1:
-        # Default explainer: parallel scaling on this corpus is real
-        # but the efficiency column tapers — that's Amdahl's law, not
-        # a bug. Steer the user toward the speedup column for picking
-        # --jobs since efficiency-on-its-own can read like degradation.
-        lines.append(
-            "Reading efficiency: it's speedup ÷ N. The decline is"
-        )
-        lines.append(
-            "Amdahl's law — the serial tail (group + mine + storage)"
-        )
-        lines.append(
-            "can't shrink with more cores. Pick --jobs by the speedup"
-        )
-        lines.append(
-            "column's row-to-row gain, not by the efficiency number."
-        )
-        lines.append("")
+        # Too-small-for-parallelism detector: when even the highest job
+        # count never beats serial, parallel mode genuinely won't help on
+        # this corpus. Tell the user explicitly so they don't read the
+        # flat 1.00× column as a bug.
+        parallel_never_helps = all(e.speedup <= 1.001 for e in curve)
+        if parallel_never_helps and len(curve) > 1:
+            p("[yellow]Note:[/] this corpus is too small for parallelism to pay off.")
+            p("      Worker spawn cost (~0.15 s each) exceeds the work")
+            p("      itself, so lacuna will stay single-process here even")
+            p("      at higher --jobs values. Speedup column reads 1.00×")
+            p("      across the board because that's the truth, not a bug.")
+            p("")
+        elif len(curve) > 1:
+            # Default explainer: parallel scaling on this corpus is real
+            # but the efficiency column tapers — that's Amdahl's law, not
+            # a bug. Steer the user toward the speedup column for picking
+            # --jobs since efficiency-on-its-own can read like degradation.
+            p("[dim]Reading efficiency: it's speedup ÷ N. The decline is[/]")
+            p("[dim]Amdahl's law — the serial tail (group + mine + storage)[/]")
+            p("[dim]can't shrink with more cores. Pick --jobs by the speedup[/]")
+            p("[dim]column's row-to-row gain, not by the efficiency number.[/]")
+            p("")
 
-    if calibrated:
-        when = calibrated_at or "unknown"
-        p_label = (
-            f"p = {parallel_fraction:.2f} (fitted)"
-            if abs(parallel_fraction - PARALLEL_FRACTION) > 1e-6
-            else f"p = {parallel_fraction:.2f}"
-        )
-        lines.append(
-            f"Cost model:    {p_label}, calibrated on this machine "
-            f"({when})."
-        )
-    else:
-        lines.append(
-            f"Cost model:    p = {parallel_fraction:.2f}, M-series "
-            f"baseline (uncalibrated; expect ±2-4× error)."
-        )
-        lines.append(
-            "               Run `lacuna est --recalibrate` for "
-            "machine-specific accuracy."
-        )
-    lines.append(
-        "Methodology:   docs/explanation/estimator.md"
-    )
-    return "\n".join(lines) + "\n"
+        if calibrated:
+            when = calibrated_at or "unknown"
+            p_label = (
+                f"p = {parallel_fraction:.2f} (fitted)"
+                if abs(parallel_fraction - PARALLEL_FRACTION) > 1e-6
+                else f"p = {parallel_fraction:.2f}"
+            )
+            p(
+                f"[bold]Cost model:[/]    {p_label}, "
+                f"[green]calibrated on this machine[/] ([dim]{when}[/])."
+            )
+        else:
+            p(
+                f"[bold]Cost model:[/]    p = {parallel_fraction:.2f}, "
+                f"M-series baseline "
+                f"([yellow]uncalibrated; expect ±2-4× error[/])."
+            )
+            p(
+                "               Run [bold cyan]`lacuna est --recalibrate`[/] "
+                "for machine-specific accuracy."
+            )
+        p("[dim]Methodology:   docs/explanation/estimator.md[/]")
+
+    return capture.get()

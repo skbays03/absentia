@@ -16,10 +16,23 @@ swamp the terminal with redraws.
 from __future__ import annotations
 
 import contextlib
+import re
 import sys
 import threading
 import time
 from typing import Any, Iterator
+
+from . import _color as C
+
+
+# Strips ANSI CSI sequences (color, cursor) when measuring on-screen width.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def _visible_len(s: str) -> int:
+    """Length of a string ignoring ANSI escape codes — what the terminal
+    actually renders. Used for padding calculations on colored lines."""
+    return len(_ANSI_RE.sub("", s))
 
 
 _BAR_WIDTH = 30
@@ -67,6 +80,17 @@ def _truncate_for_display(text: str, max_width: int = 100) -> str:
     return text[:head] + "..." + text[-tail:]
 
 
+def _pad_visible(s: str, width: int) -> str:
+    """Right-pad with spaces to ``width`` *visible* columns, ignoring
+    embedded ANSI escape codes. We never truncate — color sequences
+    can span character boundaries and cutting one mid-escape leaves
+    a visible mess. ``_LINE_WIDTH`` is comfortably wider than our
+    expected content, so overflow is rare in practice.
+    """
+    pad = max(0, width - _visible_len(s))
+    return s + (" " * pad)
+
+
 def _emit_two_line(top: str, bottom: str, *, first: bool) -> None:
     """Render a two-line update to stderr.
 
@@ -76,18 +100,11 @@ def _emit_two_line(top: str, bottom: str, *, first: bool) -> None:
     and ``finish()`` is called, normal terminal flow resumes from
     the line below the sub-line — no orphaned partial draws.
     """
-    top_padded = top.ljust(_LINE_WIDTH)[:_LINE_WIDTH]
-    bottom_padded = bottom.ljust(_LINE_WIDTH)[:_LINE_WIDTH]
-    if first:
-        # Write bar + newline + sub. Leave cursor at end of sub.
-        # Then move back to start of bar line for next overwrite.
-        sys.stderr.write(
-            f"\r{top_padded}\n{bottom_padded}{_CURSOR_PREV_LINE}"
-        )
-    else:
-        sys.stderr.write(
-            f"\r{top_padded}\n{bottom_padded}{_CURSOR_PREV_LINE}"
-        )
+    top_padded = _pad_visible(top, _LINE_WIDTH)
+    bottom_padded = _pad_visible(bottom, _LINE_WIDTH)
+    sys.stderr.write(
+        f"\r{top_padded}\n{bottom_padded}{_CURSOR_PREV_LINE}"
+    )
     sys.stderr.flush()
 
 
@@ -149,7 +166,10 @@ class ProgressBar:
         elapsed = now - self._started
         pct = (self.current / self.total) * 100
         filled = int(_BAR_WIDTH * self.current / self.total)
-        bar = "█" * filled + "░" * (_BAR_WIDTH - filled)
+        bar = (
+            f"{C.GREEN}{'█' * filled}{C.RESET}"
+            f"{C.DIM}{'░' * (_BAR_WIDTH - filled)}{C.RESET}"
+        )
         if self.current and self.current < self.total:
             eta = elapsed / self.current * (self.total - self.current)
             tail = (
@@ -157,16 +177,16 @@ class ProgressBar:
                 f"~{_format_time(eta)} remaining"
             )
         elif self.current >= self.total:
-            tail = f" · {_format_time(elapsed)}"
+            tail = f" · {C.GREEN}{_format_time(elapsed)}{C.RESET}"
         else:
             tail = ""
-        prefix = f"{self.label} " if self.label else ""
+        prefix = f"{C.BOLD}{self.label}{C.RESET} " if self.label else ""
         top = (
             f"{prefix}[{bar}] {self.current:,d}/{self.total:,d} "
             f"({pct:>3.0f}%){tail}"
         )
         bottom = (
-            f"{_ITEM_INDENT}{_truncate_for_display(self._current_item)}"
+            f"{_ITEM_INDENT}{C.CYAN}{_truncate_for_display(self._current_item)}{C.RESET}"
             if self._current_item else ""
         )
         _emit_two_line(top, bottom, first=not self._first_draw_done)
@@ -247,13 +267,14 @@ class StepIndicator:
             return
         self._last_drawn = now
         elapsed = now - self._step_started
-        prefix = f"{self.prefix} " if self.prefix else ""
+        prefix = f"{C.DIM}{self.prefix}{C.RESET} " if self.prefix else ""
+        step_marker = f"{C.CYAN}[{self.current_step}/{self.total}]{C.RESET}"
         top = (
-            f"{prefix}[{self.current_step}/{self.total}] "
+            f"{prefix}{step_marker} "
             f"{self.current_label}… {_format_time(elapsed)}"
         )
         bottom = (
-            f"{_ITEM_INDENT}{_truncate_for_display(self._current_item)}"
+            f"{_ITEM_INDENT}{C.CYAN}{_truncate_for_display(self._current_item)}{C.RESET}"
             if self._current_item else ""
         )
         _emit_two_line(top, bottom, first=not self._first_draw_done)
@@ -310,10 +331,10 @@ class Spinner:
         self._frame = (self._frame + 1) % len(self._FRAMES)
         elapsed = now - self._started
         sym = self._FRAMES[self._frame]
-        prefix = f"{self.label} " if self.label else ""
-        top = f"{sym} {prefix}({_format_time(elapsed)})"
+        prefix = f"{C.BOLD}{self.label}{C.RESET} " if self.label else ""
+        top = f"{C.CYAN}{sym}{C.RESET} {prefix}({_format_time(elapsed)})"
         bottom = (
-            f"{_ITEM_INDENT}{_truncate_for_display(self._current_item)}"
+            f"{_ITEM_INDENT}{C.CYAN}{_truncate_for_display(self._current_item)}{C.RESET}"
             if self._current_item else ""
         )
         _emit_two_line(top, bottom, first=not self._first_draw_done)
@@ -328,9 +349,9 @@ class Spinner:
         if end_message:
             # Replace the bar with the end-message, clear the sub-line,
             # and exit the draw region.
-            top = f"✓ {end_message}"
+            top = f"{C.BRIGHT_GREEN}✓{C.RESET} {end_message}"
             sys.stderr.write(
-                f"\r{top.ljust(_LINE_WIDTH)[:_LINE_WIDTH]}"
+                f"\r{_pad_visible(top, _LINE_WIDTH)}"
                 f"\n{_CLEAR_TO_END}\n"
             )
         elif self._first_draw_done:
