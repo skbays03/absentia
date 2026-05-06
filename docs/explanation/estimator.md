@@ -66,10 +66,24 @@ serial_time = Σ (language_bytes / language_throughput)
 
 ### 2. Amdahl's law for parallel speedup
 
-Lacuna's pipeline is partly parallelizable (parse + extract, which
-runs per-file across a worker pool) and partly serial (group + mine
-+ storage write, which can't be sped up by adding cores). Amdahl's
-law turns that into a speedup curve:
+Lacuna's pipeline has a parallel part and a serial tail. The
+**parallel part** (parse + extract) runs per-file across a worker
+pool. The **serial tail** is everything that runs once over the
+whole entity collection after extraction:
+
+- **Sibling-test enrichment** (corpus-wide; needs the full entity
+  set to answer "does this function have a test?")
+- **Frequency mining** (decorator, calls, parent_class,
+  sibling_test) over each selector's groups
+- **Symmetry-pair detection** — definition-level (class/file
+  scope) and call-pair (function scope) — including auto-mining
+  pairs from the corpus
+- **Cross-strategy gap deduplication** to collapse gaps that
+  multiple mining strategies independently flag
+- **Storage commit** (SQLite single-writer; can't be parallelized)
+
+None of these scale with parse parallelism. Amdahl's law turns
+this split into a speedup curve:
 
 ```
 speedup(N) = 1 / ((1 − p) + p/N)
@@ -191,7 +205,11 @@ The cache becomes stale (and `lacuna est` re-prompts you on next
 invocation) when:
 
 - **Lacuna's version changed.** Extractors may have shifted; the
-  baseline coefficients no longer match.
+  baseline coefficients no longer match. This also catches
+  pipeline additions like new mining strategies (symmetry, call
+  pairs, sibling-test enrichment) — fresh calibration absorbs the
+  new pass costs automatically into the fitted `p` and the
+  machine_speed_factor.
 - **Core count changed.** Most likely a different machine; the
   cached numbers don't apply.
 - **The cache is older than 90 days.** Catches drift from OS
