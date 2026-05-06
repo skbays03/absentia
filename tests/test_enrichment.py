@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from lacuna.entities import Entity, FeatureSet
 from lacuna.enrichment import (
+    build_test_method_index,
     candidate_test_entity_ids,
     enrich_sibling_tests,
     is_test_file,
@@ -172,3 +173,77 @@ def test_enrich_creates_feature_set_if_missing():
 
     assert src.id in feature_index
     assert "sibling_test" in feature_index[src.id].by_kind
+
+
+# ── Class-method test detection ──────────────────────────────────────
+
+
+def _class_method(file_path: str, class_name: str, method_name: str) -> Entity:
+    return Entity(
+        kind="method",
+        qualified_name=f"{file_path}::{class_name}.{method_name}",
+        file_path=file_path,
+        line=1,
+    )
+
+
+def test_enrich_matches_class_method_test():
+    """Source function `create_user` is covered by a unittest-style
+    class method `TestUsers.test_create_user`."""
+    src = _func("src/api/users.py", "create_user")
+    test = _class_method("tests/api/test_users.py", "TestUsers", "test_create_user")
+
+    entities = {src.id: src, test.id: test}
+    feature_index = {src.id: FeatureSet(), test.id: FeatureSet()}
+
+    enrich_sibling_tests(entities, feature_index)
+
+    fs = feature_index[src.id]
+    assert "sibling_test" in fs.by_kind
+    assert fs.by_kind["sibling_test"] == frozenset({"sibling test"})
+
+
+def test_enrich_matches_either_free_function_or_class_method():
+    """If both styles exist, the source is still considered covered."""
+    src = _func("src/api/users.py", "create_user")
+    free = _func("tests/api/test_users.py", "test_create_user")
+    cls = _class_method("tests/api/test_users.py", "TestUsers", "test_create_user")
+
+    entities = {src.id: src, free.id: free, cls.id: cls}
+    feature_index = {e.id: FeatureSet() for e in (src, free, cls)}
+
+    enrich_sibling_tests(entities, feature_index)
+    assert feature_index[src.id].by_kind["sibling_test"] == frozenset({"sibling test"})
+
+
+def test_enrich_no_match_when_only_unrelated_class_method():
+    """A test method named test_create_user in a different test file
+    that doesn't match any candidate path shouldn't count."""
+    src = _func("src/api/users.py", "create_user")
+    # Test in an unrelated location: tests/billing/, not tests/api/
+    far_test = _class_method(
+        "tests/billing/test_invoices.py", "TestInvoices", "test_create_user",
+    )
+    entities = {src.id: src, far_test.id: far_test}
+    feature_index = {src.id: FeatureSet(), far_test.id: FeatureSet()}
+
+    enrich_sibling_tests(entities, feature_index)
+    assert feature_index[src.id].by_kind["sibling_test"] == frozenset()
+
+
+def test_build_test_method_index_collects_both_styles():
+    """Index includes both free-function tests and class-method tests."""
+    free = _func("tests/test_users.py", "test_create")
+    cls_method = _class_method("tests/test_users.py", "TestUsers", "test_update")
+    not_a_test = _func("tests/test_users.py", "make_fixture")  # no test_ prefix
+    src = _func("src/api/users.py", "do_thing")  # not in test file
+
+    entities = {e.id: e for e in (free, cls_method, not_a_test, src)}
+    index = build_test_method_index(entities)
+
+    assert "tests/test_users.py" in index
+    methods = index["tests/test_users.py"]
+    assert "test_create" in methods
+    assert "test_update" in methods
+    assert "make_fixture" not in methods  # filtered: not test_*
+    assert "src/api/users.py" not in index  # not a test file

@@ -105,16 +105,42 @@ def _candidate_test_files(file_path: str) -> Iterator[str]:
 
 
 def candidate_test_entity_ids(source_entity: Entity) -> Iterator[str]:
-    """Yield qualified-name candidates for a function-level test of ``source_entity``.
+    """Yield free-function-style test entity-id candidates for ``source_entity``.
 
-    Only handles the "free function test_<name>" pattern for phase 1.
-    Class-method tests (``tests/test_users.py::TestUsers::test_create``)
-    aren't matched yet — that's a follow-up.
+    Class-method tests (``tests/test_users.py::TestUsers.test_create``)
+    aren't enumerated here because the test class name is unknown
+    in advance; they're matched via :func:`build_test_method_index`
+    inside :func:`enrich_sibling_tests` instead.
     """
     short_name = source_entity.qualified_name.rsplit("::", 1)[-1]
     test_func_name = f"test_{short_name}"
     for test_file in _candidate_test_files(source_entity.file_path):
         yield f"{test_file}::{test_func_name}"
+
+
+def build_test_method_index(
+    entities: dict[str, Entity],
+) -> dict[str, set[str]]:
+    """Build ``{test_file_path: {short_test_method_names}}`` from the corpus.
+
+    Walks every entity in a test file (function or method, kind-agnostic)
+    and indexes the methods named ``test_*`` by their short name. The
+    short name is the final dotted component of the qualified name, so
+    both free-function tests (``::test_create``) and class-method
+    tests (``::TestUsers.test_create``) collapse to the same key
+    (``test_create``) — which is what we want, since the source-side
+    asks "is *anything* named test_<my_name> in a candidate test file?"
+    """
+    index: dict[str, set[str]] = {}
+    for ent in entities.values():
+        if ent.kind not in ("function", "method"):
+            continue
+        if not is_test_file(ent.file_path):
+            continue
+        short = ent.qualified_name.rsplit("::", 1)[-1].rsplit(".", 1)[-1]
+        if short.startswith("test_"):
+            index.setdefault(ent.file_path, set()).add(short)
+    return index
 
 
 # ── Enrichment passes ──────────────────────────────────────────────────
@@ -139,7 +165,7 @@ def enrich_sibling_tests(
 
     Mutates ``feature_index`` in place.
     """
-    all_ids: set[str] = set(entities.keys())
+    test_methods_by_file = build_test_method_index(entities)
 
     for entity_id, entity in entities.items():
         if entity.kind not in ("function", "method"):
@@ -150,9 +176,13 @@ def enrich_sibling_tests(
         if short_name.startswith("_"):
             continue  # private; usually not separately tested
 
+        target_test_name = f"test_{short_name}"
+        # Match against any test file's set of test_* short names.
+        # Captures both free-function tests and class-method tests
+        # because the index keys on short name only.
         has_test = any(
-            candidate in all_ids
-            for candidate in candidate_test_entity_ids(entity)
+            target_test_name in test_methods_by_file.get(test_file, set())
+            for test_file in _candidate_test_files(entity.file_path)
         )
 
         fs = feature_index.get(entity_id)
