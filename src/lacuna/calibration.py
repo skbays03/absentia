@@ -439,16 +439,31 @@ def _make_indicator_progress_bridge(indicator: Any) -> Any:
 @contextmanager
 def _ticker_if_indicator(indicator: Any, ticking_fn: Any) -> Iterator[None]:
     """Wrap ``ticking_fn(indicator)`` only when ``indicator`` looks
-    tick-able. Otherwise yield immediately (no-op)."""
+    tick-able. Otherwise yield immediately (no-op).
+
+    Exception safety: if the ticker setup fails, run the work
+    without the ticker (we'd rather lose the visual than fail the
+    work). If the ticker setup succeeds and the inner work raises,
+    the ticker is cleaned up via its own __exit__ and the exception
+    propagates — no double-yield, no swallowed errors.
+    """
     if indicator is None or not hasattr(indicator, "tick"):
         yield
         return
     try:
-        with ticking_fn(indicator):
-            yield
+        cm = ticking_fn(indicator)
+        cm.__enter__()
     except Exception:
-        # If the ticker setup explodes, just run the work without it.
+        # Ticker setup failed; run the work without it.
         yield
+        return
+    try:
+        yield
+    finally:
+        try:
+            cm.__exit__(None, None, None)
+        except Exception:
+            pass
 
 
 def _select_amdahl_points(cores: int) -> list[int]:
