@@ -168,6 +168,15 @@ directory for a hardware-calibrated cold-scan estimate — see
   design. It surfaces consistency gaps.
 - **Not a fixer.** lacuna finds; humans fix. Auto-patching is a different
   product with very different tradeoffs.
+- **Not a resource-leak detector.** Patterns like `open()`/`close()`,
+  `lock()`/`release()` — anything where the language or runtime defines the
+  pair — are the linter's job. Use pylint, flake8-resource-leak, or
+  Python's `with` statement for those. lacuna catches *project-specific*
+  paired calls (your event-bus `subscribe`/`unsubscribe`, your custom
+  audit `begin`/`commit`) — conventions no off-the-shelf linter knows.
+- **Not a control-flow analyzer.** lacuna's read is coarse: "this function
+  calls A but not B." It won't verify that B is called along every code
+  path. Type systems and resource-leak linters own that layer.
 - **Not AI.** No LLM, no embeddings, no model. Rules are statistical facts
   about your code, computed by counting. See [why no LLM](docs/explanation/why-no-llm.md).
 
