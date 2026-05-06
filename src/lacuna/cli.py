@@ -1310,26 +1310,57 @@ def _scan_incremental(
             pool = ProcessPoolExecutor(max_workers=jobs)
         return pool
 
+    def _emit_progress(rel: str, count_increment: int) -> None:
+        """Best-effort progress update. count_increment may be 0 to
+        update only the displayed item without advancing the bar."""
+        if progress_callback is None:
+            return
+        try:
+            progress_callback(count_increment, item=rel)
+        except TypeError:
+            # Older callbacks accept only the count argument.
+            if count_increment:
+                progress_callback(count_increment)
+        except Exception:
+            pass  # progress UI must never break a scan
+
     def flush() -> None:
         if not chunk:
             return
+        # Parsing phase: update displayed item per file as we work
+        # through the chunk. The user sees the path lacuna is
+        # currently chewing on — if a slow parse hangs, the display
+        # sticks on that file (the actual stuck one), not a stale
+        # path from before the chunk started.
         if should_parallelize(len(chunk), jobs):
             worker_args = [
                 (rel, content, ex.language_name)
                 for rel, content, _h, ex in chunk
             ]
-            results = {
-                rel: items
-                for rel, items in get_pool().map(
-                    parse_one, worker_args, chunksize=4,
-                )
-            }
+            results: dict[str, list] = {}
+            # Iterate the result iterator so we can update progress as
+            # each worker hands back its results. Best we can do without
+            # cross-process IPC: the displayed file is the one whose
+            # results just arrived, not necessarily the one currently
+            # in-flight in another worker. True real-time per-worker
+            # visibility needs the multi-job-viz IPC plumbing.
+            for rel, items in get_pool().map(
+                parse_one, worker_args, chunksize=4,
+            ):
+                results[rel] = items
+                _emit_progress(rel, count_increment=0)
         else:
+            # Serial path — update display BEFORE each parse so the
+            # display reflects the file currently being processed,
+            # not the one just finished.
             results = {}
             for rel, content, _h, ex in chunk:
+                _emit_progress(rel, count_increment=0)
                 tree_root = ex.parse(content)
                 results[rel] = list(ex.extract(tree_root, rel))
 
+        # Storage phase: this is when "work for that file" is truly
+        # done, so this is where we increment the count.
         for rel, _content, current_hash, _ex in chunk:
             storage.delete_entities_for_file(rel)
             new_entities: dict[str, Entity] = {}
@@ -1339,10 +1370,7 @@ def _scan_incremental(
                 new_features[entity.id] = features
             storage.save_entities_and_features(new_entities, new_features)
             storage.upsert_file(rel, current_hash, run_id)
-        # Note: progress is reported per-file during the walk loop,
-        # not here. Per-chunk batching used to call progress_callback
-        # with len(chunk), but that produced jumpy updates and lost
-        # the current-file display. Per-file is smoother.
+            _emit_progress(rel, count_increment=1)
         chunk.clear()
 
     try:
@@ -1364,25 +1392,20 @@ def _scan_incremental(
 
             current_hash = hashlib.sha256(content).hexdigest()
 
-            # Per-file progress tick. Increments the bar by 1 and shows
-            # the file currently being read as a sub-line. We do this
-            # AFTER the read+hash so the bar represents work actually
-            # done, not just files queued.
-            if progress_callback is not None:
-                try:
-                    progress_callback(1, item=rel)
-                except TypeError:
-                    # Older callbacks may only accept the count
-                    progress_callback(1)
-                except Exception:
-                    pass
-
             if cached.get(rel) == current_hash:
+                # Cache hit: the only "work" for this file is upserting
+                # the cache row. Advance the bar by 1 here — work for
+                # this file is genuinely complete.
                 storage.upsert_file(rel, current_hash, run_id)
                 files_unchanged += 1
+                _emit_progress(rel, count_increment=1)
                 continue
 
+            # Changed/new file: queue it for parsing. Don't advance the
+            # count yet — the parse hasn't happened. Update only the
+            # displayed item so the user sees we're aware of this file.
             chunk.append((rel, content, current_hash, extractor))
+            _emit_progress(rel, count_increment=0)
             if len(chunk) >= CHUNK_SIZE:
                 flush()
         flush()  # final partial chunk

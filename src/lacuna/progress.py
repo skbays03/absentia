@@ -36,7 +36,10 @@ def _visible_len(s: str) -> int:
 
 
 _BAR_WIDTH = 30
-_THROTTLE_SECONDS = 0.1
+# 50 ms throttle (20 Hz) — snappy enough to feel real-time on fast
+# work, slow enough not to flood a terminal with redraws when
+# processing 100k+ files.
+_THROTTLE_SECONDS = 0.05
 _LINE_WIDTH = 120
 _ITEM_INDENT = "  "
 
