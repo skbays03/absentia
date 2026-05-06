@@ -20,8 +20,8 @@ from typing import Any
 from .entities import Entity, FeatureSet
 
 
-def default_jobs() -> int:
-    """Half of detected cores, rounded down, minimum 1.
+def detected_cores() -> int:
+    """Cores reported by the OS, minimum 1.
 
     Prefers ``os.process_cpu_count()`` (Python 3.13+; respects cgroup
     CPU limits in containers) over ``os.cpu_count()`` when available.
@@ -32,9 +32,24 @@ def default_jobs() -> int:
         n = os.process_cpu_count()
     else:
         n = os.cpu_count()
-    if not n:
+    if not n or n < 1:
         return 1
-    return max(1, n // 2)
+    return n
+
+
+def default_jobs() -> int:
+    """User-set override (``settings.json :: jobs_default``) if present;
+    otherwise half of detected cores, rounded down, minimum 1.
+
+    The user can pin a default via ``lacuna --jobs-default N``; that
+    value wins over the auto half-cores heuristic. Per-invocation
+    ``check --jobs N`` always overrides both.
+    """
+    from .settings import load_settings
+    s = load_settings()
+    if s.jobs_default is not None and s.jobs_default >= 1:
+        return s.jobs_default
+    return max(1, detected_cores() // 2)
 
 
 # Threshold: skip the pool entirely if there are fewer changed files

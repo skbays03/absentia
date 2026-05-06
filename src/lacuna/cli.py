@@ -88,6 +88,7 @@ def main(argv: list[str] | None = None) -> int:
             "  lacuna est --use-synthetic      calibrate against bundled corpus (empty cwd OK)\n"
             "  lacuna suppress GAP_ID          mark a gap as intentional\n"
             "  lacuna suppress --list          list current suppressions\n"
+            "  lacuna --jobs-default N         pin default worker count (0 = auto cpu/2)\n"
             "  lacuna --purge [PATH]           delete .lacuna/ from PATH (default: cwd)\n"
             "  lacuna --purge-all              delete every .lacuna/ under $HOME + machine cache\n"
             "\n"
@@ -117,6 +118,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Skip the [y/N] confirmation prompt on --purge / --purge-all. "
              "Use only when you're sure (and ideally in a script).",
+    )
+    parser.add_argument(
+        "--jobs-default",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Pin the default worker count for `lacuna check` so future "
+             "scans use N workers without needing `--jobs N` each time. "
+             "Saved to ~/.lacuna/settings.json. Pass 0 to revert to auto "
+             "(half of cpu cores). If N exceeds your detected core count "
+             "you'll be re-prompted, since over-subscribing usually slows "
+             "the scan.",
     )
     sub = parser.add_subparsers(dest="cmd")
 
@@ -177,7 +190,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
-    # Top-level purge flags run before subcommand dispatch.
+    # Top-level purge / settings flags run before subcommand dispatch.
     if args.purge_all:
         return cmd_purge_all(confirm=not args.yes)
     if args.purge is not None:
@@ -185,6 +198,8 @@ def main(argv: list[str] | None = None) -> int:
             Path(args.purge).expanduser().resolve(),
             confirm=not args.yes,
         )
+    if args.jobs_default is not None:
+        return cmd_jobs_default(args.jobs_default, confirm=not args.yes)
 
     if args.cmd is None:
         # No subcommand: launch the TUI when run from a TTY, otherwise
@@ -947,6 +962,102 @@ def cmd_purge_all(*, confirm: bool = True) -> int:
             f"\n[bright_green]✓[/] Removed [bold]{removed}[/] location(s)."
         )
     return 0 if failed == 0 else 1
+
+
+def cmd_jobs_default(n: int, *, confirm: bool = True) -> int:
+    """Pin the default worker count to ``~/.lacuna/settings.json``.
+
+    ``n == 0`` resets to auto (cpu_count // 2). ``n < 0`` is an error.
+    ``n > detected_cores`` triggers a re-prompt — over-subscribing the
+    machine usually *slows* the scan because workers contend for CPU,
+    but a power user may have a reason (background-only scans, etc.),
+    so we ask rather than refuse outright. ``--yes`` skips the prompt.
+    """
+    from .parallel import detected_cores
+    from .settings import Settings, load_settings, save_settings, settings_path
+
+    if n < 0:
+        stderr_console.print(
+            f"[red]lacuna:[/] --jobs-default must be ≥ 0, got [bold]{n}[/]."
+        )
+        return 2
+
+    cores = detected_cores()
+    auto = max(1, cores // 2)
+
+    if n == 0:
+        # Reset to auto. Save settings with jobs_default=None so
+        # default_jobs() falls through to the cpu//2 heuristic.
+        save_settings(Settings(jobs_default=None))
+        stdout_console.print(
+            f"[bright_green]✓[/] Default jobs reset to auto "
+            f"([bold]{auto}[/] = half of {cores} cores)."
+        )
+        stdout_console.print(f"  saved to [cyan]{settings_path()}[/]")
+        return 0
+
+    chosen = n
+    if chosen > cores:
+        stderr_console.print(
+            f"[yellow]warning:[/] [bold]{chosen}[/] exceeds detected core "
+            f"count ([bold]{cores}[/]).\n"
+            f"Over-subscribing usually [dim]slows[/] scans because workers "
+            f"contend for CPU."
+        )
+        if confirm:
+            if not sys.stdin.isatty():
+                stderr_console.print(
+                    f"[red]lacuna:[/] non-interactive context; refusing to "
+                    f"set [bold]{chosen}[/] over [bold]{cores}[/] without "
+                    f"confirmation. Pass [bold]--yes[/] to override, or "
+                    f"re-run from a terminal."
+                )
+                return 2
+            try:
+                response = input(
+                    f"Continue with {chosen}, enter a new value "
+                    f"(1–{cores}), or blank to abort: "
+                ).strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return 1
+            if not response:
+                stdout_console.print("[yellow]Aborted; nothing changed.[/]")
+                return 0
+            if not response.isdigit():
+                # Treat any non-digit (yes/y/etc.) as "keep the
+                # over-subscribed value the user already typed".
+                if response.lower() not in ("y", "yes"):
+                    stderr_console.print(
+                        f"[red]lacuna:[/] not a number: {response!r}"
+                    )
+                    return 2
+            else:
+                alt = int(response)
+                if alt < 1:
+                    stderr_console.print(
+                        f"[red]lacuna:[/] jobs must be ≥ 1, got {alt}."
+                    )
+                    return 2
+                chosen = alt
+                if chosen > cores:
+                    stdout_console.print(
+                        f"[dim]ok — saving {chosen} despite only "
+                        f"{cores} cores.[/]"
+                    )
+
+    current = load_settings()
+    save_settings(Settings(jobs_default=chosen))
+    prev = (
+        f" [dim](was {current.jobs_default})[/]"
+        if current.jobs_default is not None
+        else " [dim](was auto)[/]"
+    )
+    stdout_console.print(
+        f"[bright_green]✓[/] Default jobs set to [bold]{chosen}[/]{prev}."
+    )
+    stdout_console.print(f"  saved to [cyan]{settings_path()}[/]")
+    return 0
 
 
 def cmd_est(
