@@ -26,7 +26,7 @@ def short_id_for(full_id: str) -> str:
     return "g-" + hashlib.sha256(full_id.encode()).hexdigest()[:7]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Rule:
     group_id: str
     feature_kind: str
@@ -43,7 +43,7 @@ class Rule:
         return f"{self.group_id}::{self.feature_kind}={self.feature_value}"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Gap:
     rule_id: str
     entity_id: str

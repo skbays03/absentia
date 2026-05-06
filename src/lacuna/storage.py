@@ -91,7 +91,15 @@ class Storage:
         self.db_path = state_dir / "state.db"
         self._check_version_file()
         self.conn = sqlite3.connect(self.db_path)
+        # Performance pragmas — applied on every connection. Order matters:
+        # set journal_mode before WAL-incompatible operations, and set
+        # synchronous after journal_mode (NORMAL is the WAL-recommended pairing).
         self.conn.execute("PRAGMA foreign_keys = ON")
+        self.conn.execute("PRAGMA journal_mode = WAL")          # concurrent reads during writes
+        self.conn.execute("PRAGMA synchronous = NORMAL")        # WAL-safe; ~2× faster writes than FULL
+        self.conn.execute("PRAGMA temp_store = MEMORY")         # temp tables in RAM not disk
+        self.conn.execute("PRAGMA mmap_size = 268435456")       # 256 MB memory-mapped reads
+        self.conn.execute("PRAGMA cache_size = -65536")         # negative = KiB; 64 MB page cache
         self._apply_schema()
 
     # ── Lifecycle ────────────────────────────────────────────────────

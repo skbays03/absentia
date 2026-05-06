@@ -17,7 +17,7 @@ from typing import Iterable
 from .entities import Entity, FeatureSet
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Group:
     name: str                       # human-readable: "src/api" or "@audit"
     selector_type: str              # "directory" | "decorator" | ...

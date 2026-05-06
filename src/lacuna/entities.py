@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Entity:
     kind: str                    # "function" | "class" | "method" | ...
     qualified_name: str          # e.g. "src/api/users.py::delete_user"
@@ -23,7 +23,7 @@ class Entity:
         return self.qualified_name
 
 
-@dataclass
+@dataclass(slots=True)
 class FeatureSet:
     """Features an entity exhibits. Kind-keyed; values are JSON-encodable."""
     by_kind: dict[str, Any] = field(default_factory=dict)
