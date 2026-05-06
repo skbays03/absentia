@@ -170,11 +170,20 @@ def jobs_curve(
     ]
 
 
-def walk_corpus(root: Path, ext_to_extractor: dict) -> CorpusShape:
+def walk_corpus(
+    root: Path,
+    ext_to_extractor: dict,
+    *,
+    on_file: Any = None,
+) -> CorpusShape:
     """Tally files and bytes per language under ``root``.
 
     Cheap — only stats files, doesn't read content. Sub-second on the
     Linux kernel.
+
+    ``on_file``, if provided, is called with the relative path string
+    once per matched file. Used by callers that want to drive a
+    progress indicator's current-item sub-line during the walk.
     """
     from .parsing import find_source_files
 
@@ -196,6 +205,15 @@ def walk_corpus(root: Path, ext_to_extractor: dict) -> CorpusShape:
         by_lang_files[lang] = by_lang_files.get(lang, 0) + 1
         total_files += 1
         total_bytes += size
+        if on_file is not None:
+            try:
+                rel = str(path.relative_to(root))
+            except ValueError:
+                rel = str(path)
+            try:
+                on_file(rel)
+            except Exception:
+                pass  # UI hook must not break the walk
 
     return CorpusShape(
         files=total_files,

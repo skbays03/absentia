@@ -383,10 +383,14 @@ def _run_check(
         ext_to = extension_dispatch(extractors)
         walk_spinner = Spinner(label="Walking corpus")
         with spinning(walk_spinner):
-            shape = walk_corpus(root, ext_to)
+            shape = walk_corpus(
+                root, ext_to, on_file=walk_spinner.set_current_item,
+            )
         walk_spinner.finish()
         if shape.files > 0:
             progress_bar = ProgressBar(total=shape.files, label="Scanning")
+            # bar.update accepts (n, item=...) so we just hand its
+            # method to the scan loop directly.
             progress_callback = progress_bar.update
 
     try:
@@ -732,6 +736,9 @@ def cmd_purge_all(*, confirm: bool = True) -> int:
     try:
         with spinning(spinner):
             for path in home.rglob(".lacuna"):
+                # Show paths as the rglob visits them, even ones we skip,
+                # so the user sees the walk progressing.
+                spinner.set_current_item(str(path))
                 if not path.is_dir():
                     continue
                 if is_skip_descendant(path):
@@ -866,11 +873,14 @@ def cmd_est(
 
     # Spinner during the corpus walk — sub-second on small projects but
     # ~1–2 s on the Linux kernel; without it the tool looks frozen on
-    # big inputs.
+    # big inputs. Per-file callback feeds the spinner's sub-line so
+    # the user sees actual paths flash by during the walk.
     from .progress import Spinner, spinning
     spinner = Spinner(label=f"Walking {root}")
     with spinning(spinner):
-        shape = walk_corpus(root, ext_to_extractor)
+        shape = walk_corpus(
+            root, ext_to_extractor, on_file=spinner.set_current_item,
+        )
     spinner.finish()
 
     # When --use-synthetic is requested we calibrate on a bundled
@@ -1265,11 +1275,10 @@ def _scan_incremental(
                 new_features[entity.id] = features
             storage.save_entities_and_features(new_entities, new_features)
             storage.upsert_file(rel, current_hash, run_id)
-        if progress_callback is not None:
-            try:
-                progress_callback(len(chunk))
-            except Exception:
-                pass  # progress UI must never break a scan
+        # Note: progress is reported per-file during the walk loop,
+        # not here. Per-chunk batching used to call progress_callback
+        # with len(chunk), but that produced jumpy updates and lost
+        # the current-file display. Per-file is smoother.
         chunk.clear()
 
     try:
@@ -1291,14 +1300,22 @@ def _scan_incremental(
 
             current_hash = hashlib.sha256(content).hexdigest()
 
+            # Per-file progress tick. Increments the bar by 1 and shows
+            # the file currently being read as a sub-line. We do this
+            # AFTER the read+hash so the bar represents work actually
+            # done, not just files queued.
+            if progress_callback is not None:
+                try:
+                    progress_callback(1, item=rel)
+                except TypeError:
+                    # Older callbacks may only accept the count
+                    progress_callback(1)
+                except Exception:
+                    pass
+
             if cached.get(rel) == current_hash:
                 storage.upsert_file(rel, current_hash, run_id)
                 files_unchanged += 1
-                if progress_callback is not None:
-                    try:
-                        progress_callback(1)
-                    except Exception:
-                        pass
                 continue
 
             chunk.append((rel, content, current_hash, extractor))
