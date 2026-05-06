@@ -246,6 +246,15 @@ def run_calibration(
         else _make_step_indicator(total_steps)
     )
 
+    # Measure pipeline overhead first — the fixed per-scan cost
+    # independent of corpus size (storage init + WAL setup, mining
+    # boilerplate, group/symmetry/series passes over empty inputs,
+    # SQLite commit, etc.). On slow-overhead environments (WSL2,
+    # high-latency disks) this can be 0.5–2 s; subtracting it from
+    # the calibration scan gives a per-byte throughput estimate
+    # that isn't dominated by fixed overhead.
+    overhead_s = _measure_pipeline_overhead(config, extractors)
+
     observations: list[tuple[int, float]] = []
     primary_elapsed = 0.0
     for n_jobs in jobs_to_measure:
@@ -280,10 +289,15 @@ def run_calibration(
             primary_elapsed = elapsed
 
     predicted = serial_time_for(shape.by_language_bytes)
-    factor = (
-        predicted / primary_elapsed
-        if predicted > 0 and primary_elapsed > 0 else 1.0
+    # Subtract overhead before computing the throughput factor.
+    # Floor the residual at a small positive value so a synthetic
+    # corpus that's mostly overhead doesn't divide by zero or yield
+    # a wildly inflated factor; clamp the final factor too.
+    parse_only = max(0.01, primary_elapsed - overhead_s)
+    raw_factor = (
+        predicted / parse_only if predicted > 0 else 1.0
     )
+    factor = min(5.0, max(0.05, raw_factor))
     fitted_p = (
         fit_amdahl_p(observations)
         if fit_amdahl and len(observations) >= 2 else 0.80
@@ -389,8 +403,15 @@ def calibrate_per_language(
             elapsed = time.perf_counter() - started
 
         if elapsed > 0:
+            # Subtract per-scan overhead (we measured it once above
+            # in run_calibration; for a standalone calibrate_per_language
+            # call we re-measure here cheaply — typically <1 s).
+            lang_overhead = _measure_pipeline_overhead(
+                sub_config, sub_extractors,
+            )
+            parse_only = max(0.01, elapsed - lang_overhead)
             per_lang_bps[lang] = max(
-                1, int(shape.by_language_bytes[lang] / elapsed)
+                1, int(shape.by_language_bytes[lang] / parse_only)
             )
 
     return per_lang_bps
@@ -464,6 +485,48 @@ def _ticker_if_indicator(indicator: Any, ticking_fn: Any) -> Iterator[None]:
             cm.__exit__(None, None, None)
         except Exception:
             pass
+
+
+def _measure_pipeline_overhead(config: Any, extractors: dict) -> float:
+    """Run scan_corpus on an empty directory, return elapsed seconds.
+
+    The result is the fixed per-scan cost of lacuna's pipeline
+    independent of input size: storage init, mining boilerplate
+    over empty inputs, symmetry/series/dedup passes, SQLite commit.
+    Subtracting it from the calibration scan time gives a
+    throughput estimate that reflects actual per-byte parse cost,
+    not pipeline overhead.
+
+    On a fast machine (M-series + APFS) overhead is typically
+    50–100 ms. On WSL2 + ext4 + slower CPU + spawn-based MP it
+    can be 500–1500 ms. Either way, subtracting it makes the
+    throughput estimate meaningful.
+
+    Returns 0.0 on failure (caller treats it as "no overhead known"
+    and uses raw elapsed); never raises.
+    """
+    try:
+        with tempfile.TemporaryDirectory(prefix="lacuna-overhead-") as tmpd:
+            empty_root = Path(tmpd) / "empty"
+            empty_root.mkdir()
+            tmp_state = Path(tmpd) / "state"
+            tmp_state.mkdir()
+            from .storage import SCHEMA_VERSION
+            (tmp_state / "version").write_text(f"{SCHEMA_VERSION}\n")
+
+            from .cli import scan_corpus  # late import: avoid cycle
+
+            started = time.perf_counter()
+            scan_corpus(
+                root=empty_root,
+                state_dir=tmp_state,
+                config=config,
+                jobs=1,
+                extractors=extractors,
+            )
+            return time.perf_counter() - started
+    except Exception:
+        return 0.0
 
 
 def _select_amdahl_points(cores: int) -> list[int]:
