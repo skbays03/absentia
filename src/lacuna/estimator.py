@@ -229,6 +229,7 @@ def quick_estimate_line(
     config: Any,
     jobs: int | None = None,
     parallel_fraction: float = PARALLEL_FRACTION,
+    shape: "CorpusShape | None" = None,
 ) -> str | None:
     """Compact one-line preamble used by ``lacuna check`` / ``lacuna init`` /
     the TUI before a scan starts. Walks the corpus, applies the calibrated
@@ -239,14 +240,19 @@ def quick_estimate_line(
     Returns ``None`` if the estimator can't run (no extractors,
     no source files, or the corpus walk fails). Callers should
     treat ``None`` as "skip the preamble".
+
+    ``shape`` can be passed by callers that already walked the corpus
+    to avoid a duplicate walk (cmd_check shares one walk between this
+    preamble and the parse-bar total inside scan_corpus).
     """
     try:
         from .extractors import discover_extractors, extension_dispatch
         extractors = discover_extractors(config.scan.languages)
         if not extractors:
             return None
-        ext_to = extension_dispatch(extractors)
-        shape = walk_corpus(root, ext_to)
+        if shape is None:
+            ext_to = extension_dispatch(extractors)
+            shape = walk_corpus(root, ext_to)
         if shape.files == 0:
             return None
 

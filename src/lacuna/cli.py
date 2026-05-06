@@ -422,9 +422,25 @@ def _run_check(
     interactive_text_mode = (
         not as_json and not quiet and sys.stderr.isatty()
     )
+
+    # Walk-once cache: in interactive mode both the estimate preamble
+    # and scan_corpus's parse-bar setup want a CorpusShape. Walking
+    # the kernel takes ~1.5 s; doing it twice was a clean ~3 s of
+    # wasted wall-clock. Walk once here, share both. Optimization
+    # plan item 4.
+    cached_shape: Any = None
     if interactive_text_mode:
+        from .estimator import walk_corpus
+        ext_to = extension_dispatch(extractors)
+        try:
+            cached_shape = walk_corpus(root, ext_to)
+        except Exception:
+            cached_shape = None  # fall through to per-callee walks
+
         from .estimator import quick_estimate_line
-        line = quick_estimate_line(root=root, config=config, jobs=jobs)
+        line = quick_estimate_line(
+            root=root, config=config, jobs=jobs, shape=cached_shape,
+        )
         if line is not None:
             print(line, file=sys.stderr)
 
@@ -432,6 +448,7 @@ def _run_check(
         root=root, state_dir=state_dir, config=config,
         started=started, started_iso=started_iso, extractors=extractors,
         jobs=jobs, interactive=interactive_text_mode,
+        shape=cached_shape,
     )
     gaps = result["gaps"]
     rules_by_id = result["rules_by_id"]
@@ -476,6 +493,7 @@ def scan_corpus(
     jobs: int | None = None,
     progress_callback: Any = None,
     interactive: bool = False,
+    shape: Any = None,
 ) -> dict:
     """Run a full scan + mine cycle and return the result.
 
@@ -527,26 +545,43 @@ def scan_corpus(
     # total. Skipped when the caller is driving its own progress UI
     # (TUI). Even at 65 k files this is sub-second on Mac and ~1–2 s
     # on the kernel; the spinner makes that wait visible.
+    #
+    # If the caller already walked the corpus (cmd_check shares one
+    # walk between its estimate-preamble and this stage), we use
+    # their result instead of walking again — on the kernel that
+    # halves a ~3 s combined cost.
     parse_bar = None
     if interactive:
         from .estimator import _format_size, walk_corpus
         from .progress import ProgressBar, Spinner, _format_time, spinning
 
-        walk_spinner = Spinner(label="Walking corpus")
-        walk_started = time.perf_counter()
-        with spinning(walk_spinner):
-            shape = walk_corpus(
-                root, ext_to_extractor,
-                on_file=walk_spinner.set_current_item,
+        if shape is None:
+            walk_spinner = Spinner(label="Walking corpus")
+            walk_started = time.perf_counter()
+            with spinning(walk_spinner):
+                shape = walk_corpus(
+                    root, ext_to_extractor,
+                    on_file=walk_spinner.set_current_item,
+                )
+            stage_durations["walk"] = time.perf_counter() - walk_started
+            walk_spinner.finish(
+                end_message=(
+                    f"Walked corpus  ·  {shape.files:,d} files, "
+                    f"{_format_size(shape.bytes)}  ·  "
+                    f"{_format_time(stage_durations['walk'])}"
+                )
             )
-        stage_durations["walk"] = time.perf_counter() - walk_started
-        walk_spinner.finish(
-            end_message=(
-                f"Walked corpus  ·  {shape.files:,d} files, "
-                f"{_format_size(shape.bytes)}  ·  "
-                f"{_format_time(stage_durations['walk'])}"
+        else:
+            # Pre-walked by the caller; emit the same ✓ summary line
+            # so the per-stage display still has a Walk row, marked
+            # as cached so the user knows we didn't re-walk.
+            cached_walk = Spinner(label="Walking corpus")
+            cached_walk.finish(
+                end_message=(
+                    f"Walked corpus  ·  {shape.files:,d} files, "
+                    f"{_format_size(shape.bytes)}  ·  cached"
+                )
             )
-        )
 
         if shape.files > 0:
             parse_bar = ProgressBar(total=shape.files, label="Scanning")
