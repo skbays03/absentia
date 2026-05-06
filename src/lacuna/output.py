@@ -12,12 +12,43 @@ isn't, so piped output stays plain. Markup is *only* applied here in
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import json
-from typing import Any
+import sys
+from typing import Any, Iterator
 
-from ._console import stdout_console
+from rich.console import Console
+
 from .entities import Entity
 from .mining import Gap, Rule
+
+
+@contextlib.contextmanager
+def _capturing_console() -> Iterator[tuple[Console, io.StringIO]]:
+    """Build a Console that writes into a StringIO, with color decisions
+    matching whatever ``sys.stdout`` looks like *now*. Used by format
+    functions that need to return a styled-or-plain string.
+
+    ``force_terminal=is_tty`` lets us still force ANSI rendering into the
+    StringIO buffer when the real stdout would have done so, so the
+    returned string carries color codes that print correctly downstream.
+    When stdout is piped (non-TTY), ``force_terminal=False`` strips
+    markup automatically.
+
+    Context-manager shape lets callers preserve a clean ``with`` block.
+    The buffer remains valid after the block exits so ``buf.getvalue()``
+    works post-yield.
+    """
+    is_tty = sys.stdout.isatty()
+    buf = io.StringIO()
+    console = Console(
+        file=buf,
+        force_terminal=is_tty,
+        highlight=False,
+        soft_wrap=True,
+    )
+    yield console, buf
 
 
 def _confidence_style(confidence: float) -> str:
@@ -47,15 +78,16 @@ def format_gaps(
     if not gaps:
         return "No gaps. (lacuna found nothing wrong.)\n"
 
-    # Capture rich's output (markup auto-stripped when not a TTY) so we
-    # can return the rendered string instead of writing to stdout
-    # directly — keeps format_gaps a pure function.
-    with stdout_console.capture() as capture:
-        stdout_console.print(
+    # Build a local Console that writes into a buffer. Color decisions
+    # mirror the real stdout's TTY status — TTY → ANSI codes; pipe →
+    # plain text. Returning the buffer's value lets the caller print
+    # via plain ``print()`` and still keep color or strip it correctly.
+    with _capturing_console() as (console, buf):
+        console.print(
             f"[bold]GAPS[/]{'':<46}"
             f"confidence ≥ {min_confidence:.2f}   {len(gaps)}"
         )
-        stdout_console.print("")
+        console.print("")
 
         for gap in gaps:
             rule = rules[gap.rule_id]
@@ -70,7 +102,7 @@ def format_gaps(
             # codes (piped output gets plain padded text; TTY gets the
             # same padded text plus color escapes around the parts we
             # marked).
-            stdout_console.print(
+            console.print(
                 f"  [cyan]{loc:<40s}[/] "
                 f"{entity.kind} `[yellow]{short}[/]`"
                 f"{' ' * max(0, 32 - len(kind_label))} "
@@ -79,14 +111,14 @@ def format_gaps(
                 f"[dim]{gap.short_id}[/]"
             )
 
-        stdout_console.print("")
-        stdout_console.print(f"[dim]{'─' * 60}[/]")
-        stdout_console.print(
+        console.print("")
+        console.print(f"[dim]{'─' * 60}[/]")
+        console.print(
             f"  [bold]{len(gaps)}[/] gaps  ·  [bold]{len(rules)}[/] rules"
         )
-        stdout_console.print("")
+        console.print("")
 
-    return capture.get()
+    return buf.getvalue()
 
 
 def format_gaps_json(

@@ -353,7 +353,7 @@ def format_estimate_report(
     table (typically from ``calibration.calibrated_bps_table``);
     omitted means "use M-series baseline".
     """
-    from ._console import stdout_console
+    from .output import _capturing_console
 
     curve = jobs_curve(
         shape.by_language_bytes,
@@ -362,8 +362,10 @@ def format_estimate_report(
         parallel_fraction=parallel_fraction,
     )
 
-    with stdout_console.capture() as capture:
-        p = stdout_console.print
+    # Local Console writing into a buffer; matches stdout's TTY status
+    # so color codes are emitted only when stdout would render them.
+    with _capturing_console() as (console, buf):
+        p = console.print
         p(f"[bold]lacuna est[/] — cold-scan estimate for [cyan]{root}[/]")
         p("")
         p(
@@ -461,6 +463,6 @@ def format_estimate_report(
                 "               Run [bold cyan]`lacuna est --recalibrate`[/] "
                 "for machine-specific accuracy."
             )
-        p("[dim]Methodology:   docs/explanation/estimator.md[/]")
+    p("[dim]Methodology:   docs/explanation/estimator.md[/]")
 
-    return capture.get()
+    return buf.getvalue()

@@ -19,6 +19,7 @@ import hashlib
 import json
 
 from . import __version__
+from ._console import stderr_console, stdout_console
 from .config import Config, find_config
 from .entities import Entity, FeatureSet
 from .extractors import discover_extractors, extension_dispatch
@@ -251,15 +252,17 @@ def _load_config(root: Path, explicit: Path | None) -> Config:
 
 def cmd_init(*, root: Path, force: bool) -> int:
     if not root.is_dir():
-        print(f"lacuna: not a directory: {root}", file=sys.stderr)
+        stderr_console.print(f"[red]lacuna:[/] not a directory: [cyan]{root}[/]")
         return 2
 
     config_path = root / "lacuna.toml"
     state_dir = root / ".lacuna"
 
     if config_path.exists() and not force:
-        print(f"lacuna: {config_path} already exists. Use --force to overwrite.",
-              file=sys.stderr)
+        stderr_console.print(
+            f"[red]lacuna:[/] [cyan]{config_path}[/] already exists. "
+            f"Use [bold]--force[/] to overwrite."
+        )
         return 1
 
     config_path.write_text(_INIT_TEMPLATE)
@@ -277,10 +280,12 @@ def cmd_init(*, root: Path, force: bool) -> int:
                     fh.write("\n")
                 fh.write(".lacuna/\n")
 
-    print(f"Initialized lacuna in {root}")
-    print("  - Wrote lacuna.toml")
-    print("  - Created .lacuna/ (gitignored)")
-    print()
+    stdout_console.print(
+        f"[bright_green]✓[/] Initialized lacuna in [cyan]{root}[/]"
+    )
+    stdout_console.print("  - Wrote [cyan]lacuna.toml[/]")
+    stdout_console.print("  - Created [cyan].lacuna/[/] [dim](gitignored)[/]")
+    stdout_console.print()
 
     # First-scan estimate footer. Uses the calibrated model when
     # available; otherwise the uncalibrated baseline. Skips silently
@@ -292,7 +297,7 @@ def cmd_init(*, root: Path, force: bool) -> int:
         print(line)
         print()
 
-    print("Run `lacuna check` to start exploring.")
+    stdout_console.print("Run [bold cyan]`lacuna check`[/] to start exploring.")
     return 0
 
 
@@ -308,7 +313,7 @@ def cmd_check(
         if as_json:
             print(json.dumps({"error": f"not a directory: {root}"}))
         else:
-            print(f"lacuna: not a directory: {root}", file=sys.stderr)
+            stderr_console.print(f"[red]lacuna:[/] not a directory: [cyan]{root}[/]")
         return 2
 
     from datetime import datetime, timezone
@@ -322,7 +327,7 @@ def cmd_check(
         if as_json:
             print(json.dumps({"error": str(exc)}))
         else:
-            print(f"lacuna: {exc}", file=sys.stderr)
+            stderr_console.print(f"[red]lacuna:[/] {exc}")
         return 2
 
     try:
@@ -359,7 +364,7 @@ def _run_check(
         if as_json:
             print(json.dumps({"error": msg}))
         else:
-            print(f"lacuna: {msg}", file=sys.stderr)
+            stderr_console.print(f"[red]lacuna:[/] {msg}")
         return 2
 
     # One-line estimate preamble for interactive text mode.
@@ -664,17 +669,20 @@ def cmd_purge(root: Path, *, confirm: bool = True) -> int:
     import shutil
 
     if not root.is_dir():
-        print(f"lacuna: not a directory: {root}", file=sys.stderr)
+        stderr_console.print(f"[red]lacuna:[/] not a directory: [cyan]{root}[/]")
         return 2
 
     target = root / ".lacuna"
     if not target.exists():
-        print(f"lacuna: no .lacuna/ directory at {root}; nothing to purge.")
+        stdout_console.print(
+            f"[dim]lacuna: no .lacuna/ directory at [cyan]{root}[/]; "
+            f"nothing to purge.[/]"
+        )
         return 0
     if not target.is_dir():
-        print(
-            f"lacuna: {target} exists but isn't a directory; refusing to remove.",
-            file=sys.stderr,
+        stderr_console.print(
+            f"[red]lacuna:[/] [cyan]{target}[/] exists but isn't a directory; "
+            f"refusing to remove."
         )
         return 1
 
@@ -684,11 +692,10 @@ def cmd_purge(root: Path, *, confirm: bool = True) -> int:
         (target / "version").exists() or (target / "state.db").exists()
     )
     if not looks_lacuna:
-        print(
-            f"lacuna: {target} doesn't look like a lacuna state directory "
-            f"(no version or state.db). Refusing to remove. Delete manually "
-            f"if you're sure.",
-            file=sys.stderr,
+        stderr_console.print(
+            f"[red]lacuna:[/] [cyan]{target}[/] doesn't look like a lacuna "
+            f"state directory (no version or state.db). Refusing to remove. "
+            f"Delete manually if you're sure."
         )
         return 1
 
@@ -718,11 +725,11 @@ def cmd_purge(root: Path, *, confirm: bool = True) -> int:
             print()
             return 1
         if not response.startswith("y"):
-            print("Aborted; nothing removed.")
+            stdout_console.print("[yellow]Aborted; nothing removed.[/]")
             return 0
 
     shutil.rmtree(target)
-    print(f"Removed {target}")
+    stdout_console.print(f"[bright_green]✓[/] Removed [cyan]{target}[/]")
     if (root / "lacuna.toml").exists():
         print(
             f"  (lacuna.toml at {root} kept; "
@@ -778,7 +785,7 @@ def cmd_purge_all(*, confirm: bool = True) -> int:
                     project_state_dirs.append(path)
     except OSError as e:
         spinner.finish()
-        print(f"lacuna: scan failed: {e}", file=sys.stderr)
+        stderr_console.print(f"[red]lacuna:[/] scan failed: {e}")
         return 2
     spinner.finish(end_message=f"Scan complete ({len(project_state_dirs)} project state dirs found)")
 
@@ -789,7 +796,7 @@ def cmd_purge_all(*, confirm: bool = True) -> int:
     )
 
     if not project_state_dirs and not machine_cache_present:
-        print("No lacuna state found.")
+        stdout_console.print("[dim]No lacuna state found.[/]")
         return 0
 
     print()
@@ -828,7 +835,7 @@ def cmd_purge_all(*, confirm: bool = True) -> int:
             print()
             return 1
         if not response.startswith("y"):
-            print("Aborted; nothing removed.")
+            stdout_console.print("[yellow]Aborted; nothing removed.[/]")
             return 0
 
     removed = 0
@@ -838,7 +845,7 @@ def cmd_purge_all(*, confirm: bool = True) -> int:
             shutil.rmtree(d)
             removed += 1
         except OSError as e:
-            print(f"  failed: {d} ({e})", file=sys.stderr)
+            stderr_console.print(f"  [red]failed:[/] [cyan]{d}[/] ({e})")
             failed += 1
 
     if machine_cache_present:
@@ -846,14 +853,20 @@ def cmd_purge_all(*, confirm: bool = True) -> int:
             shutil.rmtree(machine_cache)
             removed += 1
         except OSError as e:
-            print(f"  failed: {machine_cache} ({e})", file=sys.stderr)
+            stderr_console.print(
+                f"  [red]failed:[/] [cyan]{machine_cache}[/] ({e})"
+            )
             failed += 1
 
-    print(f"\nRemoved {removed} location(s).", end="")
     if failed:
-        print(f" {failed} failed.")
+        stdout_console.print(
+            f"\n[bright_green]✓[/] Removed [bold]{removed}[/] location(s). "
+            f"[red]{failed} failed.[/]"
+        )
     else:
-        print()
+        stdout_console.print(
+            f"\n[bright_green]✓[/] Removed [bold]{removed}[/] location(s)."
+        )
     return 0 if failed == 0 else 1
 
 
@@ -885,7 +898,7 @@ def cmd_est(
     from .parallel import default_jobs
 
     if not root.is_dir():
-        print(f"lacuna: not a directory: {root}", file=sys.stderr)
+        stderr_console.print(f"[red]lacuna:[/] not a directory: [cyan]{root}[/]")
         return 2
 
     config = _load_config(root, None)
@@ -933,7 +946,9 @@ def cmd_est(
     if calibration is not None:
         stale, reason = is_stale(calibration)
         if stale and interactive:
-            print(f"Calibration is out of date — {reason}.", file=sys.stderr)
+            stderr_console.print(
+                f"[yellow]Calibration is out of date[/] — {reason}."
+            )
             if _prompt_yn("Re-run calibration?", default=True):
                 calibration = None
             # If user declines, keep the stale calibration in use.
@@ -947,23 +962,21 @@ def cmd_est(
         if calibration is not None:
             try:
                 save_calibration(calibration, cal_path)
-                print(
-                    f"Calibration cached at {cal_path}.\n",
-                    file=sys.stderr,
+                stderr_console.print(
+                    f"[bright_green]✓[/] Calibration cached at "
+                    f"[cyan]{cal_path}[/].\n"
                 )
             except OSError as e:
-                print(
-                    f"warning: could not save calibration ({e}); "
-                    f"running uncached.\n",
-                    file=sys.stderr,
+                stderr_console.print(
+                    f"[yellow]warning:[/] could not save calibration ({e}); "
+                    f"running uncached.\n"
                 )
     elif calibration is None and not interactive:
         # Non-TTY (CI, piped output): skip prompts, fall through to
         # uncalibrated output with a note.
-        print(
-            "(running uncalibrated — pipe to a terminal or run "
-            "`lacuna est` interactively to calibrate)\n",
-            file=sys.stderr,
+        stderr_console.print(
+            "[dim](running uncalibrated — pipe to a terminal or run "
+            "`lacuna est` interactively to calibrate)[/]\n"
         )
 
     # ── Reality check from prior scan ───────────────────────────────
@@ -1046,34 +1059,36 @@ def _interactive_calibrate(
     from .estimator import _format_seconds, _format_size, serial_time_for, walk_corpus
 
     if not force:
-        print(
-            "First time on this machine — run a one-time calibration?\n"
-            "This measures your CPU's scanning throughput so estimates\n"
-            "match your hardware. Result is cached at\n"
-            "~/.lacuna/calibration.json (only runs once)."
+        stdout_console.print(
+            "[bold cyan]First time on this machine[/] — run a one-time "
+            "calibration?\nThis measures your CPU's scanning throughput "
+            "so estimates\nmatch your hardware. Result is cached at\n"
+            "[cyan]~/.lacuna/calibration.json[/] (only runs once)."
         )
         if not _prompt_yn("Calibrate now?", default=True):
-            print("Skipping calibration; using M-series baseline.\n")
+            stdout_console.print(
+                "[dim]Skipping calibration; using M-series baseline.[/]\n"
+            )
             return None
 
     # Synthetic-corpus shortcut: skip the path-prompt loop entirely.
     if use_synthetic:
         with tempfile.TemporaryDirectory(prefix="lacuna-synth-") as tmpd:
             synth_root = make_synthetic_corpus(Path(tmpd) / "corpus")
-            print(
+            stdout_console.print(
                 f"\nCalibrating against bundled synthetic corpus "
-                f"({len(list(synth_root.glob('*.py')))} files)…"
+                f"([bold]{len(list(synth_root.glob('*.py')))}[/] files)…"
             )
             try:
                 data = run_calibration(corpus_root=synth_root, config=config)
             except (ValueError, KeyboardInterrupt) as e:
-                print(f"Calibration failed: {e}")
+                stderr_console.print(f"[red]Calibration failed:[/] {e}")
                 return None
-        print(
-            f"\nCalibration complete:\n"
-            f"  speed factor:   {data.machine_speed_factor:.2f}× "
+        stdout_console.print(
+            f"\n[bright_green]✓[/] Calibration complete:\n"
+            f"  speed factor:   [bold]{data.machine_speed_factor:.2f}×[/] "
             f"baseline (1.00× = M-series MacBook)\n"
-            f"  fitted Amdahl:  p = {data.amdahl_p:.2f}\n"
+            f"  fitted Amdahl:  p = [bold]{data.amdahl_p:.2f}[/]\n"
         )
         return data
 
@@ -1083,7 +1098,9 @@ def _interactive_calibrate(
         if target is None:
             return None
         if not target.is_dir():
-            print(f"lacuna: not a directory: {target}")
+            stderr_console.print(
+                f"[red]lacuna:[/] not a directory: [cyan]{target}[/]"
+            )
             target = _prompt_path("Enter a calibration corpus path: ")
             if target is None:
                 return None
@@ -1095,13 +1112,13 @@ def _interactive_calibrate(
         shape = walk_corpus(target, ext_to)
 
         if shape.files < MIN_CALIBRATION_FILES or shape.bytes < MIN_CALIBRATION_BYTES:
-            print(
-                f"\n{target} has only {shape.files} files / "
-                f"{_format_size(shape.bytes)} — too small for reliable "
+            stdout_console.print(
+                f"\n[yellow]{target} has only {shape.files} files / "
+                f"{_format_size(shape.bytes)}[/] — too small for reliable "
                 f"calibration (need ≥ {MIN_CALIBRATION_FILES} files / "
                 f"{_format_size(MIN_CALIBRATION_BYTES)}).\n"
-                f"Tip: rerun with `--use-synthetic` to calibrate against "
-                f"a bundled corpus."
+                f"[dim]Tip:[/] rerun with [bold cyan]`--use-synthetic`[/] "
+                f"to calibrate against a bundled corpus."
             )
             target = _prompt_path("Enter a different path: ")
             if target is None:
@@ -1110,12 +1127,12 @@ def _interactive_calibrate(
 
         # Show predicted time so the user knows what they're agreeing to
         predicted = serial_time_for(shape.by_language_bytes)
-        print(
-            f"\nCalibrating against {target}\n"
-            f"  files: {shape.files:,d}   "
-            f"bytes: {_format_size(shape.bytes)}   "
-            f"est. duration: ~{_format_seconds(predicted)} "
-            f"(uncalibrated estimate)"
+        stdout_console.print(
+            f"\nCalibrating against [cyan]{target}[/]\n"
+            f"  files: [bold]{shape.files:,d}[/]   "
+            f"bytes: [bold]{_format_size(shape.bytes)}[/]   "
+            f"est. duration: [green]~{_format_seconds(predicted)}[/] "
+            f"[dim](uncalibrated estimate)[/]"
         )
         # When --recalibrate is set, the user already opted into a
         # recalibration explicitly; skip the secondary "Proceed?"
@@ -1132,20 +1149,22 @@ def _interactive_calibrate(
 
         # Run it
         try:
-            print("Running calibration… (press Ctrl+C to abort)")
+            stdout_console.print(
+                "[dim]Running calibration… (press Ctrl+C to abort)[/]"
+            )
             data = run_calibration(corpus_root=target, config=config)
         except KeyboardInterrupt:
-            print("\nCalibration aborted.")
+            stdout_console.print("\n[yellow]Calibration aborted.[/]")
             return None
         except ValueError as e:
-            print(f"Calibration failed: {e}")
+            stderr_console.print(f"[red]Calibration failed:[/] {e}")
             return None
 
-        print(
-            f"\nCalibration complete:\n"
-            f"  scanned:        {data.calibration_files:,d} files in "
-            f"{_format_seconds(data.calibration_duration_s)}\n"
-            f"  speed factor:   {data.machine_speed_factor:.2f}× "
+        stdout_console.print(
+            f"\n[bright_green]✓[/] Calibration complete:\n"
+            f"  scanned:        [bold]{data.calibration_files:,d}[/] files in "
+            f"[green]{_format_seconds(data.calibration_duration_s)}[/]\n"
+            f"  speed factor:   [bold]{data.machine_speed_factor:.2f}×[/] "
             f"baseline (1.00× = M-series MacBook)\n"
         )
         return data
@@ -1173,41 +1192,56 @@ def cmd_suppress(
 ) -> int:
     state_dir = root / ".lacuna"
     if not state_dir.is_dir():
-        print(f"lacuna: no .lacuna/ in {root}. Run `lacuna check` first.",
-              file=sys.stderr)
+        stderr_console.print(
+            f"[red]lacuna:[/] no [cyan].lacuna/[/] in [cyan]{root}[/]. "
+            f"Run [bold cyan]`lacuna check`[/] first."
+        )
         return 2
 
     with Storage(state_dir) as storage:
         if as_list:
             existing = storage.load_suppressions()
             if not existing:
-                print("(no suppressions)")
+                stdout_console.print("[dim](no suppressions)[/]")
                 return 0
             for short_id, info in sorted(existing.items()):
                 created = info["created_at"] or ""
-                print(f"  {short_id}  {created}")
-                print(f"    reason: {info['reason']}")
+                stdout_console.print(
+                    f"  [bold]{short_id}[/]  [dim]{created}[/]"
+                )
+                stdout_console.print(f"    reason: {info['reason']}")
                 if info["full_id"]:
-                    print(f"    full:   {info['full_id']}")
-                print()
+                    stdout_console.print(
+                        f"    full:   [dim]{info['full_id']}[/]"
+                    )
+                stdout_console.print()
             return 0
 
         if not gap_id:
-            print("lacuna: gap_id required (or --list to show existing).",
-                  file=sys.stderr)
+            stderr_console.print(
+                "[red]lacuna:[/] gap_id required "
+                "(or [bold]--list[/] to show existing)."
+            )
             return 2
 
         if remove:
             removed = storage.remove_suppression(_normalize_short(gap_id))
             if removed:
-                print(f"Removed suppression {_normalize_short(gap_id)}.")
+                stdout_console.print(
+                    f"[bright_green]✓[/] Removed suppression "
+                    f"[bold]{_normalize_short(gap_id)}[/]."
+                )
                 return 0
-            print(f"No suppression found for {gap_id!r}.", file=sys.stderr)
+            stderr_console.print(
+                f"[red]No suppression found for[/] [bold]{gap_id!r}[/]."
+            )
             return 1
 
         if not reason:
-            print("lacuna: --reason required when adding a suppression.",
-                  file=sys.stderr)
+            stderr_console.print(
+                "[red]lacuna:[/] [bold]--reason[/] required "
+                "when adding a suppression."
+            )
             return 2
 
         # User may pass either a short id ('g-7c91234') or a full one.
@@ -1219,8 +1253,10 @@ def cmd_suppress(
             full = gap_id
 
         storage.add_suppression(short_id=short, full_id=full, reason=reason)
-        print(f"Suppressed {short}.")
-        print(f"  reason: {reason}")
+        stdout_console.print(
+            f"[bright_green]✓[/] Suppressed [bold]{short}[/]."
+        )
+        stdout_console.print(f"  reason: {reason}")
         return 0
 
 
