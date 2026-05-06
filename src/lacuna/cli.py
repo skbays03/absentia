@@ -88,6 +88,7 @@ def main(argv: list[str] | None = None) -> int:
             "  lacuna check                    batch scan, print gaps, exit non-zero on failure\n"
             "  lacuna check --jobs N           override worker count (default: half of cores)\n"
             "  lacuna est                      headline total + per-jobs check breakdown\n"
+            "  lacuna est --history            show recent `lacuna check` runs feeding the model\n"
             "  lacuna est --recalibrate        re-run calibration (also recalibrates on PATH)\n"
             "  lacuna est --use-synthetic      calibrate against bundled corpus (empty cwd OK)\n"
             "  lacuna suppress GAP_ID          mark a gap as intentional\n"
@@ -165,8 +166,10 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Predict total `lacuna check` time without scanning. "
             "Shows a headline total ± confidence band and a per-jobs "
-            "breakdown (parse + mine_tail = check). Confidence "
-            "tightens once you've actually run check on this corpus."
+            "breakdown (parse + mine_tail = check). Estimates auto-"
+            "improve as you run more `lacuna check` invocations — "
+            "every check appends to ~/.lacuna/runs.jsonl and "
+            "future est calls aggregate from it."
         ),
     )
     est.add_argument("path", nargs="?", default=".",
@@ -179,6 +182,11 @@ def main(argv: list[str] | None = None) -> int:
                           "corpus instead of cwd. Useful when the current "
                           "directory is empty or too small for reliable "
                           "calibration.")
+    est.add_argument("--history", action="store_true",
+                     help="Print the recent `lacuna check` runs that "
+                          "feed the estimator and exit. Useful for "
+                          "auditing what data the prediction is based "
+                          "on (~/.lacuna/runs.jsonl).")
 
     suppress = sub.add_parser(
         "suppress",
@@ -247,6 +255,8 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if args.cmd in ("est", "estimate"):
+        if args.history:
+            return cmd_est_history()
         return cmd_est(
             root=Path(args.path).resolve(),
             recalibrate=args.recalibrate,
@@ -528,7 +538,7 @@ def scan_corpus(
         run_id = storage.begin_run()
         parse_started = time.perf_counter()
         try:
-            files_seen, files_unchanged = _scan_incremental(
+            files_seen, files_unchanged, by_language_bytes = _scan_incremental(
                 root, storage, run_id, ext_to_extractor, jobs=jobs,
                 progress_callback=progress_callback,
             )
@@ -765,6 +775,7 @@ def scan_corpus(
             for stage, secs in stage_durations.items()
         },
         "jobs": jobs,
+        "by_language_bytes": by_language_bytes,
     }
     _write_last_run(state_dir, scan_stats, run_id, len(gaps))
 
@@ -1091,6 +1102,83 @@ def cmd_jobs_default(n: int, *, confirm: bool = True) -> int:
     return 0
 
 
+def cmd_est_history() -> int:
+    """Print the recent ``lacuna check`` runs that feed the estimator.
+
+    Sourced from ``~/.lacuna/runs.jsonl``. Useful for seeing what data
+    the predictions are based on — e.g. "I keep getting 'low
+    confidence' on a Rust corpus" → check whether prior runs covered
+    Rust at all.
+    """
+    from .calibration import detect_cores
+    from .runs_log import (
+        aggregate, load_recent_runs, runs_log_path,
+    )
+
+    log_path = runs_log_path()
+    runs = load_recent_runs()
+    if not runs:
+        stdout_console.print(
+            f"[dim]No prior runs at [cyan]{log_path}[/]. Run "
+            f"[bold cyan]`lacuna check`[/] in any project to start "
+            f"populating the log.[/]"
+        )
+        return 0
+
+    aggregated = aggregate(
+        runs,
+        current_cores=detect_cores(),
+        current_version=__version__,
+    )
+
+    stdout_console.print(
+        f"[bold]Recent runs[/] from [cyan]{log_path}[/] "
+        f"([bold]{len(runs)}[/] total, "
+        f"[bold]{aggregated.runs_used}[/] compatible with this "
+        f"machine, [dim]{aggregated.runs_skipped} skipped[/])"
+    )
+    stdout_console.print("")
+    stdout_console.print(
+        f"  {'when':<20s}  {'jobs':>4s}  {'files':>7s}  "
+        f"{'check':>8s}  {'parse':>8s}  {'mine':>8s}  root"
+    )
+    for r in runs[-30:]:  # most recent 30
+        ts = (r.get("ts") or "")[:19].replace("T", " ")
+        jobs = r.get("jobs") or "?"
+        files = r.get("files") or 0
+        stage = r.get("stage_ms") or {}
+        parse_s = float(stage.get("parse") or 0) / 1000.0
+        mine_s = (
+            float(stage.get("mine") or 0)
+            + float(stage.get("finalize") or 0)
+        ) / 1000.0
+        check_s = sum(
+            float(v or 0) for v in stage.values()
+        ) / 1000.0
+        root = r.get("root") or "?"
+        if len(root) > 50:
+            root = "..." + root[-47:]
+        stdout_console.print(
+            f"  [dim]{ts:<20s}[/]  {jobs:>4}  {files:>7,d}  "
+            f"{check_s:>7.1f}s  {parse_s:>7.1f}s  {mine_s:>7.1f}s  "
+            f"[cyan]{root}[/]"
+        )
+    if aggregated.mining_seconds_per_byte is not None:
+        stdout_console.print("")
+        stdout_console.print(
+            f"  [bold]Aggregated mining throughput:[/] "
+            f"[bright_green]{aggregated.mining_seconds_per_byte * 1e9:.1f} "
+            f"ns/byte[/] across [bold]{aggregated.runs_used}[/] runs."
+        )
+    elif aggregated.runs_used < 3:
+        stdout_console.print("")
+        stdout_console.print(
+            f"  [dim](need ≥ 3 compatible runs to aggregate; have "
+            f"{aggregated.runs_used})[/]"
+        )
+    return 0
+
+
 def cmd_est(
     *, root: Path, recalibrate: bool, use_synthetic: bool = False,
 ) -> int:
@@ -1107,6 +1195,7 @@ def cmd_est(
     from .calibration import (
         calibrated_bps_table,
         calibration_path,
+        detect_cores,
         is_stale,
         load_calibration,
         save_calibration,
@@ -1233,19 +1322,40 @@ def cmd_est(
     p_value = calibration.amdahl_p if calibration is not None else PARALLEL_FRACTION
 
     # Calibrated mining-tail estimate for this corpus (used when no
-    # observed last_run.json data exists). Linear extrapolation:
-    # mining_spb measured during calibration × current corpus bytes.
+    # observed last_run.json data exists). Source priority:
+    #   1. Aggregated runs (~/.lacuna/runs.jsonl) — if ≥3 fresh runs
+    #      with this machine's cores+version exist, derive
+    #      mining_seconds_per_byte from them. Beats one-shot
+    #      calibration because it averages real-world variance.
+    #   2. Static calibration (calibration.json) — the seed value.
+    #   3. None — falls through to parse-only table.
     # When observed_stage_durations is also present, that wins inside
-    # format_estimate_report — observed beats modeled.
-    model_mining_tail_s: float | None = None
-    if (
+    # format_estimate_report — observed beats both modeled sources.
+    from .runs_log import aggregate, load_recent_runs
+    runs = load_recent_runs()
+    aggregated = aggregate(
+        runs,
+        current_cores=detect_cores(),
+        current_version=__version__,
+    )
+
+    model_mining_spb: float | None = None
+    model_mining_source: str = ""
+    if aggregated.mining_seconds_per_byte is not None:
+        model_mining_spb = aggregated.mining_seconds_per_byte
+        model_mining_source = (
+            f"aggregated from {aggregated.runs_used} prior runs"
+        )
+    elif (
         calibration is not None
         and calibration.mining_seconds_per_byte > 0
-        and shape.bytes > 0
     ):
-        model_mining_tail_s = (
-            shape.bytes * calibration.mining_seconds_per_byte
-        )
+        model_mining_spb = calibration.mining_seconds_per_byte
+        model_mining_source = "from calibration"
+
+    model_mining_tail_s: float | None = None
+    if model_mining_spb is not None and shape.bytes > 0:
+        model_mining_tail_s = shape.bytes * model_mining_spb
 
     # Synthetic-only case: calibration ran but root has no source files,
     # so there's nothing to estimate. Calibration result is what they
@@ -1276,6 +1386,8 @@ def cmd_est(
         observed_stage_durations=observed_stage_durations,
         observed_jobs=observed_jobs,
         model_mining_tail_s=model_mining_tail_s,
+        model_mining_source=model_mining_source,
+        runs_used=aggregated.runs_used,
         calibrated_languages=calibrated_languages,
         bps_table=bps_table,
         parallel_fraction=p_value,
@@ -1533,10 +1645,13 @@ def _scan_incremental(
     ext_to_extractor: dict,
     jobs: int = 1,
     progress_callback: Any = None,
-) -> tuple[int, int]:
+) -> tuple[int, int, dict[str, int]]:
     """Walk the corpus, reusing cached entities/features for unchanged files.
 
-    Returns ``(files_seen, files_unchanged)`` for the run summary.
+    Returns ``(files_seen, files_unchanged, by_language_bytes)`` for
+    the run summary. The ``by_language_bytes`` map covers every file
+    visited (cached + changed); it feeds the machine-wide runs log
+    so `lacuna est` can refine predictions across past scans.
 
     When ``jobs > 1`` and a chunk has enough changed files to amortize
     process startup, parse + extract runs across a worker pool. Storage
@@ -1553,6 +1668,7 @@ def _scan_incremental(
     cached = storage.all_file_hashes()
     seen_paths: set[str] = set()
     files_unchanged = 0
+    by_language_bytes: dict[str, int] = {}
 
     # Memory-bounded streaming: we hold at most CHUNK_SIZE files' worth
     # of content + parse results in RAM at once. Above this we drain
@@ -1649,6 +1765,15 @@ def _scan_incremental(
             except OSError:
                 continue
 
+            # Bucket bytes by language for the runs-log aggregation.
+            # We do this for every file visited (cached + changed),
+            # not just changed ones, because the predictor wants the
+            # *whole corpus* shape, not the dirty subset.
+            by_language_bytes[extractor.language_name] = (
+                by_language_bytes.get(extractor.language_name, 0)
+                + len(content)
+            )
+
             current_hash = hashlib.sha256(content).hexdigest()
 
             if cached.get(rel) == current_hash:
@@ -1676,7 +1801,7 @@ def _scan_incremental(
     for stale in set(cached) - seen_paths:
         storage.delete_file(stale)
 
-    return len(seen_paths), files_unchanged
+    return len(seen_paths), files_unchanged, by_language_bytes
 
 
 def _write_last_run(
@@ -1697,3 +1822,35 @@ def _write_last_run(
     (state_dir / "last_run.json").write_text(
         json.dumps(summary, indent=2) + "\n"
     )
+
+    # Append to the machine-wide runs log so `lacuna est` can refine
+    # its predictions across every project we've scanned. Best-effort:
+    # log-append failures don't break a successful scan.
+    _append_run_to_global_log(scan_stats, gaps_found)
+
+
+def _append_run_to_global_log(scan_stats: dict, gaps_found: int) -> None:
+    """Append a row to ~/.lacuna/runs.jsonl. Best-effort; isolates any
+    aggregation/IO concerns from the scan path."""
+    try:
+        from .calibration import detect_cores
+        from .runs_log import append_run
+        from . import __version__
+        record = {
+            "ts": scan_stats.get("started_at"),
+            "version": __version__,
+            "cores": detect_cores(),
+            "jobs": scan_stats.get("jobs"),
+            "root": scan_stats.get("root"),
+            "files": scan_stats.get("files_seen"),
+            "files_unchanged": scan_stats.get("files_unchanged"),
+            "entities": scan_stats.get("entities_scanned"),
+            "by_language_bytes": scan_stats.get("by_language_bytes"),
+            "stage_ms": scan_stats.get("stage_durations_ms"),
+            "gaps": gaps_found,
+        }
+        # Drop None values to keep the log compact.
+        record = {k: v for k, v in record.items() if v is not None}
+        append_run(record)
+    except Exception:
+        pass  # never break a scan over a logging hiccup

@@ -337,6 +337,7 @@ def _estimate_confidence(
     calibrated_at: str | None,
     target_by_language_bytes: dict[str, int],
     calibrated_languages: set[str],
+    runs_used: int = 0,
 ) -> tuple[str, float, str]:
     """Return ``(label, relative_error, reason)`` for the est headline.
 
@@ -363,10 +364,24 @@ def _estimate_confidence(
         return ("high", 0.05, "ground-truth from prior cold scan")
 
     if not calibrated:
+        # Aggregated runs are themselves a calibration substitute —
+        # if the user has run `lacuna check` enough times we have
+        # real timing data for mining throughput regardless of
+        # whether they ever ran `est --recalibrate`.
+        if runs_used >= 5:
+            return (
+                "medium", 0.25,
+                f"uncalibrated, but {runs_used} prior runs feed mining throughput"
+            )
+        if runs_used >= 3:
+            return (
+                "low", 0.40,
+                f"uncalibrated; {runs_used} prior runs help, run a few more for tighter bounds"
+            )
         return (
             "low", 0.50,
             "uncalibrated — using M-series baseline; run "
-            "`lacuna est --recalibrate` for accuracy"
+            "`lacuna est --recalibrate` or `lacuna check` a few times for accuracy"
         )
 
     # Age penalty
@@ -418,6 +433,16 @@ def _estimate_confidence(
 
     rel_err = min(0.60, base * age_mult)
 
+    # Tighten the band as more real-world runs accumulate. Each run
+    # adds independent signal; 5+ runs of compatible data is enough
+    # to nominally cut the band in half (capped at floor=0.08).
+    if runs_used >= 10:
+        rel_err = max(0.08, rel_err * 0.5)
+    elif runs_used >= 5:
+        rel_err = max(0.10, rel_err * 0.65)
+    elif runs_used >= 3:
+        rel_err = max(0.12, rel_err * 0.80)
+
     if rel_err <= 0.18:
         label = "high"
     elif rel_err <= 0.30:
@@ -432,6 +457,8 @@ def _estimate_confidence(
     reason_parts = [coverage_note]
     if age_phrase:
         reason_parts.append(age_phrase)
+    if runs_used >= 3:
+        reason_parts.append(f"refined by {runs_used} prior runs")
     return label, rel_err, "; ".join(reason_parts)
 
 
@@ -447,6 +474,8 @@ def format_estimate_report(
     observed_stage_durations: dict[str, float] | None = None,
     observed_jobs: int | None = None,
     model_mining_tail_s: float | None = None,
+    model_mining_source: str = "",
+    runs_used: int = 0,
     calibrated_languages: set[str] | None = None,
     bps_table: dict[str, int] | None = None,
     parallel_fraction: float = PARALLEL_FRACTION,
@@ -533,6 +562,7 @@ def format_estimate_report(
             calibrated_at=calibrated_at,
             target_by_language_bytes=shape.by_language_bytes,
             calibrated_languages=calibrated_languages or set(),
+            runs_used=runs_used,
         )
         conf_color = {
             "high": "bright_green", "medium": "yellow", "low": "red",
@@ -556,9 +586,15 @@ def format_estimate_report(
                 f"[dim]± {_format_seconds(band_s)}[/]   "
                 f"([{conf_color}]{confidence_label} confidence[/])"
             )
+            source_note = head_mine_source
+            if (
+                head_mine_source == "estimated"
+                and model_mining_source
+            ):
+                source_note = f"estimated, {model_mining_source}"
             p(
                 f"  components             [dim]{tail_phrase} at "
-                f"default jobs ({default_jobs}) · {head_mine_source}[/]"
+                f"default jobs ({default_jobs}) · {source_note}[/]"
             )
             p(f"  [dim]{conf_reason}[/]")
             p("")
