@@ -17,34 +17,56 @@ By language
                javascript        40 files (953.5 KB)
                bash              27 files (138.1 KB)
 
+Total check estimate      ~1.4 s ± 0.2 s   (medium confidence)
+  components             parse 0.8 s + mine 0.6 s at default jobs (5) · estimated, aggregated from 8 prior runs
+  calibration covers your language mix; refined by 8 prior runs
+
 Single-process baseline   0.8 s
 At default jobs (= 5)       ~0.8 s   (1.00× speedup, 10% efficiency)
-Last actual cold scan     0.9 s   (from .lacuna/last_run.json — ground truth)
+Last actual cold scan     1.4 s   (from .lacuna/last_run.json — ground truth, jobs=5)
+Last cold-scan stage breakdown
+               walk          0 s   (enumerate files; serial)
+               parse       0.8 s   (scales with --jobs)
+               store       0.0 s   (sqlite commit; serial)
+               mine        0.6 s   (capped at 4 threads)
+               finalize    0.0 s   (dedup + commit; serial)
 
-    jobs    est. time   speedup   efficiency
-       1        0.8 s    1.00×        100%
-       2        0.6 s    1.28×         64%
-       4        0.8 s    1.05×         26%
-       8        0.8 s    1.00×         12%
-      10        0.8 s    1.00×         10%
+    jobs    parse        +mine(obs)  check     speedup   efficiency
+       1       0.8 s   +  0.6 s      1.4 s    1.00×        100%
+       2       0.6 s   +  0.6 s      1.2 s    1.28×         64%
+       4       0.8 s   +  0.6 s      1.4 s    1.05×         26%
+       8       0.8 s   +  0.6 s      1.4 s    1.00×         12%
+      10       0.8 s   +  0.6 s      1.4 s    1.00×         10%
 
 Cost model:    p = 0.36 (fitted), calibrated on this machine (2026-05-05).
 Methodology:   docs/explanation/estimator.md
 ```
 
-Three blocks worth understanding:
+Four blocks worth understanding:
 
 - **Top:** what's being scanned. File count and bytes per language
   drive the cost model.
-- **Middle:** the headline numbers. Single-process baseline is the
-  predicted time at `--jobs 1`; "default jobs" is what you get if
-  you run plain `lacuna check`. The "Last actual cold scan" line
-  appears when `.lacuna/last_run.json` exists and lets you sanity-
-  check the prediction against reality.
+- **Headline:** "Total check estimate" is the single number you
+  came here for — predicted total `lacuna check` time at default
+  jobs, with a ± confidence band. The label after the band is one
+  of `high` (±5–18%), `medium` (±18–30%), or `low` (>30%). The
+  "components" line tells you whether the mining tail came from a
+  prior cold scan (`observed`), the calibrated linear model
+  (`estimated`), or aggregated runs (`aggregated from N prior
+  runs`).
+- **Middle:** the per-stage numbers. Single-process baseline is
+  the predicted time at `--jobs 1`; "default jobs" is what you
+  get if you run plain `lacuna check`. The "Last actual cold scan"
+  + "Last cold-scan stage breakdown" lines appear when
+  `.lacuna/last_run.json` exists, exposing where time actually
+  went on the prior run.
 - **Bottom:** the jobs-vs-time table at powers of two up to your
-  CPU's core count. Speedup and efficiency reveal whether more cores
-  buy you anything (often they don't past 2–4 — see *Tapering
-  efficiency* below).
+  CPU's core count. The `+mine(obs)` or `+mine(est)` column shows
+  the serial mining tail (mine + finalize, doesn't scale with
+  workers); `check` totals it with the per-jobs parse estimate.
+  Speedup and efficiency describe the parse stage only — past 2–4
+  workers, additional cores buy less (see *Tapering efficiency*
+  below).
 
 ## The cost model
 
@@ -187,17 +209,27 @@ The full result is cached at `~/.lacuna/calibration.json`:
   "lacuna_version": "...",
   "core_count": 10,
   "machine_speed_factor": 0.26,
+  "calibration_corpus_path": "...",
+  "calibration_files": 395,
+  "calibration_bytes": 5_500_000,
+  "calibration_duration_s": 0.79,
   "amdahl_p": 0.36,
   "jobs_curve_observed": [[1, 0.79], [2, 0.65], [4, 0.55], [8, 0.55]],
   "per_language_bps": {"python": 6443353, "javascript": 3476173},
-  "...": "..."
+  "mining_seconds_per_byte": 1.1e-7,
+  "calibration_corpus_languages": ["python", "javascript", "bash"]
 }
 ```
 
-Future estimates use a two-layer policy: per-language overrides win
-where they exist; everything else gets `M_SERIES_BPS[lang]` scaled
-by `machine_speed_factor`. The fitted `p` flows into the Amdahl
-curve.
+Future estimates use a layered policy: per-language overrides win
+where they exist; languages that *appeared* in the calibration
+corpus (recorded in `calibration_corpus_languages`) get
+global-speed-factor scaling on the M-series baseline; languages
+that didn't get the baseline only. The fitted `p` flows into the
+Amdahl curve. `mining_seconds_per_byte` lets the estimator predict
+the mining tail before the user runs check; once `~/.lacuna/runs.jsonl`
+has ≥3 fresh runs of compatible cores+version, that aggregated
+value supersedes this one.
 
 ### When calibration re-prompts
 
@@ -288,10 +320,9 @@ Once calibration runs, the cost model is in service across lacuna:
 All four paths share the same `quick_estimate_line()` helper and
 read the same `~/.lacuna/calibration.json` cache.
 
-## Future work
+## Status and future work
 
-The current implementation covers the headline features in the
-original design:
+Shipped:
 
 - ✅ Per-language calibration (≥ 500 KB threshold for clean signal)
 - ✅ Amdahl's `p` fitted from observed multi-jobs curve
@@ -299,17 +330,36 @@ original design:
 - ✅ Age-based re-prompt (90 days)
 - ✅ Stale-detection on version + core-count change
 - ✅ Reality-check ground truth from prior `last_run.json`
+- ✅ Calibrated mining-tail prediction
+  (`mining_seconds_per_byte`) so the predictor can estimate full
+  check time before the user runs check
+- ✅ Headline total + confidence band (`high`/`medium`/`low ± rel_err`)
+- ✅ Per-stage breakdown when prior cold-scan timings exist
+- ✅ Pipeline-overhead subtraction in calibration so synthetic and
+  small-corpus calibrations don't fall victim to fixed-overhead
+  noise
+- ✅ Runs-log aggregation (`~/.lacuna/runs.jsonl`) — every
+  `lacuna check` automatically refines `mining_seconds_per_byte`,
+  no explicit recalibration needed; confidence band tightens with
+  sample count
 
 What's still rough:
 
-- The 500 KB minimum-bytes-per-language threshold is conservative.
-  A more sophisticated model would subtract estimated pipeline
-  overhead from the per-language elapsed time, recovering signal
-  on smaller language shares.
-- `p` is fit on a single corpus. A more rigorous fit would combine
-  multiple corpora + bootstrap to give a confidence interval, not
-  a point estimate.
-- No telemetry / no aggregation. Each user calibrates locally, and
-  we don't know if our defaults are good for the population. A
-  privacy-respecting opt-in submission would let us refine the
-  M-series baselines over time.
+- The 500 KB minimum-bytes-per-language threshold for
+  `per_language_bps` is conservative. The runs-log aggregation
+  doesn't yet include per-language bps because attributing parse
+  wall-time to a single language is hard in a multi-language run.
+  A future pass could mine single-language-dominant runs as
+  per-language samples.
+- `p` is fit on a single corpus per calibration. The runs log
+  could feed a multi-corpus bootstrap fit that produces a
+  confidence interval rather than a point estimate.
+- The model is linear in bytes for both parse and mining. Mining
+  has known superlinear behavior on huge corpora (pair counts
+  scale with name diversity), which the linear model under-
+  predicts above ~50 MB per language. A piecewise-linear or
+  log-linear fit would track that better.
+- No telemetry, by design. The runs log is machine-local and
+  never leaves the machine. Aggregating across users (privacy-
+  respecting opt-in) would let us refine the M-series baseline
+  seed values over time, but that's a separate commitment.

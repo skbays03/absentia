@@ -1,15 +1,23 @@
 # lacuna
 
-> Find the holes your code already drew.
+> **Find what you forgot to write.**
+> *(The holes your code already drew.)*
 
-**lacuna** is a code-hygiene tool that mines patterns your codebase already follows
-and surfaces the places that don't follow them. No rule files to write,
-no model to train, no LLM in the loop — the rules come from your code itself.
+Most code analyzers find what's wrong. **lacuna finds what's missing.**
 
-If 9 of your 10 API endpoints use `@audit`, lacuna tells you about the 10th.
-If 8 of your 10 panels have a corresponding test file, lacuna tells you about
-the 2 that don't. Every gap traces back to the rule that produced it, and every
-rule traces back to the members of your codebase that exhibit it.
+Take 48 event handlers in your codebase. 47 call `bus.unsubscribe()` in their
+cleanup paths. One doesn't. That one is a memory leak waiting for the user
+who triggers the right interaction — and no linter, type-checker, or AI
+reviewer will catch it, because nothing told them to expect that pattern.
+Lacuna learns the pattern from the 47 and flags the outlier with a
+0.94-confidence score.
+
+Pattern mining over your AST. No LLM, no rule database, deterministic — same
+input, same gaps. The rules come from your code itself: if 9 of your 10 API
+endpoints use `@audit`, lacuna tells you about the 10th; if 8 of your 10
+panels have a corresponding test file, lacuna tells you about the 2 that
+don't. Every gap traces back to the rule that produced it, and every rule
+traces back to the members of your codebase that exhibit it.
 
 ```text
 GAPS                                              confidence ≥ 0.80   3
@@ -83,9 +91,9 @@ reason, `e` to see why a gap was flagged.
 For CI and scripting:
 
 ```bash
-lacuna check               # human-readable list
+lacuna check               # human-readable list; exit 1 if any gaps
 lacuna check --json        # machine-readable
-lacuna check --max-gaps 0  # exit non-zero if any gaps remain
+lacuna check --max-gaps 5  # tolerate up to 5 gaps before failing the build
 ```
 
 ## What lacuna finds
@@ -153,7 +161,9 @@ Run lacuna twice on the same code and you get the same output. See
 lacuna scans the entire Linux kernel — 666,574 entities across ~30 million
 lines of C — in 96.7 seconds on a single Python process on an M-series MacBook.
 Most projects scan in seconds. Warm re-scans (incremental cache) complete in
-milliseconds. Full benchmark table across 16 languages and ~2.4M entities in
+milliseconds. Full benchmark table covering all 17 built-in extractors
+(16 languages; TypeScript and TSX share a tree-sitter grammar but emit
+distinct extractors) and ~2.4M entities in
 [architecture and performance](docs/explanation/architecture.md).
 
 Curious what your machine looks like? Run `lacuna est` from any project
@@ -188,7 +198,7 @@ Drill from a gap to its rule, from a rule to its other members, from there to
 on file change.
 
 `lacuna check` is the **batch mode** for CI, scripting, and editor integrations.
-It honors `--json`, `--max-gaps`, `--filter`, and exits with a meaningful status
+It honors `--json`, `--max-gaps`, `--quiet`, and exits with a meaningful status
 code.
 
 ## Configuration

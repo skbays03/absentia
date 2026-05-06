@@ -87,6 +87,7 @@ def main(argv: list[str] | None = None) -> int:
             "  lacuna init                     bootstrap a project here\n"
             "  lacuna check                    batch scan, print gaps, exit non-zero on failure\n"
             "  lacuna check --jobs N           override worker count (default: half of cores)\n"
+            "  lacuna check --max-gaps N       tolerate up to N gaps before failing (CI flag)\n"
             "  lacuna est                      headline total + per-jobs check breakdown\n"
             "  lacuna est --history            show recent `lacuna check` runs feeding the model\n"
             "  lacuna est --recalibrate        re-run calibration (also recalibrates on PATH)\n"
@@ -159,6 +160,14 @@ def main(argv: list[str] | None = None) -> int:
                        metavar="N",
                        help="Parse files across N worker processes "
                             "(default: half of CPU cores)")
+    check.add_argument("--max-gaps", type=int, default=None,
+                       metavar="N",
+                       help="Tolerance for CI: exit non-zero only when "
+                            "gap count exceeds N. --max-gaps 0 fails on "
+                            "any gap (the default behavior); --max-gaps 5 "
+                            "lets up to 5 gaps slide. Useful for adopting "
+                            "lacuna on an existing codebase without "
+                            "blocking the build the first day.")
 
     est = sub.add_parser(
         "est",
@@ -252,6 +261,7 @@ def main(argv: list[str] | None = None) -> int:
             quiet=args.quiet,
             as_json=args.as_json,
             jobs=args.jobs,
+            max_gaps=args.max_gaps,
         )
 
     if args.cmd in ("est", "estimate"):
@@ -342,6 +352,7 @@ def cmd_check(
     quiet: bool = False,
     as_json: bool = False,
     jobs: int | None = None,
+    max_gaps: int | None = None,
 ) -> int:
     if not root.is_dir():
         if as_json:
@@ -374,6 +385,7 @@ def cmd_check(
             started=started,
             started_iso=started_iso,
             jobs=jobs,
+            max_gaps=max_gaps,
         )
     finally:
         lock_ctx.__exit__(None, None, None)
@@ -389,6 +401,7 @@ def _run_check(
     started: float,
     started_iso: str,
     jobs: int | None = None,
+    max_gaps: int | None = None,
 ) -> int:
     extractors = discover_extractors(config.scan.languages)
     if not extractors:
@@ -444,7 +457,12 @@ def _run_check(
                   f"{scan_stats['duration_ms'] / 1000:.2f}s{cache_note}{suppressed_note}")
             print()
 
-    return 1 if gaps else 0
+    # Exit policy: --max-gaps N tolerates up to N gaps before failing
+    # the build. Default (None) keeps the original "any gap fails"
+    # behavior, which matches what users expect from a strict check.
+    if max_gaps is None:
+        return 1 if gaps else 0
+    return 1 if len(gaps) > max_gaps else 0
 
 
 def scan_corpus(

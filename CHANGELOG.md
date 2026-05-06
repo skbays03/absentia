@@ -9,6 +9,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Per-stage progress UI.** `lacuna check` in interactive text
+  mode now emits five ✓ summary lines (walk / parse / store / mine
+  / finalize), each with elapsed time, plus live spinners during
+  long stages. Mining-stage spinner sub-line surfaces per-strategy
+  completion ("3/7 done · last: symmetry pairs · 47 rules so far"),
+  turning the previously silent multi-minute mining tail into a
+  visible, diagnosable stage. Auto-suppresses on non-TTY.
+- **`--max-gaps N` CI tolerance flag.** `lacuna check --max-gaps 5`
+  exits non-zero only when the gap count exceeds 5. Default
+  behavior (no flag) keeps the strict "any gap fails" exit policy.
+  Useful for adopting lacuna on an existing codebase without
+  blocking the build the first day.
+- **`lacuna --jobs-default N`** — pin the default worker count for
+  `lacuna check`. Saved to `~/.lacuna/settings.json`. If N exceeds
+  detected core count, re-prompts to confirm; non-TTY contexts
+  refuse without `--yes`. `--jobs-default 0` reverts to auto.
+- **`lacuna --purge [PATH]` and `lacuna --purge-all`.** Top-level
+  flags to remove `.lacuna/` per-project state and the machine-wide
+  cache, with a `[y/N]` prompt + non-TTY refusal.
+- **`lacuna est --history`** — print the recent `lacuna check`
+  runs that feed the estimator, plus the aggregated mining
+  throughput. Useful for auditing what data the prediction is
+  based on.
+- **Continuous-calibration runs log** at `~/.lacuna/runs.jsonl`.
+  Every successful `lacuna check` appends a row (timestamp,
+  version, cores, jobs, root, language-byte shape, per-stage
+  timings). `lacuna est` aggregates ≥3 fresh compatible runs into
+  a refined `mining_seconds_per_byte`, replacing the static
+  calibration value with real-world data. The more often you run
+  check, the more accurate the prediction becomes — no explicit
+  recalibration step.
+- **`est` headline + confidence band.** "Total check estimate
+  ~X ± Y (high/medium/low confidence)" lands at the top of the
+  report, with reasoning that ties the band to corpus-similarity,
+  calibration age, and accumulated runs.
+- **`est` per-stage breakdown** when prior cold-scan timings
+  exist. Shows where time actually went (walk / parse / store /
+  mine / finalize) on the previous run.
+- **`est` parse + mine_tail = check column** in the per-jobs
+  table. Mining is treated as a fixed serial tail (it doesn't
+  scale with workers past the 4-thread cap), so the new column
+  shows full `lacuna check` time at each `--jobs` setting, not
+  just parse.
+- **Calibrated mining-tail prediction** (`mining_seconds_per_byte`
+  in `calibration.json`) so `lacuna est` can predict full check
+  time before the user has run check even once.
+- **Per-stage timings persisted** to `.lacuna/last_run.json`
+  (`stage_durations_ms` map for walk / parse / store / mine /
+  finalize) so the est report can cite real ground truth.
+
+### Changed
+
+- **`lacuna init` no longer hardcodes `languages = ["python"]`.**
+  The generated `lacuna.toml` comments out the line, so omitting
+  it activates every built-in extractor (17 covering 16
+  languages). Set the key explicitly to scan a subset.
+- **TUI scans with `jobs=1`.** Spawn-mode `ProcessPoolExecutor`
+  (the macOS multiprocessing default) doesn't play well inside
+  Textual's running event loop and surfaces as
+  `bad value(s) in fds_to_keep` on Mac. Single-process avoids
+  the issue; the CLI path keeps full parallelism.
+
+### Fixed
+
+- **Calibration speed-factor false-low on slow-overhead boxes.**
+  Pipeline overhead is now measured on an empty corpus and
+  subtracted before computing `machine_speed_factor`, so a small
+  calibration corpus on a slow filesystem (WSL `/mnt/c/` etc.)
+  no longer reads as 0.10× when the actual throughput is
+  reasonable.
+- **`call_pair` mining O(N²) hang on kernel-scale corpora.**
+  Rewrote the violator-emission loop with a precomputed
+  `callers_by_name` index; the inner step is now O(1) instead of
+  O(N) per emitted pair. The Linux kernel scan that hung
+  silently for minutes after the parse bar reached 100% now
+  completes in expected time.
+
+### Performance
+
+(Pre-optimization headline still cited; new measurements pending
+on Shawn's hardware. See `~/Desktop/lacuna_doc_todos.txt §2`.)
+
+---
+
+## Earlier (rolled into [Unreleased] before first release)
+
+### Added
+
 - **Series-gap detection.** Fourth mining strategy. Detects missing
   numeric indices in same-directory file sequences:
   ``migrations/0001_*.py``, ``0002_*.py``, ``0004_*.py`` →

@@ -14,9 +14,11 @@ the repo root.
 |---|---|---|---|
 | `include` | list of glob | `["."]` | Directories or globs to scan. POSIX-style, relative to the project root. |
 | `exclude` | list of glob | `[]` | Paths to skip. Use for vendored code, generated files, etc. |
-| `languages` | list of string | all 16 supported | Which extractors to load. Limits scanning to source files of those languages. |
+| `languages` | list of string | all 17 supported | Which extractors to load. Omitting the key activates every built-in extractor. Set explicitly to scan a subset (e.g. `["python", "rust"]`). |
 
-Supported `languages` values: `python`, `javascript`, `typescript`,
+Supported `languages` values (17 built-in extractors covering 16
+languages — TypeScript and TSX share a tree-sitter grammar but emit
+distinct extractors): `python`, `javascript`, `typescript`,
 `tsx`, `rust`, `go`, `java`, `ruby`, `csharp`, `swift`, `c`, `cpp`,
 `php`, `kotlin`, `scala`, `lua`, `bash`.
 
@@ -71,7 +73,7 @@ for the full per-selector explanation; this section is the schema.
 | `enabled` | bool | `true` | Toggle this selector. |
 | `min_members` | int | `3` | Skip parent classes with fewer subclasses. |
 | `exclude` | list of string | `["object", "Exception", ...]` | Parent classes too universal to group on. |
-| `kind_filter` | list of string | class-like kinds across all 16 languages | Kinds eligible for grouping: `class`, `struct`, `enum`, `extension`, `protocol`, `interface`, `trait`, `impl`, `module`, `record`. |
+| `kind_filter` | list of string | class-like kinds across all supported languages | Kinds eligible for grouping: `class`, `struct`, `enum`, `extension`, `protocol`, `interface`, `trait`, `impl`, `module`, `record`. |
 
 ```toml
 [selectors.directory]

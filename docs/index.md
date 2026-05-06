@@ -1,8 +1,9 @@
 # lacuna
 
-> Find the holes your code already drew.
+> **Find what you forgot to write.**
+> *(The holes your code already drew.)*
 
-A code-hygiene tool that mines patterns your codebase already follows and surfaces the places that don't follow them. No rule files to write, no model to train, no LLM in the loop — the rules come from your code itself.
+Most code analyzers find what's wrong. **lacuna finds what's missing.** Pattern mining over your AST learns the conventions your codebase already follows and flags the places where one piece breaks ranks. No rule files to write, no model to train, no LLM in the loop — the rules come from your code itself.
 
 ## Get started
 

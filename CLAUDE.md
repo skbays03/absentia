@@ -57,7 +57,29 @@ a reversal seems warranted, surface the reasoning explicitly.
 
 ```
 src/lacuna/        Engine package
+  cli.py           Argparse dispatch + subcommand bodies
+  tui/             Textual TUI (interactive front-end)
+  extractors/      Per-language tree-sitter extractors (17)
+  selectors.py     directory / decorator / parent_class group builders
+  mining.py        Frequency mining over (group, feature) pairs
+  symmetry.py      Symmetry-pair + call-pair detection
+  series.py        Numeric-series-gap detection
+  enrichment.py    Corpus-level features (sibling_test)
+  storage.py       SQLite-backed entity + suppression store
+  parallel.py      ProcessPool helpers, default_jobs() policy
+  estimator.py     Cold-scan cost model + `lacuna est` renderer
+  calibration.py   First-run calibration + ~/.lacuna/calibration.json
+  runs_log.py      Machine-wide ~/.lacuna/runs.jsonl accumulator
+  settings.py      ~/.lacuna/settings.json (jobs_default, etc.)
+  progress.py      ProgressBar / Spinner / StepIndicator
+  output.py        Gap rendering (text + JSON)
+  _color.py        ANSI escape constants for in-place progress UI
+  _console.py      rich Console proxy (pytest-capsys-compatible)
 tests/             Unit + integration tests
+scripts/           Maintenance + diagnostic scripts
+  update_ts.py     Tree-sitter grammar version sweep
+  scan_remote.py   Sanity-check against public corpora
+  diagnose_scan.py Per-stage scan timing for cross-machine debugging
 docs/              Mkdocs-material site (Diátaxis structure)
   tutorial/        Learn-by-doing
   how-to/          Task-oriented recipes

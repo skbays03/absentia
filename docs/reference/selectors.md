@@ -38,10 +38,15 @@ Options:
 [selectors.decorator]
 enabled     = true
 min_members = 3
-include     = ["*"]                     # all decorators
 exclude     = ["@property", "@staticmethod"]
-match_args  = false                     # @app.route("/x") groups with @app.route("/y")
 ```
+
+> **Previewed but not yet wired:** the `include` allow-list and
+> `match_args` toggle appear in `lacuna.toml.example` as roadmap
+> placeholders. The engine doesn't read them today; decorator
+> arguments are always dropped (so `@app.route("/x")` groups with
+> `@app.route("/y")` regardless), and all decorators not in
+> `exclude` are eligible.
 
 ### `parent_class`
 
@@ -54,11 +59,17 @@ Options:
 
 ```toml
 [selectors.parent_class]
-enabled           = true
-min_members       = 3
-include_inherited = false               # group only by direct parent
-exclude           = ["object"]          # don't group on universal base
+enabled     = true
+min_members = 3
+exclude     = ["object"]                # don't group on universal base
+kind_filter = ["class", "struct", "enum", "extension", "protocol",
+               "interface", "trait", "impl", "module", "record"]
 ```
+
+> **Previewed but not yet wired:** the `include_inherited` toggle
+> appears in `lacuna.toml.example` as a roadmap placeholder. Today
+> the engine groups by direct parent only; transitive inheritance
+> chains aren't walked.
 
 ## How groups feed mining
 

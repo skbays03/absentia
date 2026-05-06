@@ -21,9 +21,9 @@ _None currently._
 ## Soft blockers (strongly expected before public marketing)
 
 ### Demo screenshot / GIF in README
-- **Status:** README has a text-block placeholder under the tagline.
-- **Why deferred:** TUI doesn't exist yet to record.
-- **Resolution:** Once the TUI is functional, record an animated demo (asciinema → SVG, or a short MP4/GIF) and embed in the README directly under the tagline.
+- **Status:** TUI is functional and the CLI now has per-stage progress UI worth recording. README still has a text-block placeholder.
+- **Why deferred:** Recording asset still needs to be produced.
+- **Resolution:** Record an animated demo (asciinema → SVG, or a short MP4/GIF) showing either: (a) the TUI at work in a real codebase, or (b) `lacuna check` on a kernel-sized corpus showing the per-stage progress display + ✓ summary lines. Embed in the README directly under the tagline.
 - **Latest by:** Before any v1.0 push.
 
 

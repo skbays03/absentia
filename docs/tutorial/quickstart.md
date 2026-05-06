@@ -79,6 +79,13 @@ lacuna check
 You should see something like:
 
 ```text
+Scanning 5 files (155 B) — est. ~0.0 s at jobs=4
+
+✓ Walked corpus  ·  5 files, 155 B  ·  0s
+✓ Loaded store  ·  6 entities  ·  0s
+✓ Mined rules  ·  1 rules, 1 candidate gaps  ·  0s
+✓ Finalized  ·  1 gaps after dedup  ·  0s
+
 GAPS                                              confidence ≥ 0.80   1
 
   api/users.py:11                          function `delete_user`           missing @audit                   0.80  g-XXXXXXX
@@ -88,6 +95,9 @@ GAPS                                              confidence ≥ 0.80   1
 
   6 entities scanned, 2 groups, 1 rules in 0.00s
 ```
+
+(The five `✓` lines are the per-stage progress display, shown when
+running interactively. They auto-suppress in CI / piped output.)
 
 Lacuna found:
 
@@ -191,7 +201,9 @@ and lacuna found it. The engine ran four stages — *parse*, *group*,
 no model and no API. Every gap traced back to a rule, every rule
 traced back to the members of your codebase that exhibit it.
 
-That's the whole pitch. For the longer version, see:
+That's the whole pitch. Try `lacuna est .` next to see a per-jobs
+prediction of cold-scan time (it auto-improves as you run more
+checks). For the longer version, see:
 
 - [What is negative-space search?](../explanation/what-is-negative-space.md) —
   why this is a useful question to ask
@@ -199,5 +211,7 @@ That's the whole pitch. For the longer version, see:
   the four-stage engine, with worked examples
 - [Why no LLM?](../explanation/why-no-llm.md) —
   the deliberate-not-AI positioning
+- [The cold-scan time estimator](../explanation/estimator.md) —
+  what `lacuna est` actually predicts and how
 - [Configuration reference](../reference/lacuna-toml.md) — every
   `lacuna.toml` option

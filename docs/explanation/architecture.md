@@ -112,11 +112,12 @@ estimate before you scan. Methodology in
 
 ### Throughput
 
-Across all 16 corpora, lacuna sustains **5,000–15,000 entities per
-second** on a single Python process, with the variance driven mostly
-by per-language extractor cost (deeper AST = more nodes to walk).
-There's no quadratic term: the largest input (Linux) and the
-smallest (plenary.nvim) sit on the same line.
+Across all 16 corpora (one per language), lacuna sustains
+**5,000–15,000 entities per second** on a single Python process,
+with the variance driven mostly by per-language extractor cost
+(deeper AST = more nodes to walk). There's no quadratic term: the
+largest input (Linux) and the smallest (plenary.nvim) sit on the
+same line.
 
 ```
 Cold scan time vs. corpus size (entity count)
@@ -154,6 +155,44 @@ subsequent scan in the same project is incremental: a file's
 content hash determines whether it needs re-parsing. On a typical
 "edit one file, re-run" loop, the warm scan completes in well under
 a second regardless of the project's total size.
+
+### Continuous calibration
+
+`lacuna est` (the cold-scan time predictor) starts from a one-shot
+calibration cache at `~/.lacuna/calibration.json`. Every successful
+`lacuna check` *also* appends a row to a machine-wide log at
+`~/.lacuna/runs.jsonl`: timestamp, version, cores, jobs, root,
+file-count, language-byte shape, per-stage timings. Once at least
+three compatible runs accumulate, `lacuna est` aggregates them into
+a refined `mining_seconds_per_byte` value that overrides the static
+calibration's seed. No telemetry — the log is local-only.
+
+Practical effect: the first few `lacuna est` runs are seeded by
+calibration; once you've actually run `lacuna check` a handful of
+times, the predictor switches to real-world data and the confidence
+band tightens. The calibration step never strictly *expires* — it's
+just superseded by better data as you accumulate it.
+
+`lacuna est --history` prints the accumulated rows for auditing.
+
+### Progress UX
+
+A `lacuna check` run in interactive text mode (TTY stderr, no
+`--json`, no `--quiet`) renders a five-stage display: walking
+corpus, scanning, loading store, mining rules, finalizing. Each
+stage finishes with a ✓ summary line + elapsed time and stays on
+screen as the next stage begins, so the eventual transcript is a
+clean record of where time went. Live spinners run during
+indeterminate stages so the tool never feels hung.
+
+Stage timings are persisted to `.lacuna/last_run.json` (and the
+machine-wide runs log, see *Continuous calibration*) so
+`lacuna est` can show a real "Last cold-scan stage breakdown"
+block on subsequent runs.
+
+The display auto-suppresses on non-TTY (CI logs, piped output) and
+in `--json` / `--quiet` modes — the underlying scan path is
+identical, only the rendering differs.
 
 ### Parallel scans
 
