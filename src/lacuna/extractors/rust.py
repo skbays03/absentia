@@ -25,13 +25,21 @@ from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
 import tree_sitter_rust
-from tree_sitter import Language, Node, Parser
+from tree_sitter import Language, Node, Parser, Query, QueryCursor
 
-from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
 _RS_LANGUAGE = Language(tree_sitter_rust.language())
+# Rust calls come in two shapes: regular function calls and macro
+# invocations (println!, vec!, etc. — user-visible call-shaped ops).
+_CALLS_QUERY = Query(_RS_LANGUAGE, """
+[
+  (call_expression)
+  (macro_invocation)
+] @call
+""")
 
 
 class RustExtractor(Extractor):
@@ -281,14 +289,20 @@ def _attribute_name(attr_item: Node) -> str | None:
 
 
 def _walk_calls(root: Node) -> Iterator[str]:
-    """Iterative DFS over ``root``'s subtree.
+    """Yield call names from the function-body subtree.
 
-    We also include ``macro_invocation`` (e.g. ``println!()``,
-    ``vec![]``) since those are user-visible call-shaped operations.
-    Iterative because the Rust compiler's source has expression trees
-    deeper than Python's default recursion limit.
+    Catches both regular ``call_expression`` and ``macro_invocation``
+    (e.g. ``println!()``, ``vec![]``) — macros are user-visible
+    call-shaped operations and worth tracking in the calls feature.
+    The tree-sitter Query handles arbitrary nesting depth — no risk
+    of Python recursion-limit issues that plagued the previous
+    walk_subtree implementation on the Rust compiler's source.
     """
-    for node in walk_subtree(root):
+    cursor = QueryCursor(_CALLS_QUERY)
+    nodes: list[Node] = []
+    for _, captures in cursor.matches(root):
+        nodes.extend(captures.get("call", ()))
+    for node in nodes:
         if node.type == "call_expression" and node.children:
             target = node.child_by_field_name("function")
             if target is not None:

@@ -20,19 +20,28 @@ from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
 import tree_sitter_typescript
-from tree_sitter import Language, Node, Parser
+from tree_sitter import Language, Node, Parser, Query, QueryCursor
 
-from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
 _TS_LANGUAGE = Language(tree_sitter_typescript.language_typescript())
 _TSX_LANGUAGE = Language(tree_sitter_typescript.language_tsx())
 
+# Two queries — one per grammar — because tree-sitter's Query is
+# bound to a specific Language. TS and TSX are sibling grammars
+# (TSX adds JSX nodes); the call-shape node names match, but the
+# Language IDs differ, so we compile each query separately and the
+# extractor passes the right one through.
+_TS_CALLS_QUERY = Query(_TS_LANGUAGE, "(call_expression function: (_) @target)")
+_TSX_CALLS_QUERY = Query(_TSX_LANGUAGE, "(call_expression function: (_) @target)")
+
 
 class TypeScriptExtractor(Extractor):
     language_name: ClassVar[str] = "typescript"
     file_extensions: ClassVar[tuple[str, ...]] = (".ts", ".mts", ".cts")
+    _calls_query: ClassVar[Query] = _TS_CALLS_QUERY
 
     def __init__(self) -> None:
         self._parser = Parser(_TS_LANGUAGE)
@@ -43,13 +52,14 @@ class TypeScriptExtractor(Extractor):
     def extract(
         self, root: Node, file_path: str
     ) -> Iterable[tuple[Entity, FeatureSet]]:
-        return extract_typescript_entities(root, file_path)
+        return extract_typescript_entities(root, file_path, self._calls_query)
 
 
 class TSXExtractor(TypeScriptExtractor):
     """TSX uses a different grammar than TS — JSX changes the parser."""
     language_name: ClassVar[str] = "tsx"
     file_extensions: ClassVar[tuple[str, ...]] = (".tsx",)
+    _calls_query: ClassVar[Query] = _TSX_CALLS_QUERY
 
     def __init__(self) -> None:
         self._parser = Parser(_TSX_LANGUAGE)
@@ -65,15 +75,22 @@ _ITEM_TYPES = frozenset({
 
 
 def extract_typescript_entities(
-    root: Node, file_path: str
+    root: Node, file_path: str, calls_query: Query = _TS_CALLS_QUERY,
 ) -> Iterator[tuple[Entity, FeatureSet]]:
     """Walk top-level siblings, accumulating ``decorator`` nodes until
-    each named item, then emit it with those decorators attached."""
-    yield from _walk_with_decorators(root.children, file_path)
+    each named item, then emit it with those decorators attached.
+
+    ``calls_query`` is the per-grammar compiled tree-sitter Query for
+    matching call expressions (TS or TSX — see module-level
+    ``_TS_CALLS_QUERY`` / ``_TSX_CALLS_QUERY``). Threaded through the
+    emit chain because Query is bound to a Language and a Node has
+    no back-pointer to its tree.
+    """
+    yield from _walk_with_decorators(root.children, file_path, calls_query)
 
 
 def _walk_with_decorators(
-    children: Iterable[Node], file_path: str
+    children: Iterable[Node], file_path: str, calls_query: Query,
 ) -> Iterator[tuple[Entity, FeatureSet]]:
     pending: list[str] = []
     for node in children:
@@ -85,12 +102,12 @@ def _walk_with_decorators(
         if node.type == "export_statement":
             # Decorators may live inside the export_statement too; fold them in.
             yield from _walk_with_decorators(
-                _flatten_export(node, pending), file_path
+                _flatten_export(node, pending), file_path, calls_query,
             )
             pending = []
             continue
         if node.type in _ITEM_TYPES:
-            yield from _emit_item(node, file_path, tuple(pending))
+            yield from _emit_item(node, file_path, tuple(pending), calls_query)
             pending = []
             continue
         # Anything else resets pending decorators (they don't carry across).
@@ -118,24 +135,25 @@ def _flatten_export(
 
 
 def _emit_item(
-    node: Node, file_path: str, decorators: tuple[str, ...]
+    node: Node, file_path: str, decorators: tuple[str, ...],
+    calls_query: Query,
 ) -> Iterator[tuple[Entity, FeatureSet]]:
     if node.type == "function_declaration":
-        yield _emit_function(node, file_path, decorators)
+        yield _emit_function(node, file_path, decorators, calls_query)
     elif node.type == "class_declaration":
-        yield from _emit_class(node, file_path, decorators)
+        yield from _emit_class(node, file_path, decorators, calls_query)
     elif node.type == "interface_declaration":
         yield from _emit_interface(node, file_path, decorators)
     elif node.type == "lexical_declaration":
         for declarator in node.children:
             if declarator.type == "variable_declarator":
-                emitted = _from_declarator(declarator, file_path)
+                emitted = _from_declarator(declarator, file_path, calls_query)
                 if emitted is not None:
                     yield emitted
 
 
 def _from_declarator(
-    declarator: Node, file_path: str
+    declarator: Node, file_path: str, calls_query: Query,
 ) -> tuple[Entity, FeatureSet] | None:
     name_node = declarator.child_by_field_name("name")
     value_node = declarator.child_by_field_name("value")
@@ -152,13 +170,14 @@ def _from_declarator(
     )
     features = FeatureSet(by_kind={
         "decorator": frozenset(),
-        "calls": frozenset(_walk_calls(value_node)),
+        "calls": frozenset(_walk_calls(value_node, calls_query)),
     })
     return entity, features
 
 
 def _emit_function(
-    fn_node: Node, file_path: str, decorators: tuple[str, ...]
+    fn_node: Node, file_path: str, decorators: tuple[str, ...],
+    calls_query: Query,
 ) -> tuple[Entity, FeatureSet]:
     name_node = fn_node.child_by_field_name("name")
     name = name_node.text.decode("utf-8") if name_node else "<anonymous>"
@@ -170,13 +189,14 @@ def _emit_function(
     )
     features = FeatureSet(by_kind={
         "decorator": frozenset(decorators) | _inline_decorators(fn_node),
-        "calls": frozenset(_walk_calls(fn_node)),
+        "calls": frozenset(_walk_calls(fn_node, calls_query)),
     })
     return entity, features
 
 
 def _emit_class(
-    class_node: Node, file_path: str, decorators: tuple[str, ...]
+    class_node: Node, file_path: str, decorators: tuple[str, ...],
+    calls_query: Query,
 ) -> Iterator[tuple[Entity, FeatureSet]]:
     name_node = class_node.child_by_field_name("name")
     name = name_node.text.decode("utf-8") if name_node else "<anonymous>"
@@ -198,11 +218,12 @@ def _emit_class(
     body = class_node.child_by_field_name("body")
     if body is None:
         return
-    yield from _walk_class_members(body.children, file_path, name)
+    yield from _walk_class_members(body.children, file_path, name, calls_query)
 
 
 def _walk_class_members(
-    children: Iterable[Node], file_path: str, class_name: str
+    children: Iterable[Node], file_path: str, class_name: str,
+    calls_query: Query,
 ) -> Iterator[tuple[Entity, FeatureSet]]:
     pending: list[str] = []
     for node in children:
@@ -212,7 +233,9 @@ def _walk_class_members(
                 pending.append(name)
             continue
         if node.type == "method_definition":
-            yield _emit_method(node, file_path, class_name, tuple(pending))
+            yield _emit_method(
+                node, file_path, class_name, tuple(pending), calls_query,
+            )
             pending = []
             continue
         # Properties, accessors, etc. — reset decorators
@@ -221,7 +244,7 @@ def _walk_class_members(
 
 def _emit_method(
     method_node: Node, file_path: str, class_name: str,
-    decorators: tuple[str, ...],
+    decorators: tuple[str, ...], calls_query: Query,
 ) -> tuple[Entity, FeatureSet]:
     name_node = method_node.child_by_field_name("name")
     name = name_node.text.decode("utf-8") if name_node else "<anonymous>"
@@ -233,7 +256,7 @@ def _emit_method(
     )
     features = FeatureSet(by_kind={
         "decorator": frozenset(decorators) | _inline_decorators(method_node),
-        "calls": frozenset(_walk_calls(method_node)),
+        "calls": frozenset(_walk_calls(method_node, calls_query)),
     })
     return entity, features
 
@@ -328,9 +351,8 @@ def _decorator_name(decorator_node: Node) -> str | None:
     return "@" + bare if bare else None
 
 
-def _walk_calls(root: Node) -> Iterator[str]:
-    for node in walk_subtree(root):
-        if node.type == "call_expression":
-            target = node.child_by_field_name("function")
-            if target is not None:
-                yield clean_call_name(target.text.decode("utf-8").strip())
+def _walk_calls(root: Node, calls_query: Query) -> Iterator[str]:
+    cursor = QueryCursor(calls_query)
+    for _, captures in cursor.matches(root):
+        for target in captures.get("target", ()):
+            yield clean_call_name(target.text.decode("utf-8").strip())
