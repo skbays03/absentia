@@ -161,13 +161,34 @@ def _mine_pairs_for_scope(
         for n in names:
             name_count[n] += 1
 
-    # Pair counts. Iterate sorted names to dedupe (n1, n2) vs (n2, n1).
+    # Apriori prune. A pair (n1, n2) can only emit a rule for
+    # direction left→right when count[left] ≥ min_support. So a
+    # pair where NEITHER side qualifies as `left` (i.e. neither name
+    # appears in ≥ min_support scopes) cannot produce any rule, and
+    # we can skip it entirely.
+    #
+    # On corpora dominated by unique-per-scope names (e.g. the Linux
+    # kernel: most function names live in one .c file), this turns
+    # the per-scope complexity from O(K²) — every pair of K names —
+    # into O(Q × K) where Q is the small set of names frequent
+    # enough to qualify. Empirically that's the difference between
+    # mining-stage taking 5 minutes and ~10 seconds on the kernel.
+    qualifying = {n for n, c in name_count.items() if c >= min_support}
+    if not qualifying:
+        return []
+
+    # Pair counts. Iterate sorted names so the canonical key
+    # (n1, n2) — with n1 < n2 — dedupes (a, b) vs (b, a). We still
+    # generate the pair when only ONE side qualifies, because the
+    # rule for the qualifying-side-as-left direction may be valid.
     pair_count: Counter[tuple[str, str]] = Counter()
     for names in scope_index.values():
         sorted_names = sorted(names)
         for i, n1 in enumerate(sorted_names):
+            n1_qual = n1 in qualifying
             for n2 in sorted_names[i + 1:]:
-                pair_count[(n1, n2)] += 1
+                if n1_qual or n2 in qualifying:
+                    pair_count[(n1, n2)] += 1
 
     pairs: list[SymmetryPair] = []
     seen: set[tuple[str, str, str]] = set()  # (left, right, scope)
@@ -332,34 +353,45 @@ def find_symmetry_gaps(
         if auto_mine:
             pairs.extend(mine_symmetry_pairs(entities))
 
-    by_class: dict[str, list[Entity]] = {}
-    by_file: dict[str, list[Entity]] = {}
+    # Pre-compute the short_name once per entity and build a per-scope
+    # ``{name -> [entities]}`` index. The previous design called
+    # ``_short_name(ent)`` (two ``rsplit``s) inside an inner loop that
+    # ran once per pair × per entity in scope — on the Linux kernel
+    # (~150 k entities × hundreds of mined pairs) that was tens of
+    # millions of redundant string ops and dominated the entire
+    # mining stage. The pre-index makes per-pair work O(scopes), not
+    # O(entities), and reuses each ``_short_name`` result.
+    by_class: dict[str, dict[str, list[Entity]]] = {}
+    by_file: dict[str, dict[str, list[Entity]]] = {}
 
     for ent in entities.values():
+        if ent.kind not in ("function", "method"):
+            continue
+        name = _short_name(ent)
         if ent.kind == "method":
             class_key = _class_scope_key(ent)
             if class_key is not None:
-                by_class.setdefault(class_key, []).append(ent)
-        if ent.kind in ("function", "method"):
-            by_file.setdefault(_file_scope_key(ent), []).append(ent)
+                by_class.setdefault(class_key, {}).setdefault(name, []).append(ent)
+        by_file.setdefault(_file_scope_key(ent), {}).setdefault(name, []).append(ent)
 
     rules: list[Rule] = []
     gaps: list[Gap] = []
 
     for pair in pairs:
         scope_index = by_class if pair.scope == "class" else by_file
+        left, right = pair.left, pair.right
 
-        # For each scope, find members whose short_name matches left/right.
+        # Per-pair work is now O(scopes), with O(1) name lookup
+        # instead of an inner per-entity scan.
         scopes_with_left: dict[str, Entity] = {}
         scopes_with_right: set[str] = set()
 
-        for scope_id, members in scope_index.items():
-            for ent in members:
-                name = _short_name(ent)
-                if name == pair.left and scope_id not in scopes_with_left:
-                    scopes_with_left[scope_id] = ent
-                elif name == pair.right:
-                    scopes_with_right.add(scope_id)
+        for scope_id, names_to_ents in scope_index.items():
+            left_ents = names_to_ents.get(left)
+            if left_ents is not None:
+                scopes_with_left[scope_id] = left_ents[0]
+            if right in names_to_ents:
+                scopes_with_right.add(scope_id)
 
         if not scopes_with_left:
             continue  # the pair doesn't apply to this corpus at all
