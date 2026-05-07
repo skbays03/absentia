@@ -158,12 +158,26 @@ Run lacuna twice on the same code and you get the same output. See
 
 ## Performance
 
-lacuna scans the entire Linux kernel — 666,574 entities across ~30 million
-lines of C — in 96.7 seconds on a single Python process on an M-series MacBook.
-Most projects scan in seconds. Warm re-scans (incremental cache) complete in
-milliseconds. Full benchmark table covering all 17 built-in extractors
-(16 languages; TypeScript and TSX share a tree-sitter grammar but emit
-distinct extractors) and ~2.4M entities in
+lacuna scans the entire Linux kernel — 65,004 files / 686,923 entities
+across ~30 million lines of C — in **~18 seconds** on an M-series
+MacBook with default parallelism (parse: 7 s, mine: 11 s, finalize +
+overhead: a couple more). Most projects scan in well under a second
+of mining. Warm re-scans (incremental cache) complete in milliseconds.
+
+The mining stage is the headline number: a name-indexed
+``find_symmetry_gaps`` (no more O(P×N) per-pair-per-entity scan) plus
+mypyc-compiled ``mining.py`` and ``symmetry.py`` together cut
+mining-stage wall-clock on the kernel from ~5 minutes to ~11 seconds
+— a **~30× speedup**, gap counts byte-identical.
+
+If you're running on a free-threaded Python (3.13t / 3.14t), the
+ThreadPool worker cap rises automatically from 4 to 7 (one per
+mining strategy), unlocking another ~30 % when the C-extension
+ecosystem catches up to the no-GIL ABI. No-op on regular CPython.
+
+Full benchmark table covering all 17 built-in extractors (16
+languages; TypeScript and TSX share a tree-sitter grammar but emit
+distinct extractors) and ~2.4 M entities in
 [architecture and performance](docs/explanation/architecture.md).
 
 Curious what your machine looks like? Run `lacuna est` from any project

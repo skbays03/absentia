@@ -98,11 +98,22 @@ below.
 | Lua | [nvim-lua/plenary.nvim](https://github.com/nvim-lua/plenary.nvim) | 372 | 11 | 1 | 0.05s |
 | Bash | [Bash-it/bash-it](https://github.com/Bash-it/bash-it) | 861 | 41 | 10 | 0.08s |
 
-**Headline number: lacuna scans the entire Linux kernel — 666,574
-entities across ~30 million lines of C — in 96.7 seconds.** A warm
-re-scan of any of these completes in milliseconds (incremental cache
-covers unchanged files, which is most of them on any normal
-commit).
+**Headline number: lacuna scans the entire Linux kernel — 65,004
+files / 686,923 entities across ~30 million lines of C — in ~18
+seconds end-to-end on an M-series MacBook with default
+parallelism.** Mining alone is ~11 seconds; parse is ~7 seconds.
+A warm re-scan completes in milliseconds (incremental cache covers
+unchanged files, which is most of them on any normal commit).
+
+The mining stage was the long pole at one point — ~5 minutes on the
+kernel — because ``find_symmetry_gaps`` was scanning every entity
+once per pair (O(P×N) per-pair-per-entity work). Replacing that
+with a per-scope ``{name → [entities]}`` index, plus mypyc
+compilation of ``mining.py`` and ``symmetry.py`` to native C
+extensions, cut mining wall-clock to ~11 seconds on the same
+corpus — a ~30× speedup, gap counts byte-identical. See the
+*Mining stage* subsection below for the architecture seam this
+exploits.
 
 Numbers above are M-series specific. To know what your hardware
 does, run `lacuna est` from any project directory — it walks the
@@ -185,10 +196,61 @@ screen as the next stage begins, so the eventual transcript is a
 clean record of where time went. Live spinners run during
 indeterminate stages so the tool never feels hung.
 
+When `--jobs N > 1`, the parse stage shows **one sub-line per
+worker** — each tagged with the language it's currently chewing on
+(per-language palette: Python blue, Rust orange, Go cyan, Ruby red,
+etc.):
+
+```
+Scanning [████░░░] 12,345/65,004 (19%) · 1m 42s elapsed, ~7m remaining
+  ForkPoolWorker-1 [c]      kernel/sched/fair.c
+  ForkPoolWorker-2 [rust]   drivers/gpu/drm/amd/display.rs
+  ForkPoolWorker-3 [python] scripts/kconfig/menuconfig.py
+  ForkPoolWorker-4 [bash]   Documentation/sphinx/parse-headers.sh
+```
+
+Mechanism: workers push `(worker_id, language, path)` to a
+`multiprocessing.Manager().Queue()` before each parse. A daemon
+thread on the main process drains the queue and feeds the snapshot
+into `ProgressBar.set_workers()`. Best-effort — queue hiccups
+never affect the parse.
+
+The mining stage gets the same treatment, but with phase + counter
++ current-item detail per running strategy:
+
+```
+⠴ Mining rules (12s)
+  symmetry pairs   8.2s  [evaluating pairs]   pair 247/2,103   subscribe → unsubscribe
+  call-pair        1.1s  [enumerating pairs]  65k/65k
+  frequency:calls  0.4s  [counting features]  group 8/30       directory:src/api
+4/7 done · 1,432 rules so far
+```
+
+Each strategy function (`mine`, `find_symmetry_gaps`,
+`find_call_pair_gaps`, `find_series_gaps`, `mine_symmetry_pairs`)
+accepts an optional `progress_hook=None` kwarg and calls
+`hook(phase=..., counter=(i, n), item=lambda: ...)` at logical
+boundaries. The hook is throttled to 50 ms (20 Hz) inside the
+closure, and inner-loop hot spots additionally use bitmask sampling
+(e.g. `if (i & 0x3FF) == 0`) to skip the call entirely on most
+iterations. Net perf cost: below the noise floor of
+`time.perf_counter`. Lazy `item=lambda: ...` means f-strings only
+run *after* the throttle accepts.
+
 Stage timings are persisted to `.lacuna/last_run.json` (and the
-machine-wide runs log, see *Continuous calibration*) so
+machine-wide runs log at `~/.lacuna/runs.jsonl`) so
 `lacuna est` can show a real "Last cold-scan stage breakdown"
-block on subsequent runs.
+block on subsequent runs. The runs log also stores
+`mine_by_strategy_ms` — per-strategy mine-stage timings — so
+profile-driven optimization work doesn't need ad-hoc
+instrumentation.
+
+In tmux panes (or any terminal narrower than the rendered line),
+the bar truncates to the live `shutil.get_terminal_size().columns`
+and uses `\033[K` (Erase-in-Line) to clear instead of fixed-width
+padding. That keeps `\033[F` (cursor-previous-line) landing on the
+right row regardless of pane width — no more stair-stepping when
+the bar updates.
 
 The display auto-suppresses on non-TTY (CI logs, piped output) and
 in `--json` / `--quiet` modes — the underlying scan path is
@@ -213,11 +275,41 @@ worker, which is the break-even point against process-startup cost
 Smaller repos see negligible improvement because the parse stage
 isn't long enough to amortize the worker pool's startup cost; the
 single-process numbers in the table above are the right guide for
-anything under ~10 seconds. Speedup tops out around 4× even on a
-beefier machine — the serial tail (group + mine + storage) becomes
-the bottleneck per Amdahl. On an 8-core M-series at the default
-half-cores, expect roughly 3–3.5× on the long-running corpora
-(Linux, dotnet/runtime, llvm-project, kotlin).
+anything under ~10 seconds.
+
+The mining stage runs its seven strategies in parallel via
+`ThreadPoolExecutor`. With the GIL the thread cap is 4 (Amdahl's
+parallel fraction plateaus there); on a free-threaded Python
+build (3.13t / 3.14t, PEP 703) `mining_worker_cap()` lifts the
+cap to 7 so each strategy can saturate its own core. Detection is
+a single `sys.flags.gil == 0` check — opportunistic and
+backward-compatible. (Caveat: most C-extension wheels, including
+tree-sitter, don't ship a no-GIL ABI as of early 2026, so this
+path can't actually fire on a typical install yet — it's wired up
+and waiting for the ecosystem.)
+
+### mypyc compilation
+
+`mining.py` and `symmetry.py` are mypyc-compiled to native C
+extensions at wheel-build time. No source changes were required —
+mypyc accepted both modules as-is. The build hook is in
+`pyproject.toml`:
+
+```toml
+[tool.hatch.build.targets.wheel.hooks.mypyc]
+dependencies = ["hatch-mypyc"]
+include = [
+    "src/lacuna/mining.py",
+    "src/lacuna/symmetry.py",
+]
+```
+
+Wheels are platform-specific (`cp313` / `cp314` × Linux x86_64 /
+arm64, macOS x86_64 / arm64, Windows AMD64) — published per
+release by `.github/workflows/wheels.yml` (cibuildwheel). Users
+who install from sdist (or on a platform we don't build for) get
+the pure-Python source as a fallback; output is identical, only
+the headline mining speedup is missing.
 
 ## What this architecture buys
 

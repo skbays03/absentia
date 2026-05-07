@@ -14,7 +14,7 @@ Most code analyzers find what's wrong. **lacuna finds what's missing.** Pattern 
 - **[What is negative-space search?](explanation/what-is-negative-space.md)** — the value prop in prose.
 - **[Why no LLM?](explanation/why-no-llm.md)** — the positioning, defended.
 - **[How mining works](explanation/how-mining-works.md)** — the mechanics behind every gap.
-- **[Architecture and performance](explanation/architecture.md)** — the four-stage pipeline + benchmark numbers (Linux kernel: 96.7 s).
+- **[Architecture and performance](explanation/architecture.md)** — the four-stage pipeline + benchmark numbers (Linux kernel: ~18 s end-to-end with default parallelism, ~11 s mining).
 - **[Cold-scan time estimator](explanation/estimator.md)** — the math + calibration behind `lacuna est`.
 
 ## Look things up

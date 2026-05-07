@@ -55,6 +55,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alongside the existing ``stage_ms`` totals. Surfaces in
   ``lacuna est --history`` and turns the previously opaque mining
   tail into a profiling-grade signal.
+- **Mining-stage progress detail (phase + counter + current item).**
+  Each running strategy now surfaces a live ``[phase] N/M item``
+  sub-line so the user sees what the strategy is actually doing
+  right now, not just that it's busy. Each mining strategy
+  function (``mine``, ``find_symmetry_gaps``, ``find_call_pair_gaps``,
+  ``find_series_gaps``, ``mine_symmetry_pairs``) gains an optional
+  ``progress_hook=None`` kwarg; the cli builds a label-bound,
+  50 ms-throttled hook and renders into ``mine_spinner.set_workers``.
+  Inner-loop hot spots additionally use bitmask sampling so the
+  perf cost is below the noise floor of ``time.perf_counter``.
+  No-op when ``progress_hook is None`` (jobs=1 / non-TTY).
 
 
 
