@@ -123,7 +123,8 @@ estimate before you scan. Methodology in
 
 ### Throughput
 
-Across all 16 corpora (one per language), lacuna sustains
+Across all 16 sample corpora (one per supported language; TS+TSX
+share the TypeScript corpus), lacuna sustains
 **5,000–15,000 entities per second** on a single Python process,
 with the variance driven mostly by per-language extractor cost
 (deeper AST = more nodes to walk). There's no quadratic term: the

@@ -241,10 +241,12 @@ on Shawn's hardware. See `~/Desktop/lacuna_doc_todos.txt §2`.)
   promise. Conventions covered: `tests/<rest>/test_<name>.py`,
   flat `tests/test_<name>.py`, in-tree `<dir>/test_<name>.py`,
   and Go-style `<name>_test.<ext>`.
-- **16-language extractor system** built on tree-sitter: Python,
-  JavaScript, TypeScript, Rust, Go, Java, Ruby, C#, Swift, C, C++,
-  PHP, Kotlin, Scala, Lua, Bash. Pluggable via the
-  `lacuna.extractors` entry-point group.
+- **17 built-in extractors covering 16 languages** built on
+  tree-sitter: Python, JavaScript, TypeScript, TSX, Rust, Go,
+  Java, Ruby, C#, Swift, C, C++, PHP, Kotlin, Scala, Lua, Bash.
+  TS and TSX share a tree-sitter grammar but emit distinct
+  extractors. Pluggable via the `lacuna.extractors` entry-point
+  group.
 - **Mining engine** — frequent-itemset over `(group, feature)`
   pairs with confidence threshold. Three built-in selectors
   (`directory`, `decorator`, `parent_class`).
