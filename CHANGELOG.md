@@ -17,8 +17,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previous `hasattr(os, "process_cpu_count")` fallback dance.
   CI matrix narrowed to 3.13 + 3.14; ruff `target-version` and mypy
   `python_version` bumped to match.
+- **Mining stage is ~30× faster on large corpora.** Linux kernel
+  scan: mine 320.8 s → 10.7 s, gap counts byte-identical (15,330).
+  Three landed wins: (a) ``find_symmetry_gaps`` refactor —
+  pre-compute ``_short_name(ent)`` once per entity, look up by name
+  in O(1) instead of an O(P×N) per-pair-per-entity scan; (b)
+  hatch-mypyc compiles ``mining.py`` + ``symmetry.py`` to native C
+  extensions (wheels published per OS × arch via the new
+  ``wheels.yml`` cibuildwheel workflow); (c) ``mining_worker_cap()``
+  lifts the ThreadPool cap from 4 → 7 on free-threaded Python
+  (3.13t / 3.14t) so each strategy can saturate its own core. No
+  behavior change for users on regular CPython — the cap stays 4
+  and the speedup comes entirely from (a) + (b).
+- **Progress bar no longer stair-steps in narrow tmux panes.**
+  Replaced fixed ``_LINE_WIDTH = 120`` padding with a
+  ``_truncate_visible(s, width)`` helper that cuts to the live
+  ``shutil.get_terminal_size().columns`` and uses ``\033[K``
+  (Erase-in-Line) to clear instead of trailing spaces. Wire bytes
+  shrink ~44%; ``\033[F`` cursor recovery now lands correctly on
+  panes < 120 cols.
 
 ### Added
+
+- **Multi-worker progress UI.** ``lacuna check --jobs N`` in
+  interactive text mode now shows one sub-line per worker (parse
+  stage) and one sub-line per running strategy (mining stage),
+  each tagged with a per-language color: Python blue, Rust orange,
+  Go cyan, Ruby red, etc. Uses
+  ``multiprocessing.Manager().Queue()`` + a daemon drain thread
+  to feed worker (id, language, path) updates into
+  ``ProgressBar.set_workers()``. Backward-compatible: callers that
+  don't call ``set_workers()`` get the original single-sub-line
+  behavior; non-TTY and ``--jobs 1`` paths skip the queue entirely.
+- **Per-strategy mining timings in ``runs.jsonl``.** The mining
+  stage now records ``mine_by_strategy_ms`` (one entry per
+  strategy: symmetry pairs, call-pair, frequency:decorator, etc.)
+  alongside the existing ``stage_ms`` totals. Surfaces in
+  ``lacuna est --history`` and turns the previously opaque mining
+  tail into a profiling-grade signal.
+
+
 
 - **Per-stage progress UI.** `lacuna check` in interactive text
   mode now emits five ✓ summary lines (walk / parse / store / mine
