@@ -63,6 +63,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PATH; functionally equivalent to passing PATH as positional, but
   symmetric with `check --cold` for muscle memory.
 
+- **CLI flag pass — symmetric coverage + scope flags.** Closes the
+  asymmetries that built up across subcommands.
+  - **`est`** gained `--config CONFIG`, `--jobs N`, `--json`,
+    `--quiet` to mirror what `check` already had. `--quiet`
+    collapses the report to its bottom-line "Total check estimate"
+    line; `--json` emits a stable `{root, files, bytes,
+    headline_jobs, ...}` shape suitable for CI cost-prediction
+    gates.
+  - **`init`** gained `--quiet` so scripts that init then
+    immediately run check don't have to redirect stdout.
+  - **`suppress`** now accepts the project root as a positional
+    argument (`lacuna suppress <gap_id> <path>`) for symmetry with
+    init/check/est. The legacy `--path` is preserved as a deprecated
+    alias and emits a one-line hint when used.
+  - **`check` and `est`** gained `--language LANG[,LANG]` (override
+    `[scan.languages]` for one run) and `--exclude PATTERN`
+    (action=append; appends to `[scan.exclude]`). `--exclude`
+    activates a new glob-based path filter in `find_source_files`
+    using `PurePosixPath.full_match` (3.13+); `**/vendor/**` etc.
+    work as expected.
+  - **Top-level `--no-color`** and **`--debug` / `-vv`**.
+    `--no-color` sets `NO_COLOR=1` before color-detection runs
+    (flag wins over env, both supported). `--debug` enables
+    diagnostic prints to stderr at config / scope / cold-path
+    decision points; opt-in, gated on `LACUNA_DEBUG=1` so other
+    code can check it without importing CLI internals.
+
   Use cases: validating extractor changes (no stale cached
   entities), benchmarking the parse stage in isolation, debugging
   suspected cache weirdness without nuking ``.lacuna/``.

@@ -18,7 +18,7 @@ path = "."           # always present (relative to repo root)
 language = "python"
 expected_gaps = 35
 expected_rules = 22       # rules that produced at least one gap
-expected_entities = 881
+expected_entities = 884
 optional = false
 
 [[corpus]]

@@ -175,6 +175,7 @@ def walk_corpus(
     ext_to_extractor: dict,
     *,
     on_file: Any = None,
+    excludes: tuple[str, ...] = (),
 ) -> CorpusShape:
     """Tally files and bytes per language under ``root``.
 
@@ -192,7 +193,9 @@ def walk_corpus(
     total_files = 0
     total_bytes = 0
 
-    for path in find_source_files(root, ext_to_extractor.keys()):
+    for path in find_source_files(
+        root, ext_to_extractor.keys(), excludes=excludes,
+    ):
         extractor = ext_to_extractor.get(path.suffix.lower())
         if extractor is None:
             continue

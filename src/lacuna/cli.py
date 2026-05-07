@@ -137,12 +137,32 @@ def main(argv: list[str] | None = None) -> int:
              "you'll be re-prompted, since over-subscribing usually slows "
              "the scan.",
     )
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Force-disable ANSI color in CLI output. Equivalent to "
+             "setting NO_COLOR=1 in the environment; the flag wins if "
+             "both are set. Useful for piping output through tools that "
+             "don't strip escape sequences.",
+    )
+    parser.add_argument(
+        "--debug", "-vv",
+        action="store_true",
+        help="Print extra diagnostic detail to stderr (per-stage timings, "
+             "config / extractor resolution, cache decisions). Tied to "
+             "dev work — opposite pole from --quiet. Doesn't change scan "
+             "behavior; only what gets printed.",
+    )
     sub = parser.add_subparsers(dest="cmd")
 
     init = sub.add_parser("init", help="Create lacuna.toml + .lacuna/ in the current dir.")
     init.add_argument("path", nargs="?", default=".", help="Where to init (default: cwd)")
     init.add_argument("--force", action="store_true",
                       help="Overwrite an existing lacuna.toml")
+    init.add_argument("--quiet", "-q", action="store_true",
+                      help="Suppress the 'Initialized lacuna in PATH' message "
+                           "and the first-scan estimate footer. Useful for "
+                           "scripts that init then immediately run check.")
 
     check = sub.add_parser("check", help="Scan a project and print gaps.")
     check.add_argument("path", nargs="?", default=".", help="Project root (default: cwd)")
@@ -178,6 +198,20 @@ def main(argv: list[str] | None = None) -> int:
                             "or are validating extractor changes. Doesn't "
                             "delete the cache (next scan without --cold "
                             "is back to warm).")
+    check.add_argument("--language", "--languages", default=None,
+                       metavar="LANG[,LANG]",
+                       help="Restrict scan to specific languages (comma-"
+                            "separated). Overrides the lacuna.toml "
+                            "[scan.languages] list. Useful for quick "
+                            "single-language re-runs ('I just edited "
+                            "Python; only re-scan Python this run'). "
+                            "Validates against the registered extractors.")
+    check.add_argument("--exclude", action="append", default=None,
+                       metavar="PATTERN",
+                       help="Skip files / directories matching PATTERN "
+                            "(glob, e.g. '**/vendor/**'). May be passed "
+                            "multiple times. Appends to lacuna.toml "
+                            "[scan.exclude]; doesn't override.")
 
     est = sub.add_parser(
         "est",
@@ -193,6 +227,23 @@ def main(argv: list[str] | None = None) -> int:
     )
     est.add_argument("path", nargs="?", default=".",
                      help="Project root (default: cwd)")
+    est.add_argument("--config", type=Path, default=None,
+                     help="Path to lacuna.toml (default: search root upward). "
+                          "Mirrors `lacuna check --config`.")
+    est.add_argument("--jobs", "-j", type=int, default=None, metavar="N",
+                     help="Headline-estimate worker count. Overrides the "
+                          "default (half of CPU cores). The full per-jobs "
+                          "table still renders; this only changes which "
+                          "row is highlighted as the headline number.")
+    est.add_argument("--json", action="store_true", dest="as_json",
+                     help="Emit machine-readable JSON instead of the human "
+                          "estimate report. Use case: a CI step that decides "
+                          "whether to skip a long scan based on the cost "
+                          "prediction.")
+    est.add_argument("--quiet", "-q", action="store_true",
+                     help="Suppress the human-formatted intro / calibration "
+                          "prompts and just emit the bottom-line estimate. "
+                          "Implies non-interactive (no calibration prompts).")
     est.add_argument("--recalibrate", action="store_true",
                      help="Force re-running the calibration even if a "
                           "fresh cache exists.")
@@ -214,6 +265,18 @@ def main(argv: list[str] | None = None) -> int:
                           "files have unchanged content hashes. Tied to "
                           "dev work: useful for predicting the worst-case "
                           "first-time-on-this-repo experience.")
+    est.add_argument("--language", "--languages", default=None,
+                     metavar="LANG[,LANG]",
+                     help="Scope the prediction to specific languages "
+                          "(comma-separated). Mirrors `lacuna check "
+                          "--language`. Overrides lacuna.toml "
+                          "[scan.languages].")
+    est.add_argument("--exclude", action="append", default=None,
+                     metavar="PATTERN",
+                     help="Skip files / directories matching PATTERN "
+                          "from the corpus walk used for the prediction. "
+                          "May be passed multiple times. Appends to "
+                          "lacuna.toml [scan.exclude].")
 
     suppress = sub.add_parser(
         "suppress",
@@ -229,10 +292,38 @@ def main(argv: list[str] | None = None) -> int:
                           help="Remove an existing suppression instead of adding one")
     suppress.add_argument("--list", action="store_true", dest="as_list",
                           help="List current suppressions and exit")
-    suppress.add_argument("--path", default=".",
-                          help="Project root (default: cwd)")
+    # Project root: prefer positional `path` for symmetry with the
+    # other subcommands. `--path` is kept as a deprecated alias so
+    # existing scripts keep working; either form resolves to the
+    # same effective root, with positional winning if both are given.
+    suppress.add_argument("project_path", nargs="?", default=None,
+                          metavar="PATH",
+                          help="Project root (default: cwd). Mirrors the "
+                               "positional argument on init/check/est.")
+    suppress.add_argument("--path", default=None, dest="project_path_flag",
+                          help="[Deprecated] Project root. Use the positional "
+                               "PATH argument instead. Kept for backward "
+                               "compatibility with existing scripts.")
 
     args = parser.parse_args(argv)
+
+    # --no-color must take effect BEFORE the first import of `_color`
+    # (which evaluates _USE_COLOR at module load). _color is imported
+    # lazily inside scan paths, so setting NO_COLOR here is early
+    # enough — but ordering matters for any future imports that
+    # happen before this point.
+    if getattr(args, "no_color", False):
+        import os as _os
+        _os.environ["NO_COLOR"] = "1"
+
+    # --debug exposes a process-wide flag downstream code can check.
+    # Stays opt-in: all existing print paths are unchanged unless
+    # they explicitly consult this. Keeps blast radius tiny.
+    if getattr(args, "debug", False):
+        import os as _os
+        _os.environ["LACUNA_DEBUG"] = "1"
+        # Surface immediately so the user sees we got the flag.
+        print("[lacuna debug] verbose mode on", file=sys.stderr)
 
     # Top-level purge / settings flags run before subcommand dispatch.
     if args.purge_all:
@@ -259,11 +350,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "init":
-        return cmd_init(root=Path(args.path).resolve(), force=args.force)
+        return cmd_init(root=Path(args.path).resolve(), force=args.force,
+                        quiet=args.quiet)
 
     if args.cmd == "check":
         root = Path(args.path).resolve()
         config = _load_config(root, args.config)
+        _debug(f"resolved root = {root}")
+        _debug(f"languages = {list(config.scan.languages)}")
+        if config.scan.exclude:
+            _debug(f"excludes (from config) = {list(config.scan.exclude)}")
+        config = _apply_scope_overrides(config, args.language, args.exclude)
+        if args.language is not None:
+            _debug(f"--language override → languages = {list(config.scan.languages)}")
+        if args.exclude:
+            _debug(f"--exclude override (appended) → excludes = {list(config.scan.exclude)}")
         # CLI flags override config values for the mining knobs.
         from dataclasses import replace
         mining = config.mining
@@ -291,11 +392,31 @@ def main(argv: list[str] | None = None) -> int:
             recalibrate=args.recalibrate,
             use_synthetic=args.use_synthetic,
             cold=_resolve_cold_arg(args.cold, Path(args.path).resolve()),
+            config_path=args.config,
+            jobs=args.jobs,
+            as_json=args.as_json,
+            quiet=args.quiet,
+            language_filter=args.language,
+            excludes=args.exclude,
         )
 
     if args.cmd == "suppress":
+        # Positional `project_path` wins over the deprecated `--path`
+        # flag; both default to None so when neither is given we fall
+        # back to cwd. Surfaces a one-line deprecation hint when the
+        # legacy --path is used.
+        if args.project_path_flag is not None and args.project_path is None:
+            stderr_console.print(
+                "[dim]lacuna: `suppress --path` is deprecated; use the "
+                "positional path argument (`lacuna suppress <gap_id> PATH`).[/]"
+            )
+        suppress_root = (
+            args.project_path
+            or args.project_path_flag
+            or "."
+        )
         return cmd_suppress(
-            root=Path(args.path).resolve(),
+            root=Path(suppress_root).resolve(),
             gap_id=args.gap_id,
             reason=args.reason,
             remove=args.remove,
@@ -314,7 +435,52 @@ def _load_config(root: Path, explicit: Path | None) -> Config:
     return Config()
 
 
-def cmd_init(*, root: Path, force: bool) -> int:
+def _apply_scope_overrides(
+    config: Config,
+    languages: str | None,
+    excludes: list[str] | None,
+) -> Config:
+    from dataclasses import replace
+    """Apply --language / --exclude CLI overrides to a Config in place
+    (returning a new immutable Config).
+
+    ``languages`` is a comma-separated string ("python,rust") that
+    *replaces* the config's language list — the CLI flag is the user's
+    explicit intent for this run and should not be merged with the
+    file's default. Unknown language names are dropped silently here;
+    upstream extractor discovery will produce a clearer error if the
+    resulting list is empty.
+
+    ``excludes`` is a list of glob patterns that *append* to the
+    config's exclude list — the file usually carries the long-lived
+    excludes (vendored deps, build artifacts) and the flag adds
+    one-off exclusions for this run.
+    """
+    from .config import ScanConfig
+    if languages is None and not excludes:
+        return config
+    new_languages = config.scan.languages
+    if languages is not None:
+        # Parse comma-separated list; strip whitespace; drop blanks.
+        names = tuple(
+            n.strip() for n in languages.split(",") if n.strip()
+        )
+        if names:
+            new_languages = names
+    new_exclude = config.scan.exclude
+    if excludes:
+        new_exclude = config.scan.exclude + tuple(excludes)
+    return replace(
+        config,
+        scan=ScanConfig(
+            include=config.scan.include,
+            exclude=new_exclude,
+            languages=new_languages,
+        ),
+    )
+
+
+def cmd_init(*, root: Path, force: bool, quiet: bool = False) -> int:
     if not root.is_dir():
         stderr_console.print(f"[red]lacuna:[/] not a directory: [cyan]{root}[/]")
         return 2
@@ -344,6 +510,9 @@ def cmd_init(*, root: Path, force: bool) -> int:
                     fh.write("\n")
                 fh.write(".lacuna/\n")
 
+    if quiet:
+        return 0
+
     stdout_console.print(
         f"[bright_green]✓[/] Initialized lacuna in [cyan]{root}[/]"
     )
@@ -363,6 +532,16 @@ def cmd_init(*, root: Path, force: bool) -> int:
 
     stdout_console.print("Run [bold cyan]`lacuna check`[/] to start exploring.")
     return 0
+
+
+def _debug(msg: str) -> None:
+    """Emit a diagnostic line to stderr when LACUNA_DEBUG is set
+    (via --debug / -vv on the CLI). Cheap no-op otherwise — used
+    sparingly at decision points where users investigating odd
+    behavior would want to know what was chosen."""
+    import os as _os
+    if _os.environ.get("LACUNA_DEBUG"):
+        print(f"[lacuna debug] {msg}", file=sys.stderr)
 
 
 def _resolve_cold_arg(cold_arg: str | None, fallback_root: Path) -> Path | None:
@@ -681,6 +860,7 @@ def scan_corpus(
                 progress_callback=progress_callback,
                 worker_report_queue=worker_report_queue,
                 cold=cold,
+                excludes=tuple(config.scan.exclude),
             )
         finally:
             # Stop the drain thread before tearing down the bar so the
@@ -1481,6 +1661,12 @@ def cmd_est_history() -> int:
 def cmd_est(
     *, root: Path, recalibrate: bool, use_synthetic: bool = False,
     cold: Path | None = None,
+    config_path: Path | None = None,
+    jobs: int | None = None,
+    as_json: bool = False,
+    quiet: bool = False,
+    language_filter: str | None = None,
+    excludes: list[str] | None = None,
 ) -> int:
     """Estimate cold-scan time without actually scanning.
 
@@ -1518,10 +1704,14 @@ def cmd_est(
     from .parallel import default_jobs
 
     if not root.is_dir():
-        stderr_console.print(f"[red]lacuna:[/] not a directory: [cyan]{root}[/]")
+        if as_json:
+            print(json.dumps({"error": f"not a directory: {root}"}))
+        else:
+            stderr_console.print(f"[red]lacuna:[/] not a directory: [cyan]{root}[/]")
         return 2
 
-    config = _load_config(root, None)
+    config = _load_config(root, config_path)
+    config = _apply_scope_overrides(config, language_filter, excludes)
     extractors = discover_extractors(config.scan.languages)
     if not extractors:
         msg = (
@@ -1541,6 +1731,7 @@ def cmd_est(
     with spinning(spinner):
         shape = walk_corpus(
             root, ext_to_extractor, on_file=spinner.set_current_item,
+            excludes=tuple(config.scan.exclude),
         )
     spinner.finish()
 
@@ -1685,11 +1876,42 @@ def cmd_est(
     if calibration is not None:
         calibrated_languages |= set(calibration.per_language_bps.keys())
         calibrated_languages |= set(calibration.calibration_corpus_languages)
+
+    # --jobs override: highlight a specific worker count as the
+    # headline. Falls back to the user's pinned default when None.
+    headline_jobs = jobs if jobs is not None else default_jobs()
+
+    if as_json:
+        # Machine-readable estimate: minimal stable shape for CI uses.
+        # Includes the headline-jobs prediction, key calibration
+        # metadata, and corpus shape so downstream code can decide
+        # whether to skip/run a scan based on cost.
+        cpu = cpu_count_for_estimator()
+        result = {
+            "root": str(root),
+            "files": shape.files,
+            "bytes": shape.bytes,
+            "cpu_count": cpu,
+            "headline_jobs": headline_jobs,
+            "calibrated": calibration is not None,
+            "calibrated_at": (
+                calibration.calibrated_at if calibration else None
+            ),
+            "model_mining_tail_s": model_mining_tail_s,
+            "model_mining_source": model_mining_source,
+            "observed_cold_scan_s": observed_cold_scan_s,
+            "observed_jobs": observed_jobs,
+            "runs_aggregated": aggregated.runs_used,
+            "parallel_fraction": p_value,
+        }
+        print(json.dumps(result, indent=2))
+        return 0
+
     report = format_estimate_report(
         root=root,
         shape=shape,
         cpu_count=cpu_count_for_estimator(),
-        default_jobs=default_jobs(),
+        default_jobs=headline_jobs,
         calibrated=calibration is not None,
         calibrated_at=calibration.calibrated_at if calibration else None,
         observed_cold_scan_s=observed_cold_scan_s,
@@ -1702,6 +1924,23 @@ def cmd_est(
         bps_table=bps_table,
         parallel_fraction=p_value,
     )
+    if quiet:
+        # --quiet: show only the bottom-line prediction line, not
+        # the calibration intro / per-jobs table / methodology link.
+        # The headline lives on the line starting with "Total check
+        # estimate" (a stable marker in format_estimate_report).
+        for line in report.splitlines():
+            if line.lstrip().startswith("Total check estimate"):
+                print(line.strip())
+                break
+        else:
+            # Fallback: print the last non-blank line. Better than
+            # silent if the report shape ever changes.
+            for line in reversed(report.splitlines()):
+                if line.strip():
+                    print(line.strip())
+                    break
+        return 0
     print(report, end="")
     return 0
 
@@ -1957,6 +2196,7 @@ def _scan_incremental(
     progress_callback: Any = None,
     worker_report_queue: Any = None,
     cold: Path | None = None,
+    excludes: tuple[str, ...] = (),
 ) -> tuple[int, int, dict[str, int]]:
     """Walk the corpus, reusing cached entities/features for unchanged files.
 
@@ -2082,7 +2322,9 @@ def _scan_incremental(
         chunk.clear()
 
     try:
-        for path in find_source_files(root, ext_to_extractor.keys()):
+        for path in find_source_files(
+            root, ext_to_extractor.keys(), excludes=excludes,
+        ):
             extractor = ext_to_extractor.get(path.suffix.lower())
             if extractor is None:
                 continue  # find_source_files already filtered, but be defensive

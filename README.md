@@ -98,7 +98,16 @@ lacuna check --cold        # dev-time: ignore parse cache and re-parse the
                            # whole tree (or just `--cold src/foo.py` for one
                            # file). Useful when you suspect cache weirdness
                            # or are benchmarking the parse stage.
+lacuna check --language python,rust          # restrict to specific languages
+lacuna check --exclude '**/vendor/**'        # skip a glob pattern
+lacuna check --exclude tests --exclude docs  # multiple --exclude allowed
+lacuna --debug check                          # diagnostic prints to stderr
+lacuna --no-color check                       # force-disable ANSI color
 ```
+
+Symmetric flags: `lacuna est` accepts the same `--config`, `--jobs`,
+`--json`, `--quiet`, `--language`, `--exclude`, `--cold` as `check`,
+so muscle memory transfers between the two.
 
 ## What lacuna finds
 
