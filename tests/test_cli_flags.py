@@ -9,10 +9,7 @@ helpers (Config, find_source_files) which have their own tests.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 from lacuna.cli import (
     _apply_scope_overrides,
