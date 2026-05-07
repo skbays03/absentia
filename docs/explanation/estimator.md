@@ -121,9 +121,14 @@ Why fit instead of bake in 0.80? The actual `p` depends on real
 factors that vary per machine: I/O subsystem, scheduler, NUMA,
 thermal, container limits. Small corpora on fast machines often
 show much lower `p` because the serial pipeline tail dominates the
-parallel gains. Validated against Dev-Dashboard: fitted `p = 0.36`
-(vs. baked 0.80) — accurate because Dev-Dashboard scans in <1 s
-and process-spawn overhead eats into the parallel fraction.
+parallel gains. Validated against Dev-Dashboard (week of 2026-05-05,
+*before mining-stage parallelism + the 30× symmetry refactor
+shipped*): fitted `p = 0.36` (vs. baked 0.80) — accurate because
+Dev-Dashboard scans in <1 s and process-spawn overhead eats into
+the parallel fraction. The same validation re-run on current
+optimized code would show a different `p` (mining is no longer
+the dominant serial tail it was); the example is kept for its
+illustrative shape, not as a current measurement.
 
 Notice the asymptote: as `N → ∞`, speedup → `1 / (1 − p)`.
 **You can never get more than that**, no matter how many cores you
