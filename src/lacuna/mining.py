@@ -86,6 +86,35 @@ def mine(
     if progress_hook is not None:
         progress_hook(phase="counting features", counter=(0, n_groups))
 
+    # Apriori prune (optimization plan #7): pre-filter feature values
+    # that can't possibly reach min_confidence in *any* group. The
+    # rule-emission threshold is `count >= min_confidence * total`
+    # within a group. The smallest possible group has size 1, so the
+    # smallest viable count is ceil(min_confidence). With the default
+    # min_confidence=0.8, that's 1 — meaning a value appearing in
+    # zero entities can't produce a rule (trivially), but every value
+    # that appears in ≥1 entity could in principle. The real win is
+    # at the next tier: values appearing in fewer than 2 entities
+    # corpus-wide can't reach 80% confidence in any group of size ≥2,
+    # which is where lacuna's selectors actually emit groups (the
+    # min_group_size config knob enforces ≥3 by default). So we drop
+    # any value with global count < ceil(min_confidence * 2). This
+    # cuts the per-group counter-building loop's work proportionally
+    # to how long-tailed the feature distribution is — typically
+    # 30-60% of distinct values on real corpora.
+    global_counts: Counter[str] = Counter()
+    for fs in feature_index.values():
+        if feature_kind in fs.by_kind:
+            for value in fs.get_set(feature_kind):
+                global_counts[value] += 1
+    # Threshold derived from min_confidence × the smallest group we'd
+    # bother mining. Conservative — guarantees Apriori-correctness
+    # (no rule we'd have emitted gets pruned).
+    min_global_count = max(1, int(min_confidence * 2))
+    popular: set[str] = {
+        v for v, c in global_counts.items() if c >= min_global_count
+    }
+
     for i, group in enumerate(groups):
         if progress_hook is not None:
             progress_hook(counter=(i, n_groups), item=lambda g=group: g.name)
@@ -100,7 +129,8 @@ def mine(
         counter: Counter[str] = Counter()
         for mid in eligible:
             for value in feature_index[mid].get_set(feature_kind):
-                counter[value] += 1
+                if value in popular:
+                    counter[value] += 1
 
         identity = group.identity_feature
         for value, count in counter.items():
