@@ -55,6 +55,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alongside the existing ``stage_ms`` totals. Surfaces in
   ``lacuna est --history`` and turns the previously opaque mining
   tail into a profiling-grade signal.
+- **`--cold [PATH]` flag on `lacuna check` and `lacuna est`.** Dev-
+  time cache-bust: forces re-parse of files at PATH (default: the
+  whole scanned root). Recursive — passing a directory cold-busts
+  every file under it. Doesn't delete the cache (next scan without
+  the flag is back to warm). For `est`, scopes the prediction to
+  PATH; functionally equivalent to passing PATH as positional, but
+  symmetric with `check --cold` for muscle memory.
+
+  Use cases: validating extractor changes (no stale cached
+  entities), benchmarking the parse stage in isolation, debugging
+  suspected cache weirdness without nuking ``.lacuna/``.
+
 - **Mining-stage progress detail (phase + counter + current item).**
   Each running strategy now surfaces a live ``[phase] N/M item``
   sub-line so the user sees what the strategy is actually doing

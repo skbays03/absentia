@@ -168,6 +168,16 @@ def main(argv: list[str] | None = None) -> int:
                             "lets up to 5 gaps slide. Useful for adopting "
                             "lacuna on an existing codebase without "
                             "blocking the build the first day.")
+    check.add_argument("--cold", nargs="?", const="", default=None,
+                       metavar="PATH",
+                       help="Force re-parse of files at PATH (default: "
+                            "the whole scanned root). Recursive — passing a "
+                            "directory cold-busts every file under it. "
+                            "Tied to dev work: use when you suspect cache "
+                            "weirdness, are benchmarking the parse stage, "
+                            "or are validating extractor changes. Doesn't "
+                            "delete the cache (next scan without --cold "
+                            "is back to warm).")
 
     est = sub.add_parser(
         "est",
@@ -196,6 +206,14 @@ def main(argv: list[str] | None = None) -> int:
                           "feed the estimator and exit. Useful for "
                           "auditing what data the prediction is based "
                           "on (~/.lacuna/runs.jsonl).")
+    est.add_argument("--cold", nargs="?", const="", default=None,
+                     metavar="PATH",
+                     help="Predict the cold-scan time for PATH (default: "
+                          "the whole scanned root) — bypass the warm-cache "
+                          "credit that est would otherwise apply when "
+                          "files have unchanged content hashes. Tied to "
+                          "dev work: useful for predicting the worst-case "
+                          "first-time-on-this-repo experience.")
 
     suppress = sub.add_parser(
         "suppress",
@@ -262,6 +280,7 @@ def main(argv: list[str] | None = None) -> int:
             as_json=args.as_json,
             jobs=args.jobs,
             max_gaps=args.max_gaps,
+            cold=_resolve_cold_arg(args.cold, root),
         )
 
     if args.cmd in ("est", "estimate"):
@@ -271,6 +290,7 @@ def main(argv: list[str] | None = None) -> int:
             root=Path(args.path).resolve(),
             recalibrate=args.recalibrate,
             use_synthetic=args.use_synthetic,
+            cold=_resolve_cold_arg(args.cold, Path(args.path).resolve()),
         )
 
     if args.cmd == "suppress":
@@ -345,6 +365,21 @@ def cmd_init(*, root: Path, force: bool) -> int:
     return 0
 
 
+def _resolve_cold_arg(cold_arg: str | None, fallback_root: Path) -> Path | None:
+    """Translate the raw ``--cold [PATH]`` arg into an absolute Path.
+
+    argparse with ``nargs='?'`` gives us:
+      - ``None``                         (flag absent)         → return None
+      - ``""`` (the const for bare flag) (--cold w/ no value)  → fallback_root
+      - any string (a value was given)                          → resolve it
+    """
+    if cold_arg is None:
+        return None
+    if cold_arg == "":
+        return fallback_root
+    return Path(cold_arg).expanduser().resolve()
+
+
 def cmd_check(
     *,
     root: Path,
@@ -353,6 +388,7 @@ def cmd_check(
     as_json: bool = False,
     jobs: int | None = None,
     max_gaps: int | None = None,
+    cold: Path | None = None,
 ) -> int:
     if not root.is_dir():
         if as_json:
@@ -386,6 +422,7 @@ def cmd_check(
             started_iso=started_iso,
             jobs=jobs,
             max_gaps=max_gaps,
+            cold=cold,
         )
     finally:
         lock_ctx.__exit__(None, None, None)
@@ -402,6 +439,7 @@ def _run_check(
     started_iso: str,
     jobs: int | None = None,
     max_gaps: int | None = None,
+    cold: Path | None = None,
 ) -> int:
     extractors = discover_extractors(config.scan.languages)
     if not extractors:
@@ -448,7 +486,7 @@ def _run_check(
         root=root, state_dir=state_dir, config=config,
         started=started, started_iso=started_iso, extractors=extractors,
         jobs=jobs, interactive=interactive_text_mode,
-        shape=cached_shape,
+        shape=cached_shape, cold=cold,
     )
     gaps = result["gaps"]
     rules_by_id = result["rules_by_id"]
@@ -494,6 +532,7 @@ def scan_corpus(
     progress_callback: Any = None,
     interactive: bool = False,
     shape: Any = None,
+    cold: Path | None = None,
 ) -> dict:
     """Run a full scan + mine cycle and return the result.
 
@@ -641,6 +680,7 @@ def scan_corpus(
                 root, storage, run_id, ext_to_extractor, jobs=jobs,
                 progress_callback=progress_callback,
                 worker_report_queue=worker_report_queue,
+                cold=cold,
             )
         finally:
             # Stop the drain thread before tearing down the bar so the
@@ -1440,6 +1480,7 @@ def cmd_est_history() -> int:
 
 def cmd_est(
     *, root: Path, recalibrate: bool, use_synthetic: bool = False,
+    cold: Path | None = None,
 ) -> int:
     """Estimate cold-scan time without actually scanning.
 
@@ -1450,7 +1491,17 @@ def cmd_est(
     ``~/.lacuna/calibration.json`` and we're attached to a TTY, prompt
     the user once to run calibration. Result is cached forever (until
     invalidated by version/core-count change or ``--recalibrate``).
+
+    ``cold``, if provided, scopes the walk + prediction to PATH (a
+    subtree of root, or a single file). est is always a cold-scan
+    prediction — the flag exists for symmetry with ``check --cold``
+    and to override warm-rescan-aware predictions if est ever gains
+    them. Until then this is functionally identical to passing PATH
+    as the positional ``root`` argument; the symmetry helps muscle
+    memory and keeps the help text consistent across subcommands.
     """
+    if cold is not None:
+        root = cold
     from .calibration import (
         calibrated_bps_table,
         calibration_path,
@@ -1905,6 +1956,7 @@ def _scan_incremental(
     jobs: int = 1,
     progress_callback: Any = None,
     worker_report_queue: Any = None,
+    cold: Path | None = None,
 ) -> tuple[int, int, dict[str, int]]:
     """Walk the corpus, reusing cached entities/features for unchanged files.
 
@@ -1927,6 +1979,11 @@ def _scan_incremental(
     initializer's queue: each worker pushes (worker_id, language, path)
     before processing each file so the caller can render a per-worker
     multi-line progress UI. Pass None to disable per-worker reporting.
+
+    ``cold``, if provided, is an absolute path; any file under that path
+    (or the file itself, if ``cold`` points at one file) is treated as
+    a cache-miss for this run, forcing re-parse. The cache itself is
+    not deleted — the next scan without ``cold`` is back to warm.
     """
     from .parallel import init_parse_worker, parse_one, should_parallelize
 
@@ -1934,6 +1991,13 @@ def _scan_incremental(
     seen_paths: set[str] = set()
     files_unchanged = 0
     by_language_bytes: dict[str, int] = {}
+
+    # Pre-compute the cold check once. ``cold`` is an absolute path on
+    # disk; we compare each file's absolute path against it. Path is
+    # treated as a directory prefix when it's a directory; equality
+    # match when it's a file. None disables the check entirely.
+    cold_resolved: Path | None = cold.resolve() if cold is not None else None
+    cold_is_dir = cold_resolved is not None and cold_resolved.is_dir()
 
     # Memory-bounded streaming: we hold at most CHUNK_SIZE files' worth
     # of content + parse results in RAM at once. Above this we drain
@@ -2045,7 +2109,22 @@ def _scan_incremental(
 
             current_hash = hashlib.sha256(content).hexdigest()
 
-            if cached.get(rel) == current_hash:
+            # --cold path-scope: bypass the cache for files inside the
+            # requested cold subtree (or matching the cold path exactly
+            # when it's a single file).
+            forced_cold = False
+            if cold_resolved is not None:
+                abs_path = path.resolve()
+                if cold_is_dir:
+                    try:
+                        abs_path.relative_to(cold_resolved)
+                        forced_cold = True
+                    except ValueError:
+                        forced_cold = False
+                else:
+                    forced_cold = (abs_path == cold_resolved)
+
+            if not forced_cold and cached.get(rel) == current_hash:
                 # Cache hit: the only "work" for this file is upserting
                 # the cache row. Advance the bar by 1 here — work for
                 # this file is genuinely complete.

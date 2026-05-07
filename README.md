@@ -94,6 +94,10 @@ For CI and scripting:
 lacuna check               # human-readable list; exit 1 if any gaps
 lacuna check --json        # machine-readable
 lacuna check --max-gaps 5  # tolerate up to 5 gaps before failing the build
+lacuna check --cold        # dev-time: ignore parse cache and re-parse the
+                           # whole tree (or just `--cold src/foo.py` for one
+                           # file). Useful when you suspect cache weirdness
+                           # or are benchmarking the parse stage.
 ```
 
 ## What lacuna finds
