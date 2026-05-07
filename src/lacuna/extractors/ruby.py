@@ -17,13 +17,14 @@ from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
 import tree_sitter_ruby
-from tree_sitter import Language, Node, Parser
+from tree_sitter import Language, Node, Parser, Query, QueryCursor
 
-from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
 _RUBY_LANGUAGE = Language(tree_sitter_ruby.language())
+_CALLS_QUERY = Query(_RUBY_LANGUAGE, "(call) @call")
 
 _MIXIN_KEYWORDS = frozenset({"include", "extend", "prepend"})
 
@@ -206,8 +207,9 @@ def _walk_calls(root: Node) -> Iterator[str]:
     Ruby allows for method calls but is ambiguous with local variables)
     are NOT counted — only explicit ``call`` nodes.
     """
-    for node in walk_subtree(root):
-        if node.type == "call":
+    cursor = QueryCursor(_CALLS_QUERY)
+    for _, captures in cursor.matches(root):
+        for node in captures.get("call", ()):
             yield clean_call_name(_call_name(node))
 
 

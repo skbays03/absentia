@@ -16,13 +16,14 @@ from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
 import tree_sitter_bash
-from tree_sitter import Language, Node, Parser
+from tree_sitter import Language, Node, Parser, Query, QueryCursor
 
-from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
 _BASH_LANGUAGE = Language(tree_sitter_bash.language())
+_CALLS_QUERY = Query(_BASH_LANGUAGE, "(command) @call")
 
 
 class BashExtractor(Extractor):
@@ -78,8 +79,9 @@ def _name_of(fn_node: Node) -> str:
 def _walk_calls(root: Node) -> Iterator[str]:
     """Bash ``command`` nodes have a ``command_name`` child whose first
     ``word`` is the executable being invoked."""
-    for node in walk_subtree(root):
-        if node.type == "command":
+    cursor = QueryCursor(_CALLS_QUERY)
+    for _, captures in cursor.matches(root):
+        for node in captures.get("call", ()):
             for sub in node.children:
                 if sub.type == "command_name":
                     for grand in sub.children:

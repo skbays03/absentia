@@ -15,13 +15,14 @@ from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
 import tree_sitter_lua
-from tree_sitter import Language, Node, Parser
+from tree_sitter import Language, Node, Parser, Query, QueryCursor
 
-from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
 _LUA_LANGUAGE = Language(tree_sitter_lua.language())
+_CALLS_QUERY = Query(_LUA_LANGUAGE, "(function_call) @call")
 
 
 class LuaExtractor(Extractor):
@@ -84,8 +85,9 @@ def _function_name_and_kind(fn_node: Node) -> tuple[str, bool]:
 
 
 def _walk_calls(root: Node) -> Iterator[str]:
-    for node in walk_subtree(root):
-        if node.type == "function_call":
+    cursor = QueryCursor(_CALLS_QUERY)
+    for _, captures in cursor.matches(root):
+        for node in captures.get("call", ()):
             for sub in node.children:
                 if sub.type in ("identifier", "dot_index_expression",
                                 "method_index_expression"):

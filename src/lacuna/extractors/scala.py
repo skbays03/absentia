@@ -18,13 +18,14 @@ from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
 import tree_sitter_scala
-from tree_sitter import Language, Node, Parser
+from tree_sitter import Language, Node, Parser, Query, QueryCursor
 
-from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
 _SCALA_LANGUAGE = Language(tree_sitter_scala.language())
+_CALLS_QUERY = Query(_SCALA_LANGUAGE, "(call_expression) @call")
 
 
 _TYPE_DECL_KIND = {
@@ -156,8 +157,9 @@ def _extends_clause_targets(class_node: Node) -> Iterator[str]:
 
 
 def _walk_calls(root: Node) -> Iterator[str]:
-    for node in walk_subtree(root):
-        if node.type == "call_expression":
+    cursor = QueryCursor(_CALLS_QUERY)
+    for _, captures in cursor.matches(root):
+        for node in captures.get("call", ()):
             target = node.child_by_field_name("function")
             if target is not None:
                 yield clean_call_name(target.text.decode("utf-8").strip())

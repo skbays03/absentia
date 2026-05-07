@@ -17,13 +17,14 @@ from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
 import tree_sitter_kotlin
-from tree_sitter import Language, Node, Parser
+from tree_sitter import Language, Node, Parser, Query, QueryCursor
 
-from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
 _KOTLIN_LANGUAGE = Language(tree_sitter_kotlin.language())
+_CALLS_QUERY = Query(_KOTLIN_LANGUAGE, "(call_expression) @call")
 
 
 class KotlinExtractor(Extractor):
@@ -194,9 +195,11 @@ def _delegation_targets(class_node: Node) -> Iterator[str]:
 
 
 def _walk_calls(root: Node) -> Iterator[str]:
-    for node in walk_subtree(root):
-        if node.type == "call_expression" and node.children:
-            callee = node.children[0]
-            text = callee.text.decode("utf-8").strip()
+    cursor = QueryCursor(_CALLS_QUERY)
+    for _, captures in cursor.matches(root):
+        for node in captures.get("call", ()):
+            if not node.children:
+                continue
+            text = node.children[0].text.decode("utf-8").strip()
             if text:
                 yield clean_call_name(text)

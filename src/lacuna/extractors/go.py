@@ -18,13 +18,14 @@ from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
 import tree_sitter_go
-from tree_sitter import Language, Node, Parser
+from tree_sitter import Language, Node, Parser, Query, QueryCursor
 
-from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
 _GO_LANGUAGE = Language(tree_sitter_go.language())
+_CALLS_QUERY = Query(_GO_LANGUAGE, "(call_expression function: (_) @target)")
 
 
 class GoExtractor(Extractor):
@@ -184,8 +185,7 @@ def _walk_calls(root: Node) -> Iterator[str]:
     """Go's call_expression's first child (the function field) is the
     callee — either an identifier (``helper``), a selector_expression
     (``fmt.Sprintf``, ``p.Name``), or some other expression."""
-    for node in walk_subtree(root):
-        if node.type == "call_expression":
-            target = node.child_by_field_name("function")
-            if target is not None:
-                yield clean_call_name(target.text.decode("utf-8").strip())
+    cursor = QueryCursor(_CALLS_QUERY)
+    for _, captures in cursor.matches(root):
+        for target in captures.get("target", ()):
+            yield clean_call_name(target.text.decode("utf-8").strip())
