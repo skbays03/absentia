@@ -23,14 +23,20 @@ def _write_corpus(root: Path) -> None:
     )
 
 
-def test_synthetic_corpus_yields_one_rule_one_gap(tmp_path, capsys):
+def test_synthetic_corpus_yields_one_gap(tmp_path, capsys):
+    """The 4-of-5-with-@audit fixture must produce exactly one gap on
+    delete_user, missing @audit. Rule count is intentionally not
+    asserted — additional feature_kinds (has_docstring,
+    has_return_type, has_param_types, ...) may legitimately produce
+    extra 100%-confidence rules with zero gaps. The behavior we care
+    about is gap-detection, not internal rule accounting."""
     _write_corpus(tmp_path)
     code = cmd_check(root=tmp_path, config=Config(), quiet=False)
     assert code == 1, "non-zero exit when gaps are present"
     out = capsys.readouterr().out
     assert "delete_user" in out
     assert "@audit" in out
-    assert "1 gaps  ·  1 rules" in out
+    assert "1 gaps" in out
 
 
 def test_clean_corpus_yields_zero_gaps(tmp_path, capsys):
@@ -109,7 +115,11 @@ def test_json_output_is_parseable_with_expected_shape(tmp_path, capsys):
     code = cmd_check(root=tmp_path, config=Config(), quiet=False, as_json=True)
     assert code == 1
     payload = json_module.loads(capsys.readouterr().out)
-    assert payload["summary"] == {"gaps": 1, "rules": 1}
+    # Gap count is the load-bearing assertion; rule count is brittle
+    # (any new feature_kind that fires a 100%-confidence rule on this
+    # fixture would bump it without changing user-facing behavior).
+    assert payload["summary"]["gaps"] == 1
+    assert payload["summary"]["rules"] >= 1
     assert payload["scan"]["entities_scanned"] >= 5
     [gap] = payload["gaps"]
     assert gap["entity"]["qualified_name"].endswith("delete_user")

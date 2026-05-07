@@ -98,6 +98,11 @@ def _emit_function(
         # members have value 'docstring'; this one doesn't" → emits
         # gap "missing docstring".
         "has_docstring": _docstring_marker(fn_node),
+        # Type-annotation features. Same shape: always populated so
+        # the function is eligible; value present iff the annotation
+        # is. Renders as "missing return type" / "missing param types".
+        "has_return_type": _return_type_marker(fn_node),
+        "has_param_types": _param_types_marker(fn_node),
     })
     return entity, features
 
@@ -161,6 +166,8 @@ def _emit_method(
         "decorator": frozenset(decorators),
         "calls": frozenset(_walk_calls(fn_node)),
         "has_docstring": _docstring_marker(fn_node),
+        "has_return_type": _return_type_marker(fn_node),
+        "has_param_types": _param_types_marker(fn_node),
     })
     return entity, features
 
@@ -178,6 +185,47 @@ def _walk_calls(root: Node) -> Iterator[str]:
     for _, captures in cursor.matches(root):
         for target in captures.get("target", ()):
             yield clean_call_name(target.text.decode("utf-8").strip())
+
+
+def _return_type_marker(fn_node: Node) -> frozenset[str]:
+    """``frozenset({"return type"})`` iff the function has a ``-> X:``
+    annotation, else ``frozenset()``. Mining surfaces gaps as
+    "missing return type".
+    """
+    return (
+        frozenset({"return type"})
+        if fn_node.child_by_field_name("return_type") is not None
+        else frozenset()
+    )
+
+
+def _param_types_marker(fn_node: Node) -> frozenset[str]:
+    """``frozenset({"param types"})`` iff every non-self / non-cls
+    positional parameter carries a type annotation. Empty param list
+    counts as annotated (nothing to be missing). Conservative: any
+    untyped parameter flips the whole function to "missing param
+    types" — matches how teams adopt typing (gradually, but with the
+    expectation that a well-typed function annotates everything).
+    """
+    params = fn_node.child_by_field_name("parameters")
+    if params is None:
+        return frozenset({"param types"})
+    typed_kinds = {"typed_parameter", "typed_default_parameter"}
+    untyped_kinds = {"identifier", "default_parameter"}
+    for child in params.children:
+        if child.type in untyped_kinds:
+            text = child.text.decode("utf-8").strip()
+            # Drop default-value suffix ("foo=1" → "foo") before
+            # checking self/cls.
+            name = text.split("=", 1)[0].strip()
+            if name in ("self", "cls"):
+                continue
+            return frozenset()
+        if child.type in typed_kinds:
+            continue
+        # Non-parameter children: parens, commas, *args markers.
+        # Skip silently.
+    return frozenset({"param types"})
 
 
 def _docstring_marker(definition_node: Node) -> frozenset[str]:
