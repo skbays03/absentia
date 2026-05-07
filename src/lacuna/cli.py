@@ -2238,6 +2238,7 @@ def _scan_incremental(
     a cache-miss for this run, forcing re-parse. The cache itself is
     not deleted — the next scan without ``cold`` is back to warm.
     """
+    from .extractors import EXTRACTOR_FINGERPRINT
     from .parallel import init_parse_worker, parse_one, should_parallelize
 
     cached = storage.all_file_hashes()
@@ -2251,6 +2252,13 @@ def _scan_incremental(
     # match when it's a file. None disables the check entirely.
     cold_resolved: Path | None = cold.resolve() if cold is not None else None
     cold_is_dir = cold_resolved is not None and cold_resolved.is_dir()
+
+    # Cache-key salt. Bumping ``EXTRACTOR_FINGERPRINT`` invalidates every
+    # cached file so the next scan re-extracts and picks up new
+    # feature_kinds / entity kinds / extractor fixes — without the
+    # user having to know about it. See extractors/__init__.py for
+    # bump policy.
+    fingerprint_salt = EXTRACTOR_FINGERPRINT.encode("utf-8")
 
     # Memory-bounded streaming: we hold at most CHUNK_SIZE files' worth
     # of content + parse results in RAM at once. Above this we drain
@@ -2362,7 +2370,7 @@ def _scan_incremental(
                 + len(content)
             )
 
-            current_hash = hashlib.sha256(content).hexdigest()
+            current_hash = hashlib.sha256(content + fingerprint_salt).hexdigest()
 
             # --cold path-scope: bypass the cache for files inside the
             # requested cold subtree (or matching the cold path exactly

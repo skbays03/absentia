@@ -15,6 +15,7 @@ from lacuna.cli import (
     _apply_scope_overrides,
     _debug,
     _resolve_cold_arg,
+    cmd_check,
     cmd_init,
 )
 from lacuna.config import Config
@@ -250,6 +251,48 @@ def test_exclude_filter_drops_matching_paths(tmp_path):
 
 
 # ── argparse-level tests for est --json shape ──────────────────────
+
+
+# ── EXTRACTOR_FINGERPRINT cache invalidation ──────────────────────
+
+
+def test_fingerprint_bump_invalidates_cache(tmp_path):
+    """A scan after EXTRACTOR_FINGERPRINT changes must re-extract every
+    file (cache miss) instead of trusting the now-stale cached entities.
+    Simulates the "user upgrades lacuna; new feature_kinds shipped"
+    scenario — without this guarantee the new detectors would be
+    invisible until the user manually --cold or --purge.
+    """
+    from lacuna import extractors as ex_mod
+    from lacuna.storage import Storage
+
+    # Write a tiny corpus and scan once to populate the cache.
+    (tmp_path / "x.py").write_text("def foo():\n    pass\n")
+    cmd_check(root=tmp_path, config=Config(), quiet=True)
+
+    # Cache row count before bump.
+    state_dir = tmp_path / ".lacuna"
+    with Storage(state_dir) as s:
+        cached_before = dict(s.all_file_hashes())
+    assert "x.py" in cached_before
+
+    # Bump the fingerprint and re-scan.
+    original = ex_mod.EXTRACTOR_FINGERPRINT
+    try:
+        ex_mod.EXTRACTOR_FINGERPRINT = "v-test-bump"
+        cmd_check(root=tmp_path, config=Config(), quiet=True)
+        with Storage(state_dir) as s:
+            cached_after = dict(s.all_file_hashes())
+    finally:
+        ex_mod.EXTRACTOR_FINGERPRINT = original
+
+    # Same file path is in both caches but with a different hash —
+    # proving the salt actually salted, and the second scan re-
+    # extracted rather than trusting the cached entry.
+    assert cached_before["x.py"] != cached_after["x.py"], (
+        "fingerprint bump did not invalidate the cache — file hash "
+        "should differ when the salt changes"
+    )
 
 
 def test_est_json_shape_is_stable(tmp_path):

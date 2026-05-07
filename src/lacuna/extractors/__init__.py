@@ -33,6 +33,31 @@ from .swift import SwiftExtractor
 from .typescript import TSXExtractor, TypeScriptExtractor
 
 
+# Cache-invalidation salt. The file-content hash that ``_scan_incremental``
+# uses to decide "do I have a fresh extract for this file?" is salted with
+# this fingerprint. Bumping it invalidates every cached entry on the next
+# scan — every file gets re-extracted, the fresh extracts pick up whatever
+# new feature_kinds / entity kinds / extractor-logic-fixes have shipped,
+# and the user sees the new behavior without knowing they did anything.
+#
+# **Bump this whenever extractor *output* changes.** Refactors that don't
+# change emitted features don't need a bump. Examples that DO need one:
+#   - new feature_kind in any extractor's FeatureSet
+#   - new entity kind emitted by any extractor
+#   - bug fix in extractor logic that changes the entity / feature shape
+#   - a new built-in extractor language
+#
+# Keep the bump in the same commit as the extractor change, with a one-
+# line comment naming the change. The history of bumps is the audit
+# trail for "when did each extractor's output change?"
+#
+# Bump history:
+#   v1 — initial cache-key shape (content-only hash, pre-fingerprint)
+#   v2 — has_docstring + has_return_type + has_param_types detectors
+#        added to PythonExtractor (commits c73c60b + 3f9f11e)
+EXTRACTOR_FINGERPRINT = "v2"
+
+
 _BUILTIN_EXTRACTORS: tuple[type[Extractor], ...] = (
     PythonExtractor,
     JavaScriptExtractor,
@@ -94,6 +119,7 @@ def extension_dispatch(extractors: dict[str, Extractor]) -> dict[str, Extractor]
 
 
 __all__ = [
+    "EXTRACTOR_FINGERPRINT",
     "BashExtractor",
     "CExtractor",
     "CPlusPlusExtractor",

@@ -39,6 +39,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`EXTRACTOR_FINGERPRINT` cache-invalidation salt.** The per-file
+  content hash that decides "use cached extract or re-parse?" is
+  now salted with `extractors.EXTRACTOR_FINGERPRINT`. Bumping the
+  constant invalidates every cached entry on the next scan — so
+  when a release ships new feature_kinds, new entity kinds, or
+  extractor logic fixes, users automatically pick up the new
+  behavior on the first `lacuna check` after the upgrade without
+  having to know to `--cold` or `--purge`. Bump policy + history
+  live as a docstring on the constant. Initial value bumped to
+  `"v2"` to absorb today's `has_docstring` / `has_return_type` /
+  `has_param_types` detectors.
+
 - **Multi-worker progress UI.** ``lacuna check --jobs N`` in
   interactive text mode now shows one sub-line per worker (parse
   stage) and one sub-line per running strategy (mining stage),

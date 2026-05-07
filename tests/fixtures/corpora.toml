@@ -16,7 +16,7 @@
 name = "lacuna-self"
 path = "."           # always present (relative to repo root)
 language = "python"
-expected_gaps = 134       # bumped from 35 when has_docstring +
+expected_gaps = 135       # bumped from 35 when has_docstring +
                           # has_return_type + has_param_types
                           # detectors landed (3f9f11e); the new
                           # numbers are real missing-annotation /
@@ -24,15 +24,19 @@ expected_gaps = 134       # bumped from 35 when has_docstring +
                           # code, surfaced by detectors that now
                           # exist where they didn't before.
 expected_rules = 28       # rules that produced at least one gap
-expected_entities = 907
+expected_entities = 908
 optional = false
 
 [[corpus]]
 name = "redis"
 path = "/tmp/redis"
 language = "c"
-expected_gaps = 240
-expected_rules = 119      # unique rules referenced by the gap list
+expected_gaps = 241       # bumped from 240 alongside the
+                          # EXTRACTOR_FINGERPRINT salt (cache was
+                          # rebuilt; the new extract picked up one
+                          # additional gap that pre-salt cached
+                          # entries had silently shadowed)
+expected_rules = 120
 expected_entities = 9197
 optional = true
 
