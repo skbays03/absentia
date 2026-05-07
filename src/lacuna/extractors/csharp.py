@@ -26,13 +26,19 @@ from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
 import tree_sitter_c_sharp
-from tree_sitter import Language, Node, Parser
+from tree_sitter import Language, Node, Parser, Query, QueryCursor
 
-from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
 _CS_LANGUAGE = Language(tree_sitter_c_sharp.language())
+_CALLS_QUERY = Query(_CS_LANGUAGE, """
+[
+  (invocation_expression)
+  (object_creation_expression)
+] @call
+""")
 
 
 # Map declaration node type → entity kind we emit.
@@ -191,7 +197,11 @@ def _walk_calls(root: Node) -> Iterator[str]:
     field is the callee — identifier, member_access_expression, etc.)
     and ``object_creation_expression`` for ``new T()`` constructor calls.
     """
-    for node in walk_subtree(root):
+    cursor = QueryCursor(_CALLS_QUERY)
+    nodes: list[Node] = []
+    for _, captures in cursor.matches(root):
+        nodes.extend(captures.get("call", ()))
+    for node in nodes:
         if node.type == "invocation_expression":
             target = node.child_by_field_name("function")
             if target is not None:

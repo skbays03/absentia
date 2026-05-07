@@ -16,13 +16,22 @@ from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
 import tree_sitter_php
-from tree_sitter import Language, Node, Parser
+from tree_sitter import Language, Node, Parser, Query, QueryCursor
 
-from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
 _PHP_LANGUAGE = Language(tree_sitter_php.language_php())
+# Match all four call shapes in one pass via tree-sitter alternation.
+_CALLS_QUERY = Query(_PHP_LANGUAGE, """
+[
+  (function_call_expression)
+  (member_call_expression)
+  (scoped_call_expression)
+  (object_creation_expression)
+] @call
+""")
 
 
 class PhpExtractor(Extractor):
@@ -178,7 +187,11 @@ def _walk_calls(root: Node) -> Iterator[str]:
     - ``scoped_call_expression``    : ``Bar::baz()`` → ``Bar.baz``
     - ``object_creation_expression``: ``new Logger()`` → ``new Logger``
     """
-    for node in walk_subtree(root):
+    cursor = QueryCursor(_CALLS_QUERY)
+    nodes: list[Node] = []
+    for _, captures in cursor.matches(root):
+        nodes.extend(captures.get("call", ()))
+    for node in nodes:
         if node.type == "function_call_expression":
             for sub in node.children:
                 if sub.type in ("name", "qualified_name"):

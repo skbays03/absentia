@@ -22,13 +22,19 @@ from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
 import tree_sitter_java
-from tree_sitter import Language, Node, Parser
+from tree_sitter import Language, Node, Parser, Query, QueryCursor
 
-from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
 _JAVA_LANGUAGE = Language(tree_sitter_java.language())
+_CALLS_QUERY = Query(_JAVA_LANGUAGE, """
+[
+  (method_invocation)
+  (object_creation_expression)
+] @call
+""")
 
 
 class JavaExtractor(Extractor):
@@ -254,7 +260,11 @@ def _walk_calls(root: Node) -> Iterator[str]:
     ``new Foo`` so users can find groups of "things that construct
     Logger" or similar.
     """
-    for node in walk_subtree(root):
+    cursor = QueryCursor(_CALLS_QUERY)
+    nodes: list[Node] = []
+    for _, captures in cursor.matches(root):
+        nodes.extend(captures.get("call", ()))
+    for node in nodes:
         if node.type == "method_invocation":
             name_node = node.child_by_field_name("name")
             obj_node = node.child_by_field_name("object")

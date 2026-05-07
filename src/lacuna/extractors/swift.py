@@ -27,13 +27,14 @@ from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
 import tree_sitter_swift
-from tree_sitter import Language, Node, Parser
+from tree_sitter import Language, Node, Parser, Query, QueryCursor
 
-from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
 _SW_LANGUAGE = Language(tree_sitter_swift.language())
+_CALLS_QUERY = Query(_SW_LANGUAGE, "(call_expression) @call")
 
 
 # Map the keyword child that appears inside a class_declaration to the
@@ -238,9 +239,11 @@ def _walk_calls(root: Node) -> Iterator[str]:
     (``self.update``, ``Logger.shared.log``), or some other expression.
     We take the callee's text as the call name.
     """
-    for node in walk_subtree(root):
-        if node.type == "call_expression" and node.children:
-            callee = node.children[0]
-            text = callee.text.decode("utf-8").strip()
+    cursor = QueryCursor(_CALLS_QUERY)
+    for _, captures in cursor.matches(root):
+        for node in captures.get("call", ()):
+            if not node.children:
+                continue
+            text = node.children[0].text.decode("utf-8").strip()
             if text:
                 yield clean_call_name(text)

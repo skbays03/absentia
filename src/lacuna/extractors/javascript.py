@@ -18,13 +18,14 @@ from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
 import tree_sitter_javascript
-from tree_sitter import Language, Node, Parser
+from tree_sitter import Language, Node, Parser, Query, QueryCursor
 
-from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
 _JS_LANGUAGE = Language(tree_sitter_javascript.language())
+_CALLS_QUERY = Query(_JS_LANGUAGE, "(call_expression function: (_) @target)")
 
 
 class JavaScriptExtractor(Extractor):
@@ -167,8 +168,7 @@ def _extends_of(class_node: Node) -> Iterator[str]:
 
 
 def _walk_calls(root: Node) -> Iterator[str]:
-    for node in walk_subtree(root):
-        if node.type == "call_expression":
-            target = node.child_by_field_name("function")
-            if target is not None:
-                yield clean_call_name(target.text.decode("utf-8").strip())
+    cursor = QueryCursor(_CALLS_QUERY)
+    for _, captures in cursor.matches(root):
+        for target in captures.get("target", ()):
+            yield clean_call_name(target.text.decode("utf-8").strip())
