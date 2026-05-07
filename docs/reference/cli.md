@@ -27,6 +27,17 @@ in `~/.lacuna/`.
   core count you'll be re-prompted to confirm — over-subscribing
   usually slows scans because workers contend for CPU. Per-invocation
   `lacuna check --jobs N` always overrides.
+- `--no-color` — force-disable ANSI color in CLI output. Equivalent
+  to setting `NO_COLOR=1` in the environment; the flag wins if both
+  are set. Honored by both the rich-based output (gap rows,
+  prompts) and the raw-ANSI progress UI.
+- `--debug` / `-vv` — print extra diagnostic detail to stderr at
+  decision points (resolved root, language list, exclude patterns,
+  cold-path matching, etc.). Tied to dev work — opposite pole from
+  `--quiet`. Doesn't change scan behavior; only what gets printed.
+  Sets `LACUNA_DEBUG=1` in the environment so any code that wants
+  to add diagnostic prints can check the env var without importing
+  CLI internals.
 
 ## `lacuna [path]`
 
@@ -66,6 +77,9 @@ Set the key explicitly to scan a subset.
 Flags:
 
 - `--force` — overwrite an existing `lacuna.toml`.
+- `--quiet` / `-q` — suppress the "Initialized lacuna in PATH"
+  message and the first-scan estimate footer. Useful for scripts
+  that init then immediately run `lacuna check`.
 
 ## `lacuna check [path]`
 
@@ -104,6 +118,25 @@ Flags:
   the default behavior); `--max-gaps 5` lets up to 5 gaps slide
   before failing the build. Useful for adopting lacuna on an
   existing codebase without blocking the build the first day.
+- `--cold [PATH]` — force re-parse of files at PATH (default:
+  the whole scanned root). Recursive — passing a directory
+  cold-busts every file under it; a file path cold-busts just
+  that file. Tied to dev work: use when you suspect cache
+  weirdness, are benchmarking the parse stage, or are validating
+  extractor changes. Does NOT delete the cache (next scan without
+  `--cold` is back to warm).
+- `--language LANG[,LANG]` — restrict the scan to specific
+  languages (comma-separated). Overrides `[scan.languages]` in
+  `lacuna.toml`. Useful for "I just edited Python; only re-scan
+  Python this run." Validates against the registered extractors.
+- `--exclude PATTERN` — skip files / directories matching PATTERN
+  (POSIX glob, e.g. `'**/vendor/**'`). May be passed multiple
+  times (`--exclude tests --exclude docs`). *Appends* to
+  `[scan.exclude]` in `lacuna.toml` rather than replacing — the
+  config typically holds long-lived excludes (vendored deps,
+  build artifacts) and the flag adds one-off exclusions for this
+  run. Pattern matching uses `PurePosixPath.full_match`, so `**`
+  segments work as expected.
 
 ## `lacuna est [path]` (alias: `lacuna estimate`)
 
@@ -137,6 +170,37 @@ re-prompted when lacuna upgrades, when the core count changes
 
 Flags:
 
+- `--config PATH` — explicit `lacuna.toml` path (default: search
+  upward from `path`). Mirrors `lacuna check --config`.
+- `--jobs N` (`-j N`) — override which worker count is highlighted
+  as the headline. The full per-jobs table still renders; this
+  only changes which row is the bottom-line prediction. Defaults
+  to `--jobs-default` or half of detected CPU cores.
+- `--json` — emit machine-readable JSON instead of the human
+  estimate report. Stable shape:
+
+      {
+        "root":                  "/path/to/scanned/dir",
+        "files":                 8456,
+        "bytes":                 45678901,
+        "cpu_count":             10,
+        "headline_jobs":         5,
+        "calibrated":            true,
+        "calibrated_at":         "2026-04-30T12:34:56Z",
+        "model_mining_tail_s":   12.3,
+        "model_mining_source":   "aggregated from 47 prior runs",
+        "observed_cold_scan_s":  18.4,
+        "observed_jobs":         5,
+        "runs_aggregated":       47,
+        "parallel_fraction":     0.85
+      }
+
+  Use case: a CI step that decides whether to skip a long scan
+  based on the cost prediction.
+- `--quiet` / `-q` — collapse the report to its bottom-line
+  "Total check estimate" line. Useful when piping into shell
+  scripts or composing into larger CI flows. Implies
+  non-interactive (no calibration prompts).
 - `--recalibrate` — force re-running calibration even if a fresh
   cache exists. Calibration runs against the `path` argument
   (default: cwd), so `lacuna est ~/myrepo --recalibrate` produces
@@ -150,12 +214,26 @@ Flags:
   time, mine time, root) plus the aggregated mining throughput
   across compatible runs. Useful for auditing what data the
   prediction is based on.
+- `--cold [PATH]` — scope the prediction to PATH (default: the
+  whole scanned root). est is always a cold-scan prediction, so
+  this is functionally identical to passing PATH as the positional
+  argument; the symmetry with `check --cold` keeps muscle memory
+  consistent across subcommands.
+- `--language LANG[,LANG]` — scope the prediction to specific
+  languages. Mirrors `lacuna check --language`.
+- `--exclude PATTERN` — skip files / directories matching PATTERN
+  from the corpus walk used for the prediction. May be passed
+  multiple times. Mirrors `lacuna check --exclude`.
 
-## `lacuna suppress [gap-id]`
+## `lacuna suppress [gap-id] [path]`
 
 Marks a gap as known / intentional so it stops appearing in
 `lacuna check` output and the TUI Gaps view. Equivalent to pressing
 `s` in the TUI.
+
+The optional `path` positional argument is the project root
+(default: cwd). It's symmetric with the positional `path` on
+`init`, `check`, and `est`.
 
 Flags:
 
@@ -164,4 +242,6 @@ Flags:
   the state DB.
 - `--remove` — remove an existing suppression.
 - `--list` — print all current suppressions and exit.
-- `--path DIR` — project root (default: cwd).
+- `--path DIR` — *[deprecated]* project root. Use the positional
+  argument instead. Kept for backward compatibility with existing
+  scripts; emits a one-line deprecation hint when used.
