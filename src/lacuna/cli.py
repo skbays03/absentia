@@ -694,6 +694,18 @@ def scan_corpus(
             ("series",                  lambda: find_series_gaps(entities)),
         ]
 
+        # Per-strategy timing. With ThreadPool + GIL the wall-clock per
+        # task is *interleaved* serial time, not pure-CPU time — but
+        # the relative ordering still identifies the long pole, which
+        # is what we use this for (target picker for algorithmic
+        # tuning + visible in `lacuna est --history`).
+        mine_strategy_durations: dict[str, float] = {}
+
+        def _timed(label: str, fn: Any) -> tuple[str, float, list, list]:
+            t0 = time.perf_counter()
+            rs, gs = fn()
+            return label, time.perf_counter() - t0, rs, gs
+
         mine_started = time.perf_counter()
         if interactive:
             mine_spinner = Spinner(label="Mining rules")
@@ -702,11 +714,13 @@ def scan_corpus(
             with spinning(mine_spinner), \
                     ThreadPoolExecutor(max_workers=mining_workers) as ex:
                 fut_to_label = {
-                    ex.submit(fn): label for label, fn in mining_tasks
+                    ex.submit(_timed, label, fn): label
+                    for label, fn in mining_tasks
                 }
                 from concurrent.futures import as_completed
                 for fut in as_completed(fut_to_label):
-                    rs, gs = fut.result()
+                    label, dur, rs, gs = fut.result()
+                    mine_strategy_durations[label] = dur
                     rules.extend(rs)
                     gaps.extend(gs)
                     done += 1
@@ -724,9 +738,13 @@ def scan_corpus(
             )
         else:
             with ThreadPoolExecutor(max_workers=mining_workers) as ex:
-                futures = [ex.submit(fn) for _, fn in mining_tasks]
+                futures = [
+                    ex.submit(_timed, label, fn)
+                    for label, fn in mining_tasks
+                ]
                 for fut in futures:
-                    rs, gs = fut.result()
+                    label, dur, rs, gs = fut.result()
+                    mine_strategy_durations[label] = dur
                     rules.extend(rs)
                     gaps.extend(gs)
             stage_durations["mine"] = time.perf_counter() - mine_started
@@ -826,6 +844,10 @@ def scan_corpus(
         "stage_durations_ms": {
             stage: round(secs * 1000, 2)
             for stage, secs in stage_durations.items()
+        },
+        "mine_by_strategy_ms": {
+            label: round(secs * 1000, 2)
+            for label, secs in mine_strategy_durations.items()
         },
         "jobs": jobs,
         "by_language_bytes": by_language_bytes,
@@ -1900,6 +1922,7 @@ def _append_run_to_global_log(scan_stats: dict, gaps_found: int) -> None:
             "entities": scan_stats.get("entities_scanned"),
             "by_language_bytes": scan_stats.get("by_language_bytes"),
             "stage_ms": scan_stats.get("stage_durations_ms"),
+            "mine_by_strategy_ms": scan_stats.get("mine_by_strategy_ms"),
             "gaps": gaps_found,
         }
         # Drop None values to keep the log compact.
