@@ -15,13 +15,19 @@ from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
 import tree_sitter_python
-from tree_sitter import Language, Node, Parser
+from tree_sitter import Language, Node, Parser, Query, QueryCursor
 
-from ..entities import Entity, FeatureSet, clean_call_name, walk_subtree
+from ..entities import Entity, FeatureSet, clean_call_name
 from .base import Extractor
 
 
 _PY_LANGUAGE = Language(tree_sitter_python.language())
+
+# Tree-sitter Query API: matches every Python ``call`` node in a
+# subtree, capturing the call's ``function`` field as @target.
+# Compiled once at import; runs in C, much faster than the previous
+# Python ``walk_subtree`` + ``if node.type ==`` loop.
+_CALLS_QUERY = Query(_PY_LANGUAGE, "(call function: (_) @target)")
 
 
 class PythonExtractor(Extractor):
@@ -160,11 +166,10 @@ def _name_of(definition_node: Node) -> str:
 
 
 def _walk_calls(root: Node) -> Iterator[str]:
-    for node in walk_subtree(root):
-        if node.type == "call":
-            target = node.child_by_field_name("function")
-            if target is not None:
-                yield clean_call_name(target.text.decode("utf-8").strip())
+    cursor = QueryCursor(_CALLS_QUERY)
+    for _, captures in cursor.matches(root):
+        for target in captures.get("target", ()):
+            yield clean_call_name(target.text.decode("utf-8").strip())
 
 
 def _decorators_of(decorated_node: Node) -> Iterator[str]:

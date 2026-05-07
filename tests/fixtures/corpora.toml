@@ -16,8 +16,8 @@
 name = "lacuna-self"
 path = "."           # always present (relative to repo root)
 language = "python"
-expected_gaps = 37
-expected_rules = 24       # rules that produced at least one gap
+expected_gaps = 35
+expected_rules = 22       # rules that produced at least one gap
 expected_entities = 880
 optional = false
 
