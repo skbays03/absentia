@@ -3,7 +3,7 @@ name = "lacuna"
 version = "0.0.1"
 description = "Find the holes your code already drew."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 authors = [{ name = "Shawn Bays", email = "shawnbays2003@gmail.com" }]
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
@@ -13,8 +13,8 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
@@ -91,10 +91,10 @@ asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py313"
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 # Pragmatic settings: catch real bugs (None deref, return-type, etc.)
 # without forcing exhaustive generic annotations everywhere. Tighten
 # incrementally as the codebase stabilizes.

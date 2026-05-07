@@ -69,7 +69,7 @@ git clone https://github.com/skbays03/lacuna.git
 pipx install ./lacuna
 ```
 
-Requires Python 3.11+. Cross-platform (macOS, Linux, Windows).
+Requires Python 3.13+. Cross-platform (macOS, Linux, Windows).
 On Windows, the same `pip install .` / `pipx install ./lacuna`
 commands work in PowerShell or `cmd`; if you want a venv first,
 activate it with `.venv\Scripts\activate` instead of the

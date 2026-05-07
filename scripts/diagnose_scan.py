@@ -37,8 +37,7 @@ def env_info(target: Path) -> list[str]:
     lines.append(f"  python:           {sys.version.split()[0]}")
     lines.append(f"  executable:       {sys.executable}")
     lines.append(f"  cpu_count:        {os.cpu_count()}")
-    if hasattr(os, "process_cpu_count"):
-        lines.append(f"  process_cpu_count: {os.process_cpu_count()}")
+    lines.append(f"  process_cpu_count: {os.process_cpu_count()}")
     lines.append(f"  target:           {target}")
     lines.append(f"  target_resolved:  {target.resolve()}")
 

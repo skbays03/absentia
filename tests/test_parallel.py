@@ -9,33 +9,20 @@ from lacuna.parallel import default_jobs, parse_one, should_parallelize
 
 def test_default_jobs_floors_to_half():
     """default_jobs returns half of detected cores, minimum 1."""
-    with patch.object(os, "cpu_count", return_value=8):
-        # Strip out process_cpu_count if present so cpu_count is consulted.
-        if hasattr(os, "process_cpu_count"):
-            with patch.object(os, "process_cpu_count", return_value=8):
-                assert default_jobs() == 4
-        else:
-            assert default_jobs() == 4
+    with patch.object(os, "process_cpu_count", return_value=8):
+        assert default_jobs() == 4
 
 
 def test_default_jobs_minimum_one():
     """Even on a 1-core machine we use 1 worker, not 0."""
-    with patch.object(os, "cpu_count", return_value=1):
-        if hasattr(os, "process_cpu_count"):
-            with patch.object(os, "process_cpu_count", return_value=1):
-                assert default_jobs() == 1
-        else:
-            assert default_jobs() == 1
+    with patch.object(os, "process_cpu_count", return_value=1):
+        assert default_jobs() == 1
 
 
 def test_default_jobs_handles_none():
     """When os returns None (exotic env), fall back to 1."""
-    with patch.object(os, "cpu_count", return_value=None):
-        if hasattr(os, "process_cpu_count"):
-            with patch.object(os, "process_cpu_count", return_value=None):
-                assert default_jobs() == 1
-        else:
-            assert default_jobs() == 1
+    with patch.object(os, "process_cpu_count", return_value=None):
+        assert default_jobs() == 1
 
 
 def test_should_parallelize_below_threshold():

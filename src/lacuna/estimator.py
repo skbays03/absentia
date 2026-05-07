@@ -291,15 +291,10 @@ def quick_estimate_line(
 def cpu_count_for_estimator() -> int:
     """Cores to use as the upper bound of the estimator table.
 
-    Prefer ``os.process_cpu_count()`` (3.13+, respects cgroups) and
-    fall back to ``os.cpu_count()``. Returns 1 if neither yields a
-    value.
+    Uses ``os.process_cpu_count()`` (3.13+, respects cgroups in
+    containers); returns 1 if it yields no value.
     """
-    n: int | None
-    if hasattr(os, "process_cpu_count"):
-        n = os.process_cpu_count()
-    else:
-        n = os.cpu_count()
+    n = os.process_cpu_count()
     return n if n and n > 0 else 1
 
 

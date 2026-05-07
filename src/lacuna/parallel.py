@@ -23,15 +23,10 @@ from .entities import Entity, FeatureSet
 def detected_cores() -> int:
     """Cores reported by the OS, minimum 1.
 
-    Prefers ``os.process_cpu_count()`` (Python 3.13+; respects cgroup
-    CPU limits in containers) over ``os.cpu_count()`` when available.
-    Returns 1 if neither yields a value.
+    Uses ``os.process_cpu_count()`` (3.13+, respects cgroup CPU limits
+    in containers); returns 1 if it yields no value.
     """
-    n: int | None
-    if hasattr(os, "process_cpu_count"):
-        n = os.process_cpu_count()
-    else:
-        n = os.cpu_count()
+    n = os.process_cpu_count()
     if not n or n < 1:
         return 1
     return n

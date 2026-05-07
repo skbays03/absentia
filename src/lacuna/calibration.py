@@ -188,11 +188,7 @@ def _age_in_days(
 
 def detect_cores() -> int:
     """Cores reported by the OS — same logic as ``parallel.default_jobs``."""
-    n: int | None
-    if hasattr(os, "process_cpu_count"):
-        n = os.process_cpu_count()
-    else:
-        n = os.cpu_count()
+    n = os.process_cpu_count()
     return n if n and n > 0 else 1
 
 

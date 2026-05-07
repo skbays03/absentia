@@ -14,7 +14,7 @@ pipx install ./lacuna           # or `pip install ./lacuna` if you don't use pip
 ```
 
 After install, ``lacuna --version`` should work from any directory.
-Requires Python 3.11+; works on macOS, Linux, and Windows.
+Requires Python 3.13+; works on macOS, Linux, and Windows.
 
 ## Step 1 — create a tiny demo project
 

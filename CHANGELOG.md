@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Minimum Python is now 3.13** (was 3.11). No active downstream
+  users yet, so the cost is zero and the cleanup is real:
+  ``os.process_cpu_count()`` (cgroup-aware on Linux containers) is
+  now called directly across `parallel.py`, `calibration.py`,
+  `estimator.py`, and `scripts/diagnose_scan.py` instead of the
+  previous `hasattr(os, "process_cpu_count")` fallback dance.
+  CI matrix narrowed to 3.13 + 3.14; ruff `target-version` and mypy
+  `python_version` bumped to match.
+
 ### Added
 
 - **Per-stage progress UI.** `lacuna check` in interactive text
