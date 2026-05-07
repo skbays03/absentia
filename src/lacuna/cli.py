@@ -103,7 +103,14 @@ def main(argv: list[str] | None = None) -> int:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--version", action="version", version=f"lacuna {__version__}")
+    # Carry the tagline in --version output so the wedge ("find what
+    # you forgot to write") shows up at every entry-point a user
+    # might type, not just on the README. Closes lacuna_doc_todos
+    # §A1's last cosmetic gap (CLI banner).
+    parser.add_argument(
+        "--version", action="version",
+        version=f"lacuna {__version__} — find what you forgot to write",
+    )
     parser.add_argument(
         "--purge",
         nargs="?",
