@@ -43,6 +43,7 @@ dev = [
     "pytest >= 7.0",
     "pytest-asyncio >= 0.21",
     "pytest-cov >= 4.0",
+    "hypothesis >= 6.0",
     "ruff >= 0.1",
     "mypy >= 1.0",
 ]
@@ -101,6 +102,37 @@ include = [
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+# Branch coverage is the discipline we hold ourselves to: every
+# decision point must be exercised both ways. Line coverage alone
+# misses entire categories of bugs (the "elif missed" classic).
+branch = true
+source = ["lacuna"]
+# mining.py and symmetry.py are mypyc-compiled to native .so files;
+# coverage can't trace into compiled extensions. Tests against them
+# still run (and assert correctness via test_corpus_regression +
+# test_extractor_fuzz + the existing unit tests) — they're just not
+# visible to coverage's instrumentation.
+omit = [
+    "*/lacuna/mining.py",
+    "*/lacuna/symmetry.py",
+]
+
+[tool.coverage.report]
+# Threshold pinned just below current measured coverage to protect
+# against regressions without blocking on the TUI's many interactive
+# paths (tui/app.py: 60%; difficult to unit-test the full keyboard
+# binding surface). Tighten incrementally as TUI tests fill in.
+fail_under = 73
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+show_missing = true
+skip_covered = true
 
 [tool.ruff]
 line-length = 100

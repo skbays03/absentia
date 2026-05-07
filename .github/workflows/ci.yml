@@ -34,8 +34,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-      - name: Run tests
-        run: pytest -q
+      - name: Run tests with coverage gate
+        # Coverage config (branch=true, omit mypyc files, fail_under=73)
+        # lives in pyproject.toml [tool.coverage.*]. The `--cov` flag
+        # picks it up; the gate fires automatically.
+        run: pytest --cov --cov-report=term -q
 
   lint:
     name: Lint (ruff)

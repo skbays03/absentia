@@ -1,0 +1,45 @@
+# Corpus regression baselines.
+#
+# Each entry pins the gap + rule + entity counts that a `lacuna check`
+# is expected to produce against a known corpus. tests/test_corpus_regression.py
+# loads this file, scans each corpus, and fails if any count drifts.
+#
+# Drift is a *signal*, not a bug — when you legitimately change rule-mining
+# behavior, update the expected counts in the same commit. CI failure forces
+# the question "did I mean to change this?"
+#
+# Corpora marked `optional = true` are skipped when their `path` doesn't
+# exist (so CI on a fresh GitHub runner only checks lacuna-self; power users
+# / pre-merge runs locally include the rest).
+
+[[corpus]]
+name = "lacuna-self"
+path = "."           # always present (relative to repo root)
+language = "python"
+expected_gaps = 37
+expected_rules = 24       # rules that produced at least one gap
+expected_entities = 880
+optional = false
+
+[[corpus]]
+name = "redis"
+path = "/tmp/redis"
+language = "c"
+expected_gaps = 240
+expected_rules = 119      # unique rules referenced by the gap list
+expected_entities = 9197
+optional = true
+
+[[corpus]]
+name = "nestjs"
+path = "/tmp/nest"
+language = "typescript"
+expected_gaps = 121
+expected_rules = 93       # unique rules referenced by the gap list
+expected_entities = 4066
+optional = true
+
+# Linux kernel intentionally omitted from the default registry: it's
+# too slow for a regular regression check (~15-20 s per scan even
+# warm). Add it back here when investigating mining-stage regressions
+# specifically, with the rule count captured from a clean run.
