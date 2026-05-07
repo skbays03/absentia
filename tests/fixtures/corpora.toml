@@ -16,8 +16,14 @@
 name = "lacuna-self"
 path = "."           # always present (relative to repo root)
 language = "python"
-expected_gaps = 35
-expected_rules = 22       # rules that produced at least one gap
+expected_gaps = 134       # bumped from 35 when has_docstring +
+                          # has_return_type + has_param_types
+                          # detectors landed (3f9f11e); the new
+                          # numbers are real missing-annotation /
+                          # missing-docstring gaps in lacuna's own
+                          # code, surfaced by detectors that now
+                          # exist where they didn't before.
+expected_rules = 28       # rules that produced at least one gap
 expected_entities = 907
 optional = false
 
