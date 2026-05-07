@@ -675,10 +675,12 @@ def scan_corpus(
             )
             return list(rs), list(gs)
 
-        # Cap mining workers at the parallel-fraction sweet spot
-        # (4 — Amdahl's `p` doesn't reward more on this stage).
-        # Always at least 1 even on a single-core machine.
-        mining_workers = max(1, min(4, jobs))
+        # Worker cap depends on whether we have a GIL: 4 on regular
+        # CPython (Amdahl's `p` plateaus there under GIL contention),
+        # 7 on a free-threaded build (one per mining strategy → real
+        # parallelism). See parallel.mining_worker_cap.
+        from .parallel import mining_worker_cap
+        mining_workers = mining_worker_cap(jobs)
 
         # The mining tasks; a list of (label, callable) we'll submit
         # as one batch. Labels surface in the spinner sub-line so the

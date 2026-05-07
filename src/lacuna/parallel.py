@@ -15,9 +15,32 @@ the system. Power users opt into the full machine with ``--jobs N``.
 from __future__ import annotations
 
 import os
+import sys
 from typing import Any
 
 from .entities import Entity, FeatureSet
+
+
+def is_free_threaded() -> bool:
+    """True iff the running interpreter is a no-GIL build.
+
+    ``sys.flags.gil`` is 1 on a regular CPython build and 0 on a
+    free-threaded (no-GIL) build (PEP 703). Available from 3.13+,
+    which matches our minimum supported Python.
+    """
+    return getattr(sys.flags, "gil", 1) == 0
+
+
+def mining_worker_cap(jobs: int) -> int:
+    """How many ThreadPool workers to spin up for the mining stage.
+
+    With the GIL, Amdahl's parallel fraction plateaus around 4 workers
+    on this stage — extra threads just sit on the lock. On a no-GIL
+    interpreter the cap rises to the strategy count (7), so every
+    strategy can actually run on its own core.
+    """
+    cap = 7 if is_free_threaded() else 4
+    return max(1, min(cap, jobs))
 
 
 def detected_cores() -> int:

@@ -2,9 +2,16 @@
 from __future__ import annotations
 
 import os
+import sys
 from unittest.mock import patch
 
-from lacuna.parallel import default_jobs, parse_one, should_parallelize
+from lacuna.parallel import (
+    default_jobs,
+    is_free_threaded,
+    mining_worker_cap,
+    parse_one,
+    should_parallelize,
+)
 
 
 def test_default_jobs_floors_to_half():
@@ -38,6 +45,41 @@ def test_should_parallelize_above_threshold():
 def test_should_parallelize_jobs_one():
     """jobs=1 always means serial regardless of file count."""
     assert should_parallelize(num_changed_files=10000, jobs=1) is False
+
+
+# ── is_free_threaded / mining_worker_cap ───────────────────────────────
+
+
+def test_is_free_threaded_matches_sys_flags():
+    """is_free_threaded reads sys.flags.gil; on a regular CPython
+    build it returns False, on a no-GIL build True."""
+    expected = getattr(sys.flags, "gil", 1) == 0
+    assert is_free_threaded() is expected
+
+
+def test_mining_worker_cap_with_gil():
+    """Regular CPython caps at 4 (Amdahl's `p` plateau under GIL)."""
+    with patch("lacuna.parallel.is_free_threaded", return_value=False):
+        assert mining_worker_cap(jobs=1) == 1
+        assert mining_worker_cap(jobs=4) == 4
+        assert mining_worker_cap(jobs=16) == 4  # capped
+
+
+def test_mining_worker_cap_free_threaded():
+    """No-GIL build caps at 7 (one per mining strategy)."""
+    with patch("lacuna.parallel.is_free_threaded", return_value=True):
+        assert mining_worker_cap(jobs=1) == 1
+        assert mining_worker_cap(jobs=4) == 4
+        assert mining_worker_cap(jobs=7) == 7
+        assert mining_worker_cap(jobs=16) == 7  # capped
+
+
+def test_mining_worker_cap_minimum_one():
+    """Even with jobs=0, never less than 1 worker."""
+    with patch("lacuna.parallel.is_free_threaded", return_value=False):
+        assert mining_worker_cap(jobs=0) == 1
+    with patch("lacuna.parallel.is_free_threaded", return_value=True):
+        assert mining_worker_cap(jobs=0) == 1
 
 
 def test_parse_one_python():
