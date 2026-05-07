@@ -88,6 +88,107 @@ def test_truncate_visible_appends_reset_on_cut():
     assert out.endswith("\x1b[0m")
 
 
+def test_progressbar_set_workers_renders_one_line_per_worker():
+    """Multi-worker mode: each worker gets its own sub-line; the
+    bar still appears once at the top."""
+    fake_stderr = io.StringIO()
+
+    class _FakeStream:
+        def write(self, data):
+            return fake_stderr.write(data)
+        def flush(self):
+            pass
+        def isatty(self):
+            return True
+
+    with patch.object(sys, "stderr", _FakeStream()):
+        bar = ProgressBar(total=100, label="scan")
+        bar.set_workers([
+            ("Worker-1", "python", "src/api/users.py"),
+            ("Worker-2", "javascript", "src/web/main.js"),
+            ("Worker-3", "bash", "scripts/build.sh"),
+        ])
+        bar.update(10)
+        bar.finish()
+    out = fake_stderr.getvalue()
+    # Each worker label must appear in the rendered output.
+    assert "Worker-1" in out
+    assert "Worker-2" in out
+    assert "Worker-3" in out
+    # Section tags rendered with brackets.
+    assert "[" in out and "python" in out
+    # Item paths show.
+    assert "src/api/users.py" in out
+
+
+def test_progressbar_set_workers_then_clear_falls_back_to_current_item():
+    """Passing an empty workers list reverts to the single sub-line
+    behavior (used by callers that never enter multi-worker mode)."""
+    fake_stderr = io.StringIO()
+
+    class _FakeStream:
+        def write(self, data):
+            return fake_stderr.write(data)
+        def flush(self):
+            pass
+        def isatty(self):
+            return True
+
+    with patch.object(sys, "stderr", _FakeStream()):
+        bar = ProgressBar(total=10)
+        bar.set_workers([("W1", "py", "x.py")])
+        bar.update(1)
+        bar._last_drawn = 0.0  # bypass throttle for this test
+        # Now switch back to single-item mode
+        bar.set_workers([])
+        bar.set_current_item("single_file.py")
+        bar.refresh()
+        bar.finish()
+    out = fake_stderr.getvalue()
+    assert "single_file.py" in out
+
+
+def test_progressbar_multi_worker_lines_never_wrap():
+    """Multi-worker mode honors the same wrap-prevention guarantee:
+    every line emitted to stderr fits in the live terminal width."""
+    fake_stderr = io.StringIO()
+
+    class _FakeStream:
+        def write(self, data):
+            return fake_stderr.write(data)
+        def flush(self):
+            pass
+        def isatty(self):
+            return True
+
+    import shutil
+    import os as _os
+    fake_size = _os.terminal_size((100, 40))
+    with patch.object(sys, "stderr", _FakeStream()), \
+         patch.object(shutil, "get_terminal_size", return_value=fake_size):
+        bar = ProgressBar(total=4, label="scan")
+        bar.set_workers([
+            ("ForkPoolWorker-1", "python",
+             "some/very/long/path/to/file_aaaaaaaaaaaaa.py"),
+            ("ForkPoolWorker-2", "typescript",
+             "another/long/path/main_component.ts"),
+            ("ForkPoolWorker-3", "rust", "src/parser/lex.rs"),
+            ("ForkPoolWorker-4", "c", "kernel/sched/fair.c"),
+        ])
+        bar.update(1)
+        bar._last_drawn = 0.0
+        bar.refresh()
+        bar.finish()
+
+    output = fake_stderr.getvalue()
+    lines = output.replace("\r", "\n").split("\n")
+    for line in lines:
+        assert _visible_len(line) <= 100, (
+            f"multi-worker line of {_visible_len(line)} cols "
+            f"exceeds terminal width 100: {line!r}"
+        )
+
+
 def test_progressbar_lines_never_wrap_in_narrow_terminal():
     """Regression: in a 100-col tmux pane (the bug we fixed), every
     line written to stderr must fit — no padding past the live width
@@ -274,8 +375,10 @@ def test_progressbar_renders_current_item():
     assert "src/api/users.py" in out
     # Bar still rendered
     assert "5/5" in out
-    # ANSI cursor-up sequence used to overwrite in place
-    assert "\033[F" in out
+    # ANSI cursor-preceding-line sequence used to overwrite in place.
+    # Accept either the bare \033[F or the explicit \033[1F form
+    # (functionally identical; current code emits the explicit form).
+    assert "\033[F" in out or "\033[1F" in out
 
 
 def test_spinner_renders_current_item():

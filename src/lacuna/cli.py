@@ -587,6 +587,52 @@ def scan_corpus(
             parse_bar = ProgressBar(total=shape.files, label="Scanning")
             progress_callback = parse_bar.update
 
+    # Multi-worker progress UI: when interactive + jobs > 1, spin up
+    # a multiprocessing.Manager() Queue + a daemon thread that drains
+    # worker reports and feeds them to parse_bar.set_workers(). Workers
+    # push (worker_id, language, path) before each parse so the user
+    # sees one sub-line per worker, each showing the file currently in
+    # flight on that worker. Skipped on serial / non-TTY paths.
+    worker_report_queue: Any = None
+    drain_stop: Any = None
+    drain_thread: Any = None
+    mp_manager: Any = None
+    if interactive and parse_bar is not None and jobs > 1:
+        import multiprocessing
+        import threading
+        try:
+            mp_manager = multiprocessing.Manager()
+            worker_report_queue = mp_manager.Queue()
+        except Exception:
+            # Manager startup can fail in exotic environments
+            # (sandboxes, restricted forks). Gracefully degrade to
+            # single sub-line mode.
+            worker_report_queue = None
+
+        if worker_report_queue is not None:
+            active_workers: dict[str, tuple[str, str]] = {}
+            drain_stop = threading.Event()
+
+            def _drain() -> None:
+                while not drain_stop.is_set():
+                    try:
+                        worker_id, lang, rel = worker_report_queue.get(
+                            timeout=0.05,
+                        )
+                        active_workers[worker_id] = (lang, rel)
+                        # Hand the latest snapshot to the bar; it has its
+                        # own throttle so back-to-back updates are cheap.
+                        parse_bar.set_workers([
+                            (wid, sec, item)
+                            for wid, (sec, item) in sorted(active_workers.items())
+                        ])
+                        parse_bar.refresh()
+                    except Exception:
+                        pass  # timeout or shutdown — loop and re-check
+
+            drain_thread = threading.Thread(target=_drain, daemon=True)
+            drain_thread.start()
+
     with Storage(state_dir) as storage:
         run_id = storage.begin_run()
         parse_started = time.perf_counter()
@@ -594,10 +640,23 @@ def scan_corpus(
             files_seen, files_unchanged, by_language_bytes = _scan_incremental(
                 root, storage, run_id, ext_to_extractor, jobs=jobs,
                 progress_callback=progress_callback,
+                worker_report_queue=worker_report_queue,
             )
         finally:
+            # Stop the drain thread before tearing down the bar so the
+            # final set_workers([]) lands cleanly.
+            if drain_stop is not None:
+                drain_stop.set()
+            if drain_thread is not None:
+                drain_thread.join(timeout=0.5)
             if parse_bar is not None:
+                parse_bar.set_workers([])
                 parse_bar.finish()
+            if mp_manager is not None:
+                try:
+                    mp_manager.shutdown()
+                except Exception:
+                    pass
         stage_durations["parse"] = time.perf_counter() - parse_started
 
         # ── Storage-commit stage ──────────────────────────────────
@@ -703,16 +762,50 @@ def scan_corpus(
         # tuning + visible in `lacuna est --history`).
         mine_strategy_durations: dict[str, float] = {}
 
+        # Active-strategy registry for the multi-worker spinner view.
+        # Threads add themselves on _timed entry, remove on exit; the
+        # spinner daemon reads the snapshot to render one sub-line per
+        # currently-running strategy. No lock needed: dict.setdefault
+        # / del are atomic at the bytecode level under CPython.
+        import threading as _threading
+        _active_strategies: dict[str, float] = {}
+        _active_lock = _threading.Lock()
+
         def _timed(label: str, fn: Any) -> tuple[str, float, list, list]:
-            t0 = time.perf_counter()
-            rs, gs = fn()
-            return label, time.perf_counter() - t0, rs, gs
+            with _active_lock:
+                _active_strategies[label] = time.perf_counter()
+            try:
+                t0 = time.perf_counter()
+                rs, gs = fn()
+                return label, time.perf_counter() - t0, rs, gs
+            finally:
+                with _active_lock:
+                    _active_strategies.pop(label, None)
 
         mine_started = time.perf_counter()
         if interactive:
             mine_spinner = Spinner(label="Mining rules")
             done = 0
             total_tasks = len(mining_tasks)
+
+            # Daemon thread refreshes the spinner's worker list on a
+            # short cadence so the user sees strategies appear when
+            # they actually start running and disappear when they
+            # finish — independent of the `as_completed` loop below
+            # which only fires on completion events.
+            _ws_stop = _threading.Event()
+
+            def _workers_loop() -> None:
+                while not _ws_stop.wait(0.1):
+                    with _active_lock:
+                        snapshot = sorted(_active_strategies.items())
+                    mine_spinner.set_workers([
+                        (lbl, "running", "") for lbl, _start in snapshot
+                    ])
+
+            _ws_thread = _threading.Thread(target=_workers_loop, daemon=True)
+            _ws_thread.start()
+
             with spinning(mine_spinner), \
                     ThreadPoolExecutor(max_workers=mining_workers) as ex:
                 fut_to_label = {
@@ -726,10 +819,17 @@ def scan_corpus(
                     rules.extend(rs)
                     gaps.extend(gs)
                     done += 1
+                    # Top-line status still tracks done count; the
+                    # workers list (set by _workers_loop) carries the
+                    # per-strategy detail.
                     mine_spinner.set_current_item(
-                        f"{done}/{total_tasks} done · last: "
-                        f"{fut_to_label[fut]} · {len(rules):,d} rules so far"
+                        f"{done}/{total_tasks} done · "
+                        f"{len(rules):,d} rules so far"
                     )
+
+            _ws_stop.set()
+            _ws_thread.join(timeout=0.5)
+            mine_spinner.set_workers([])
             stage_durations["mine"] = time.perf_counter() - mine_started
             mine_spinner.finish(
                 end_message=(
@@ -1722,6 +1822,7 @@ def _scan_incremental(
     ext_to_extractor: dict,
     jobs: int = 1,
     progress_callback: Any = None,
+    worker_report_queue: Any = None,
 ) -> tuple[int, int, dict[str, int]]:
     """Walk the corpus, reusing cached entities/features for unchanged files.
 
@@ -1739,8 +1840,13 @@ def _scan_incremental(
     ``progress_callback``, if provided, is called with ``(n)`` after
     each batch of n files has been processed. The caller-side
     ProgressBar handles total/percent/ETA rendering.
+
+    ``worker_report_queue``, if provided, is installed as the worker-pool
+    initializer's queue: each worker pushes (worker_id, language, path)
+    before processing each file so the caller can render a per-worker
+    multi-line progress UI. Pass None to disable per-worker reporting.
     """
-    from .parallel import parse_one, should_parallelize
+    from .parallel import init_parse_worker, parse_one, should_parallelize
 
     cached = storage.all_file_hashes()
     seen_paths: set[str] = set()
@@ -1759,7 +1865,11 @@ def _scan_incremental(
         nonlocal pool
         if pool is None:
             from concurrent.futures import ProcessPoolExecutor
-            pool = ProcessPoolExecutor(max_workers=jobs)
+            pool = ProcessPoolExecutor(
+                max_workers=jobs,
+                initializer=init_parse_worker,
+                initargs=(worker_report_queue,),
+            )
         return pool
 
     def _emit_progress(rel: str, count_increment: int) -> None:

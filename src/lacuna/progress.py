@@ -43,11 +43,9 @@ _BAR_WIDTH = 30
 _THROTTLE_SECONDS = 0.05
 _ITEM_INDENT = "  "
 
-# ANSI escape sequences for in-place 2-line redraws.
-# After each draw we leave the cursor at the start of the bar
-# (top) line, so the next \r-prefixed write overwrites cleanly.
-_CLEAR_TO_END = "\033[K"      # clear from cursor to end of line
-_CURSOR_PREV_LINE = "\033[F"   # move to start of previous line
+# ANSI escape for clear-from-cursor-to-end-of-line. Cursor recovery
+# uses CSI n F (cursor preceding line, n times) inline in _emit_lines.
+_CLEAR_TO_END = "\033[K"
 
 
 def _term_cols() -> int:
@@ -124,31 +122,69 @@ def _truncate_for_display(text: str, max_width: int = 100) -> str:
 def _emit_two_line(top: str, bottom: str, *, first: bool) -> None:
     """Render a two-line update to stderr.
 
-    Truncates each line to the live terminal width and uses
-    ``\\033[K`` (clear-to-EOL) to wipe any leftover characters from
-    a previously longer draw — both protections against the wrap
-    that would break the ``\\033[F`` cursor-up. After writing, the
-    cursor is back at column 0 of the top line, so the next
+    Thin wrapper around :func:`_emit_lines` for the common
+    bar-plus-one-sub-line case. Kept separate so callers that
+    don't need multi-worker rendering stay simple.
+    """
+    _emit_lines(top, [bottom] if bottom else [], prev_total_lines=2)
+
+
+def _emit_lines(
+    top: str,
+    subs: list[str],
+    *,
+    prev_total_lines: int,
+) -> int:
+    """Render ``top`` plus N sub-lines in place. Returns the line
+    count just drawn (for the caller to pass back as
+    ``prev_total_lines`` next time).
+
+    Each line is truncated to the live terminal width — same
+    wrap-prevention discipline as the two-line path. If a previous
+    draw had more lines than this one (worker count shrank), the
+    extra rows are cleared with ``\\033[K``; the orphan blank rows
+    below the active region are visually neutral and get cleaned
+    up by the eventual ``finish()`` regardless.
+
+    Final cursor position: column 0 of ``top``'s row, so the next
     ``\\r``-prefixed write overwrites in place.
     """
     cols = _term_cols()
     top = _truncate_visible(top, cols)
-    bottom = _truncate_visible(bottom, cols)
-    sys.stderr.write(
-        f"\r{top}{_CLEAR_TO_END}\n{bottom}{_CLEAR_TO_END}{_CURSOR_PREV_LINE}"
-    )
+    subs = [_truncate_visible(s, cols) for s in subs]
+
+    parts: list[str] = [f"\r{top}{_CLEAR_TO_END}"]
+    for s in subs:
+        parts.append(f"\n{s}{_CLEAR_TO_END}")
+
+    current_lines = 1 + len(subs)
+    extras = max(0, prev_total_lines - current_lines)
+    for _ in range(extras):
+        parts.append(f"\n{_CLEAR_TO_END}")
+
+    total_newlines = (current_lines - 1) + extras
+    if total_newlines > 0:
+        # CSI n F = move up n lines AND to column 0 (single escape).
+        parts.append(f"\033[{total_newlines}F")
+
+    sys.stderr.write("".join(parts))
     sys.stderr.flush()
+    return current_lines
 
 
-def _emit_finish_blank() -> None:
-    """Clear the 2-line draw region and move cursor past it.
+def _emit_finish_blank(n_lines: int = 2) -> None:
+    """Clear an N-line draw region and move cursor past it.
 
-    Called from ``finish()`` so normal terminal output continues
-    on a fresh line below where the indicator was rendering.
+    Called from ``finish()`` so normal terminal output continues on
+    a fresh line below where the indicator was rendering. Defaults
+    to 2 (the bar + single sub-line case) to keep existing callers
+    unchanged.
     """
-    # Cursor is at start of bar line. Clear bar, newline,
-    # clear sub, newline (lands one line below where we drew).
-    sys.stderr.write(f"\r{_CLEAR_TO_END}\n{_CLEAR_TO_END}\n")
+    parts = [f"\r{_CLEAR_TO_END}"]
+    for _ in range(n_lines - 1):
+        parts.append(f"\n{_CLEAR_TO_END}")
+    parts.append("\n")  # advance past the cleared region
+    sys.stderr.write("".join(parts))
     sys.stderr.flush()
 
 
@@ -165,17 +201,36 @@ class ProgressBar:
         self.label = label
         self.current = 0
         self._current_item: str = ""
+        # Multi-worker mode: list of (worker_id, section, item) tuples.
+        # When non-empty, _draw renders one sub-line per worker
+        # instead of the single _current_item line.
+        self._workers: list[tuple[str, str, str]] = []
         self._started = time.perf_counter()
         self._last_drawn = 0.0
         self._tty = _is_tty()
         self._finished = False
         self._first_draw_done = False
+        # Number of lines rendered on the most recent draw — used so
+        # _emit_lines can clear orphan rows when worker count shrinks.
+        self._prev_total_lines = 0
 
     def set_current_item(self, item: str) -> None:
         """Sub-line shown beneath the bar — typically the file lacuna
         is currently looking at. Lets the user see real-time progress
-        without flooding stdout."""
+        without flooding stdout. Ignored when ``set_workers`` has
+        installed a multi-worker view."""
         self._current_item = item
+
+    def set_workers(self, active: list[tuple[str, str, str]]) -> None:
+        """Install a multi-worker view: one sub-line per active worker.
+
+        ``active`` is a list of ``(worker_id, section, item)`` tuples —
+        e.g. ``("ForkPoolWorker-1", "python", "src/api/users.py")``.
+        ``section`` is rendered in brackets (a language tag during
+        parse, a strategy name during mining). Pass an empty list to
+        revert to the single ``_current_item`` view.
+        """
+        self._workers = list(active)
 
     def update(self, n: int = 1, item: str | None = None) -> None:
         if item is not None:
@@ -193,6 +248,26 @@ class ProgressBar:
             return
         self._last_drawn = now
         self._draw(now)
+
+    def refresh(self) -> None:
+        """Force a redraw without advancing the count. Useful when the
+        worker map has changed but the file count hasn't ticked yet."""
+        if self._finished or not self._tty:
+            return
+        now = time.perf_counter()
+        if now - self._last_drawn < _THROTTLE_SECONDS:
+            return
+        self._last_drawn = now
+        self._draw(now)
+
+    def _format_worker_line(self, worker: tuple[str, str, str]) -> str:
+        worker_id, section, item = worker
+        section_color = C.lang_color(section) if section else C.CYAN
+        section_tag = f"[{section_color}{section}{C.RESET}]" if section else ""
+        item_str = (
+            f"{C.CYAN}{_truncate_for_display(item)}{C.RESET}" if item else ""
+        )
+        return f"{_ITEM_INDENT}{C.DIM}{worker_id}{C.RESET} {section_tag} {item_str}".rstrip()
 
     def _draw(self, now: float) -> None:
         elapsed = now - self._started
@@ -217,11 +292,17 @@ class ProgressBar:
             f"{prefix}[{bar}] {self.current:,d}/{self.total:,d} "
             f"({pct:>3.0f}%){tail}"
         )
-        bottom = (
-            f"{_ITEM_INDENT}{C.CYAN}{_truncate_for_display(self._current_item)}{C.RESET}"
-            if self._current_item else ""
+        if self._workers:
+            subs = [self._format_worker_line(w) for w in self._workers]
+        elif self._current_item:
+            subs = [
+                f"{_ITEM_INDENT}{C.CYAN}{_truncate_for_display(self._current_item)}{C.RESET}"
+            ]
+        else:
+            subs = []
+        self._prev_total_lines = _emit_lines(
+            top, subs, prev_total_lines=self._prev_total_lines,
         )
-        _emit_two_line(top, bottom, first=not self._first_draw_done)
         self._first_draw_done = True
 
     def finish(self) -> None:
@@ -230,14 +311,18 @@ class ProgressBar:
         self._finished = True
         if not self._tty:
             return
-        # Force a final draw at 100%, clear the sub-line, then move
-        # past the 2-line region so normal output flows below.
+        # Force a final draw at 100%, clear the sub-line(s), then move
+        # past the multi-line region so normal output flows below.
         if self.current < self.total:
             self.current = self.total
-        self._current_item = ""  # clean up sub-line on final paint
+        self._current_item = ""
+        self._workers = []
         self._draw(time.perf_counter())
-        # Move past the 2-line region (we're at start of bar after _draw)
-        sys.stderr.write("\n\n")
+        # Cursor is at top of region; advance past it so subsequent
+        # text starts on a fresh line below.
+        for _ in range(self._prev_total_lines):
+            sys.stderr.write("\n")
+        sys.stderr.write("\n")  # blank separator line
         sys.stderr.flush()
 
     def __enter__(self) -> "ProgressBar":
@@ -342,16 +427,37 @@ class Spinner:
     def __init__(self, label: str = "") -> None:
         self.label = label
         self._current_item: str = ""
+        # Multi-worker view: same shape as ProgressBar.set_workers.
+        # Used by the mining stage to show one sub-line per running
+        # strategy.
+        self._workers: list[tuple[str, str, str]] = []
         self._started = time.perf_counter()
         self._frame = 0
         self._last_drawn = 0.0
         self._tty = _is_tty()
         self._finished = False
         self._first_draw_done = False
+        self._prev_total_lines = 0
 
     def set_current_item(self, item: str) -> None:
-        """Sub-line shown beneath the spinner."""
+        """Sub-line shown beneath the spinner. Ignored when
+        ``set_workers`` has installed a multi-worker view."""
         self._current_item = item
+
+    def set_workers(self, active: list[tuple[str, str, str]]) -> None:
+        """Multi-worker mode: one sub-line per active worker. Same shape
+        as :meth:`ProgressBar.set_workers`. Pass an empty list to revert
+        to the single ``_current_item`` view."""
+        self._workers = list(active)
+
+    def _format_worker_line(self, worker: tuple[str, str, str]) -> str:
+        worker_id, section, item = worker
+        section_color = C.lang_color(section) if section else C.CYAN
+        section_tag = f"[{section_color}{section}{C.RESET}]" if section else ""
+        item_str = (
+            f"{C.CYAN}{_truncate_for_display(item)}{C.RESET}" if item else ""
+        )
+        return f"{_ITEM_INDENT}{C.DIM}{worker_id}{C.RESET} {section_tag} {item_str}".rstrip()
 
     def tick(self) -> None:
         if self._finished or not self._tty:
@@ -365,11 +471,17 @@ class Spinner:
         sym = self._FRAMES[self._frame]
         prefix = f"{C.BOLD}{self.label}{C.RESET} " if self.label else ""
         top = f"{C.CYAN}{sym}{C.RESET} {prefix}({_format_time(elapsed)})"
-        bottom = (
-            f"{_ITEM_INDENT}{C.CYAN}{_truncate_for_display(self._current_item)}{C.RESET}"
-            if self._current_item else ""
+        if self._workers:
+            subs = [self._format_worker_line(w) for w in self._workers]
+        elif self._current_item:
+            subs = [
+                f"{_ITEM_INDENT}{C.CYAN}{_truncate_for_display(self._current_item)}{C.RESET}"
+            ]
+        else:
+            subs = []
+        self._prev_total_lines = _emit_lines(
+            top, subs, prev_total_lines=self._prev_total_lines,
         )
-        _emit_two_line(top, bottom, first=not self._first_draw_done)
         self._first_draw_done = True
 
     def finish(self, end_message: str | None = None) -> None:
@@ -379,16 +491,19 @@ class Spinner:
         if not self._tty:
             return
         if end_message:
-            # Replace the bar with the end-message, clear the sub-line,
-            # and exit the draw region.
+            # Replace the spinner with the end-message and clear all
+            # sub-line(s) the multi-worker view drew, then exit the
+            # draw region.
             top = f"{C.BRIGHT_GREEN}✓{C.RESET} {end_message}"
             top = _truncate_visible(top, _term_cols())
-            sys.stderr.write(
-                f"\r{top}{_CLEAR_TO_END}\n{_CLEAR_TO_END}\n"
-            )
+            parts = [f"\r{top}{_CLEAR_TO_END}"]
+            extras = max(1, self._prev_total_lines - 1)
+            for _ in range(extras):
+                parts.append(f"\n{_CLEAR_TO_END}")
+            parts.append("\n")
+            sys.stderr.write("".join(parts))
         elif self._first_draw_done:
-            # Clear the 2-line region we drew.
-            _emit_finish_blank()
+            _emit_finish_blank(n_lines=max(2, self._prev_total_lines))
         sys.stderr.flush()
 
     def __enter__(self) -> "Spinner":
