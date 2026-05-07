@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import contextlib
 import re
+import shutil
 import sys
 import threading
 import time
@@ -31,7 +32,7 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 def _visible_len(s: str) -> int:
     """Length of a string ignoring ANSI escape codes — what the terminal
-    actually renders. Used for padding calculations on colored lines."""
+    actually renders."""
     return len(_ANSI_RE.sub("", s))
 
 
@@ -40,7 +41,6 @@ _BAR_WIDTH = 30
 # work, slow enough not to flood a terminal with redraws when
 # processing 100k+ files.
 _THROTTLE_SECONDS = 0.05
-_LINE_WIDTH = 120
 _ITEM_INDENT = "  "
 
 # ANSI escape sequences for in-place 2-line redraws.
@@ -48,6 +48,44 @@ _ITEM_INDENT = "  "
 # (top) line, so the next \r-prefixed write overwrites cleanly.
 _CLEAR_TO_END = "\033[K"      # clear from cursor to end of line
 _CURSOR_PREV_LINE = "\033[F"   # move to start of previous line
+
+
+def _term_cols() -> int:
+    """Live terminal column count. Falls back to 80 if unknown
+    (non-TTY, no env var). Cheap; safe to call per draw."""
+    return shutil.get_terminal_size((80, 24)).columns
+
+
+def _truncate_visible(s: str, width: int) -> str:
+    """Truncate ``s`` to at most ``width`` visible columns, preserving
+    ANSI escape sequences (which take zero visible space). If a cut
+    happens, append ``\\x1b[0m`` so any in-flight color sequence
+    doesn't bleed past the truncation point.
+
+    Critical for tmux / narrow panes: padding to a fixed width that
+    exceeds the pane causes lines to wrap, which breaks the
+    ``\\033[F`` cursor-up that the in-place redraw relies on. By
+    truncating to the live column count and using ``_CLEAR_TO_END``
+    instead of padding, we never produce a line that wraps.
+    """
+    if _visible_len(s) <= width:
+        return s
+    out: list[str] = []
+    visible = 0
+    i = 0
+    n = len(s)
+    while i < n and visible < width:
+        if s[i] == "\x1b" and i + 1 < n and s[i + 1] == "[":
+            m = _ANSI_RE.match(s, i)
+            if m:
+                out.append(m.group(0))
+                i = m.end()
+                continue
+        out.append(s[i])
+        visible += 1
+        i += 1
+    out.append("\x1b[0m")
+    return "".join(out)
 
 
 def _is_tty() -> bool:
@@ -83,30 +121,21 @@ def _truncate_for_display(text: str, max_width: int = 100) -> str:
     return text[:head] + "..." + text[-tail:]
 
 
-def _pad_visible(s: str, width: int) -> str:
-    """Right-pad with spaces to ``width`` *visible* columns, ignoring
-    embedded ANSI escape codes. We never truncate — color sequences
-    can span character boundaries and cutting one mid-escape leaves
-    a visible mess. ``_LINE_WIDTH`` is comfortably wider than our
-    expected content, so overflow is rare in practice.
-    """
-    pad = max(0, width - _visible_len(s))
-    return s + (" " * pad)
-
-
 def _emit_two_line(top: str, bottom: str, *, first: bool) -> None:
     """Render a two-line update to stderr.
 
-    On the first draw, just write both lines (bar + sub) and leave
-    the cursor at the start of the bar line. On subsequent draws,
-    overwrite both lines in place. Result: when the work finishes
-    and ``finish()`` is called, normal terminal flow resumes from
-    the line below the sub-line — no orphaned partial draws.
+    Truncates each line to the live terminal width and uses
+    ``\\033[K`` (clear-to-EOL) to wipe any leftover characters from
+    a previously longer draw — both protections against the wrap
+    that would break the ``\\033[F`` cursor-up. After writing, the
+    cursor is back at column 0 of the top line, so the next
+    ``\\r``-prefixed write overwrites in place.
     """
-    top_padded = _pad_visible(top, _LINE_WIDTH)
-    bottom_padded = _pad_visible(bottom, _LINE_WIDTH)
+    cols = _term_cols()
+    top = _truncate_visible(top, cols)
+    bottom = _truncate_visible(bottom, cols)
     sys.stderr.write(
-        f"\r{top_padded}\n{bottom_padded}{_CURSOR_PREV_LINE}"
+        f"\r{top}{_CLEAR_TO_END}\n{bottom}{_CLEAR_TO_END}{_CURSOR_PREV_LINE}"
     )
     sys.stderr.flush()
 
@@ -353,9 +382,9 @@ class Spinner:
             # Replace the bar with the end-message, clear the sub-line,
             # and exit the draw region.
             top = f"{C.BRIGHT_GREEN}✓{C.RESET} {end_message}"
+            top = _truncate_visible(top, _term_cols())
             sys.stderr.write(
-                f"\r{_pad_visible(top, _LINE_WIDTH)}"
-                f"\n{_CLEAR_TO_END}\n"
+                f"\r{top}{_CLEAR_TO_END}\n{_CLEAR_TO_END}\n"
             )
         elif self._first_draw_done:
             # Clear the 2-line region we drew.

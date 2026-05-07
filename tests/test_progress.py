@@ -12,6 +12,8 @@ from lacuna.progress import (
     spinning,
     ticking,
     _format_time,
+    _truncate_visible,
+    _visible_len,
 )
 
 
@@ -48,6 +50,84 @@ def test_progressbar_zero_total_doesnt_explode():
     bar.update(0)
     bar.finish()
     # No assertion needed — just shouldn't raise.
+
+
+# ── _truncate_visible — wrap-prevention guarantee ─────────────────────
+
+
+def test_truncate_visible_passes_short_strings_through():
+    """Strings shorter than width come back unchanged — no extra cost."""
+    s = "hello world"
+    assert _truncate_visible(s, 80) is s
+
+
+def test_truncate_visible_caps_at_target_width():
+    """Long strings get cut so visible length ≤ width."""
+    s = "x" * 200
+    out = _truncate_visible(s, 50)
+    # _visible_len strips ANSI; the trailing reset adds 0 visible cols.
+    assert _visible_len(out) == 50
+
+
+def test_truncate_visible_preserves_ansi_inside_window():
+    """Color sequences inside the kept portion survive the cut."""
+    s = "\x1b[32mhello\x1b[0m world" + ("z" * 200)
+    out = _truncate_visible(s, 11)
+    # Visible portion is "hello world" (11 chars); color codes preserved.
+    assert "\x1b[32m" in out
+    assert "\x1b[0m" in out
+    assert _visible_len(out) == 11
+
+
+def test_truncate_visible_appends_reset_on_cut():
+    """A cut always closes any open color so it can't bleed into the
+    next line — the bug that motivated this whole change."""
+    s = "\x1b[31m" + ("x" * 200)
+    out = _truncate_visible(s, 50)
+    # Last bytes should be the reset sequence.
+    assert out.endswith("\x1b[0m")
+
+
+def test_progressbar_lines_never_wrap_in_narrow_terminal():
+    """Regression: in a 100-col tmux pane (the bug we fixed), every
+    line written to stderr must fit — no padding past the live width
+    that would cause physical-line wrap and break ``\\033[F``."""
+    fake_stderr = io.StringIO()
+
+    class _FakeStream:
+        def write(self, data):
+            return fake_stderr.write(data)
+        def flush(self):
+            pass
+        def isatty(self):
+            return True
+
+    import shutil
+    import os
+    fake_size = os.terminal_size((100, 40))
+    with patch.object(sys, "stderr", _FakeStream()), \
+         patch.object(shutil, "get_terminal_size", return_value=fake_size):
+        bar = ProgressBar(total=3, label="bench")
+        for i in range(1, 4):
+            # Long sub-line filename — exactly the kind of input that
+            # used to overflow the 120-col pad.
+            bar.set_current_item(f"some/very/long/path/to/file_{i:02d}.py")
+            bar.update(1)
+            bar._last_drawn = 0.0  # bypass throttle
+        bar.finish()
+
+    # Split on the cursor-up sequence to look at each redraw chunk.
+    output = fake_stderr.getvalue()
+    # Each \n inside the bar output belongs to a single 2-line draw.
+    # The visible content of every line (between \r/\n boundaries)
+    # must fit in 100 cols.
+    lines = output.replace("\r", "\n").split("\n")
+    for line in lines:
+        # Strip ANSI escapes for visible-length check.
+        assert _visible_len(line) <= 100, (
+            f"line of {_visible_len(line)} cols exceeds terminal width 100: "
+            f"{line!r}"
+        )
 
 
 def test_progressbar_writes_to_stderr_when_tty():
