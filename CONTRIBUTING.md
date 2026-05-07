@@ -62,9 +62,16 @@ Wire the hook into a fresh clone:
 
 ```bash
 ln -sf ../../.githooks/commit-msg .git/hooks/commit-msg
-# or globally:
+# or globally (also picks up pre-push, see §6):
 git config core.hooksPath .githooks
 ```
+
+There's also a **`pre-push` hook** at `.githooks/pre-push` that runs
+`scripts/local_ci.sh` (the same checks GitHub Actions runs: ruff,
+mypy, pytest + coverage gate, mkdocs --strict). The
+`git config core.hooksPath .githooks` install picks both up. See §6
+*Local CI before commit / push* for the manual invocation form and
+the skip-once escape hatch.
 
 ## 3. Destructive operations
 
@@ -85,19 +92,37 @@ Any flag or subcommand that deletes data follows the
 Tests pass `confirm=False` to skip the prompt; never wire tests to
 piping `y` through stdin.
 
-## 4. Local CI before commit
+## 4. Local CI before commit / push
 
-Run all four checks; commit only when all four pass:
+Two ways to run the same checks GitHub Actions runs
+(`.github/workflows/ci.yml`):
 
 ```bash
-.venv/bin/python -m pytest tests/ -q
-.venv/bin/python -m ruff check src/ tests/
+# One-shot script — orders cheapest-first so iteration is fast.
+bash scripts/local_ci.sh
+
+# Or the four commands manually:
+.venv/bin/python -m ruff check .
 .venv/bin/python -m mypy src/lacuna
+.venv/bin/python -m pytest --cov --cov-report=term-missing -q
 .venv/bin/python -m mkdocs build --strict
 ```
 
-The CI pipeline runs the same four jobs in `.github/workflows/ci.yml`.
-Pre-commit-running them locally avoids round-trips.
+The pre-push hook at `.githooks/pre-push` runs `scripts/local_ci.sh`
+automatically before every `git push`, so CI failures are caught
+locally before they hit the remote. Install once via
+`git config core.hooksPath .githooks` (see §2 — same install picks
+up commit-msg and pre-push together).
+
+Skip the pre-push hook for a single push when you genuinely need to:
+
+```bash
+git push --no-verify       # skips all client-side hooks
+bash scripts/local_ci.sh --skip   # ad-hoc no-op (rarely useful)
+```
+
+But expect the next push (or rebase) to bounce on whatever CI
+catches — only skip when you have a specific reason.
 
 ## 5. Editable install for development
 

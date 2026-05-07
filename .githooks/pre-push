@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# pre-push hook — run local_ci.sh before every push.
+#
+# Mirrors .github/workflows/ci.yml so a green local run means a green
+# CI run (modulo platform-specific flakiness). Skip with
+# `git push --no-verify` if you genuinely need to push something
+# CI will reject — but expect the next push to bounce on rebase.
+#
+# Install in a fresh clone with:
+#     git config core.hooksPath .githooks
+# (Same one-time setup as the existing commit-msg hook;
+# CONTRIBUTING.md documents both.)
+
+set -euo pipefail
+
+# Locate the script regardless of where git invokes us from.
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+SCRIPT="$REPO_ROOT/scripts/local_ci.sh"
+
+if [[ ! -x "$SCRIPT" ]]; then
+    echo "pre-push: $SCRIPT missing or not executable; skipping local CI."
+    echo "          (chmod +x scripts/local_ci.sh to enable)"
+    exit 0
+fi
+
+exec bash "$SCRIPT"
