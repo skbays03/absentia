@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 from collections import Counter
 from dataclasses import dataclass
+from typing import Any
 
 from .entities import FeatureSet
 from .selectors import Group
@@ -63,6 +64,7 @@ def mine(
     *,
     min_confidence: float = 0.8,
     feature_kind: str = "decorator",
+    progress_hook: Any = None,
 ) -> tuple[list[Rule], list[Gap]]:
     """Mine rules from groups; emit gaps for non-conforming members.
 
@@ -72,11 +74,21 @@ def mine(
     that mixes classes and functions) are excluded from both the
     confidence denominator and the gap list — functions can't be
     "missing" a parent class.
+
+    ``progress_hook``, when supplied, is called as
+    ``hook(phase=..., counter=(i, n), item=lambda: ...)`` so the caller
+    can render real-time mining progress. The hook itself throttles, so
+    inner-loop callers can invoke it freely.
     """
     rules: list[Rule] = []
     gaps: list[Gap] = []
+    n_groups = len(groups)
+    if progress_hook is not None:
+        progress_hook(phase="counting features", counter=(0, n_groups))
 
-    for group in groups:
+    for i, group in enumerate(groups):
+        if progress_hook is not None:
+            progress_hook(counter=(i, n_groups), item=lambda g=group: g.name)
         eligible: list[str] = [
             mid for mid in group.members
             if mid in feature_index and feature_kind in feature_index[mid].by_kind

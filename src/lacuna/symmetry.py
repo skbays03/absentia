@@ -38,6 +38,8 @@ inside the miner instead).
 """
 from __future__ import annotations
 
+from typing import Any
+
 from collections import Counter
 from dataclasses import dataclass
 
@@ -111,6 +113,7 @@ def mine_symmetry_pairs(
     *,
     min_support: int = 3,
     min_confidence: float = 0.8,
+    progress_hook: Any = None,
 ) -> list[SymmetryPair]:
     """Auto-discover symmetry pairs from corpus naming patterns.
 
@@ -129,10 +132,18 @@ def mine_symmetry_pairs(
     The output is fed into :func:`find_symmetry_gaps` alongside the
     hardcoded language-protocol pairs.
     """
+    if progress_hook is not None:
+        progress_hook(phase="building scope index")
     by_class: dict[str, set[str]] = {}
     by_file: dict[str, set[str]] = {}
 
-    for ent in entities.values():
+    n_ents = len(entities)
+    for i, ent in enumerate(entities.values()):
+        if progress_hook is not None and (i & 0xFFF) == 0:
+            # 1-in-4096 sampling cap on hook calls — the throttle would
+            # absorb the rest, but skipping the call entirely is even
+            # cheaper for this hot per-entity loop.
+            progress_hook(counter=(i, n_ents))
         if ent.kind not in ("function", "method"):
             continue
         name = _short_name(ent)
@@ -143,6 +154,8 @@ def mine_symmetry_pairs(
         if ent.kind in ("function", "method"):
             by_file.setdefault(_file_scope_key(ent), set()).add(name)
 
+    if progress_hook is not None:
+        progress_hook(phase="enumerating pairs", counter=(0, 0))
     pairs: list[SymmetryPair] = []
     pairs.extend(_mine_pairs_for_scope(by_class, "class", min_support, min_confidence))
     pairs.extend(_mine_pairs_for_scope(by_file, "file", min_support, min_confidence))
@@ -227,6 +240,7 @@ def find_call_pair_gaps(
     *,
     min_support: int = 5,
     min_confidence: float = 0.9,
+    progress_hook: Any = None,
 ) -> tuple[list[Rule], list[Gap]]:
     """Mine paired-call symmetries within function scope.
 
@@ -253,6 +267,9 @@ def find_call_pair_gaps(
     (``len``, ``print``, ``str``) that co-occur with nearly everything;
     a strict threshold filters most spurious pairs.
     """
+    if progress_hook is not None:
+        progress_hook(phase="indexing call sets")
+
     # Index: function_id → set of call names
     call_sets: dict[str, frozenset[str]] = {}
     for entity_id, fs in feature_index.items():
@@ -268,6 +285,8 @@ def find_call_pair_gaps(
         return [], []
 
     # Pass 1: name frequency. Filter to "popular enough to mine."
+    if progress_hook is not None:
+        progress_hook(phase="counting names", counter=(0, len(call_sets)))
     name_count: Counter[str] = Counter()
     callers_by_name: dict[str, set[str]] = {}
     for caller_id, calls in call_sets.items():
@@ -279,11 +298,17 @@ def find_call_pair_gaps(
         return [], []
 
     # Pass 2: pair counts among popular names only
+    if progress_hook is not None:
+        progress_hook(phase="enumerating pairs", counter=(0, len(call_sets)))
+    n_call_sets = len(call_sets)
     pair_count: Counter[tuple[str, str]] = Counter()
-    for calls in call_sets.values():
+    for i, calls in enumerate(call_sets.values()):
+        if progress_hook is not None and (i & 0x3FF) == 0:
+            # 1-in-1024 sampling cap; the throttle absorbs the rest.
+            progress_hook(counter=(i, n_call_sets))
         relevant = sorted(c for c in calls if c in popular)
-        for i, n1 in enumerate(relevant):
-            for n2 in relevant[i + 1:]:
+        for j, n1 in enumerate(relevant):
+            for n2 in relevant[j + 1:]:
                 pair_count[(n1, n2)] += 1
 
     # Pass 3: emit rules + gaps. Use the precomputed callers_by_name
@@ -291,6 +316,8 @@ def find_call_pair_gaps(
     # O(1) set difference instead of a per-pair O(N) scan over every
     # function. On the Linux kernel that's the difference between
     # tens of seconds and milliseconds.
+    if progress_hook is not None:
+        progress_hook(phase="extracting violators", counter=(0, len(pair_count)))
     rules: list[Rule] = []
     gaps: list[Gap] = []
     seen: set[tuple[str, str]] = set()
@@ -336,6 +363,7 @@ def find_symmetry_gaps(
     pairs: list[SymmetryPair] | None = None,
     *,
     auto_mine: bool = True,
+    progress_hook: Any = None,
 ) -> tuple[list[Rule], list[Gap]]:
     """For each configured pair, find scopes that have ``left`` but not ``right``.
 
@@ -351,7 +379,9 @@ def find_symmetry_gaps(
     if pairs is None:
         pairs = list(BUILTIN_PAIRS)
         if auto_mine:
-            pairs.extend(mine_symmetry_pairs(entities))
+            if progress_hook is not None:
+                progress_hook(phase="auto-mining pairs")
+            pairs.extend(mine_symmetry_pairs(entities, progress_hook=progress_hook))
 
     # Pre-compute the short_name once per entity and build a per-scope
     # ``{name -> [entities]}`` index. The previous design called
@@ -361,6 +391,8 @@ def find_symmetry_gaps(
     # millions of redundant string ops and dominated the entire
     # mining stage. The pre-index makes per-pair work O(scopes), not
     # O(entities), and reuses each ``_short_name`` result.
+    if progress_hook is not None:
+        progress_hook(phase="building scope index", counter=(0, 0))
     by_class: dict[str, dict[str, list[Entity]]] = {}
     by_file: dict[str, dict[str, list[Entity]]] = {}
 
@@ -376,8 +408,16 @@ def find_symmetry_gaps(
 
     rules: list[Rule] = []
     gaps: list[Gap] = []
+    n_pairs = len(pairs)
+    if progress_hook is not None:
+        progress_hook(phase="evaluating pairs", counter=(0, n_pairs))
 
-    for pair in pairs:
+    for pi, pair in enumerate(pairs):
+        if progress_hook is not None:
+            progress_hook(
+                counter=(pi, n_pairs),
+                item=lambda p=pair: f"{p.left} → {p.right}",
+            )
         scope_index = by_class if pair.scope == "class" else by_file
         left, right = pair.left, pair.right
 

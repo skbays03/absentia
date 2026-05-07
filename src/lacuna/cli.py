@@ -726,11 +726,12 @@ def scan_corpus(
         rules: list = []
         gaps: list = []
 
-        def _mine_kind(kind: str) -> tuple[list, list]:
+        def _mine_kind(kind: str, hook: Any) -> tuple[list, list]:
             rs, gs = mine(
                 groups, feature_index,
                 min_confidence=config.mining.min_confidence,
                 feature_kind=kind,
+                progress_hook=hook,
             )
             return list(rs), list(gs)
 
@@ -742,17 +743,24 @@ def scan_corpus(
         mining_workers = mining_worker_cap(jobs)
 
         # The mining tasks; a list of (label, callable) we'll submit
-        # as one batch. Labels surface in the spinner sub-line so the
-        # user can see which strategy just finished — and, if anything
-        # hangs, which one is the culprit.
+        # as one batch. Each callable accepts a label-bound progress
+        # hook (built by _make_hook in _timed) so the strategy can
+        # report phase / counter / current_item back to the spinner.
         mining_tasks: list[tuple[str, Any]] = [
-            ("frequency:decorator",     lambda: _mine_kind("decorator")),
-            ("frequency:calls",         lambda: _mine_kind("calls")),
-            ("frequency:parent_class",  lambda: _mine_kind("parent_class")),
-            ("frequency:sibling_test",  lambda: _mine_kind("sibling_test")),
-            ("symmetry pairs",          lambda: find_symmetry_gaps(entities)),
-            ("call-pair",               lambda: find_call_pair_gaps(entities, feature_index)),
-            ("series",                  lambda: find_series_gaps(entities)),
+            ("frequency:decorator",
+                lambda h: _mine_kind("decorator", h)),
+            ("frequency:calls",
+                lambda h: _mine_kind("calls", h)),
+            ("frequency:parent_class",
+                lambda h: _mine_kind("parent_class", h)),
+            ("frequency:sibling_test",
+                lambda h: _mine_kind("sibling_test", h)),
+            ("symmetry pairs",
+                lambda h: find_symmetry_gaps(entities, progress_hook=h)),
+            ("call-pair",
+                lambda h: find_call_pair_gaps(entities, feature_index, progress_hook=h)),
+            ("series",
+                lambda h: find_series_gaps(entities, progress_hook=h)),
         ]
 
         # Per-strategy timing. With ThreadPool + GIL the wall-clock per
@@ -763,20 +771,65 @@ def scan_corpus(
         mine_strategy_durations: dict[str, float] = {}
 
         # Active-strategy registry for the multi-worker spinner view.
-        # Threads add themselves on _timed entry, remove on exit; the
-        # spinner daemon reads the snapshot to render one sub-line per
-        # currently-running strategy. No lock needed: dict.setdefault
-        # / del are atomic at the bytecode level under CPython.
+        # Each strategy's _timed wrapper drops a StrategyState here on
+        # entry, removes it on exit. Each strategy also receives a
+        # label-bound `progress_hook(phase=..., counter=..., item=...)`
+        # that updates the same StrategyState — throttled to 20 Hz so
+        # tight inner loops can call it freely without measurable cost.
+        # The spinner daemon reads the dict snapshot every 100 ms.
         import threading as _threading
-        _active_strategies: dict[str, float] = {}
+        from dataclasses import dataclass, field
+
+        @dataclass
+        class StrategyState:
+            started: float
+            phase: str = ""
+            counter: tuple[int, int] = (0, 0)  # (current, total); 0,0 = unknown
+            current_item: str = ""
+            _last_hook: float = field(default=0.0, compare=False)
+
+        _active_strategies: dict[str, StrategyState] = {}
         _active_lock = _threading.Lock()
+
+        # 50 ms throttle inside the hook caps inner-loop overhead at
+        # ~20 calls/sec/strategy regardless of how often each strategy
+        # invokes the hook. The user can't perceive faster updates and
+        # this keeps `find_call_pair_gaps`-style hot loops free of
+        # measurable cost. See the perf analysis around this commit.
+        _HOOK_THROTTLE_S = 0.05
+
+        def _make_hook(label: str) -> Any:
+            """Build a label-bound hook for one strategy. Captures the
+            label so each strategy can call ``hook(...)`` without
+            knowing its own name. ``item`` accepts a callable so the
+            f-string only runs after we decide to accept the update."""
+            def hook(
+                *,
+                phase: str | None = None,
+                counter: tuple[int, int] | None = None,
+                item: Any = None,
+            ) -> None:
+                now = time.perf_counter()
+                state = _active_strategies.get(label)
+                if state is None:
+                    return
+                if now - state._last_hook < _HOOK_THROTTLE_S:
+                    return
+                state._last_hook = now
+                if phase is not None:
+                    state.phase = phase
+                if counter is not None:
+                    state.counter = counter
+                if item is not None:
+                    state.current_item = str(item() if callable(item) else item)
+            return hook
 
         def _timed(label: str, fn: Any) -> tuple[str, float, list, list]:
             with _active_lock:
-                _active_strategies[label] = time.perf_counter()
+                _active_strategies[label] = StrategyState(started=time.perf_counter())
             try:
                 t0 = time.perf_counter()
-                rs, gs = fn()
+                rs, gs = fn(_make_hook(label))
                 return label, time.perf_counter() - t0, rs, gs
             finally:
                 with _active_lock:
@@ -795,13 +848,42 @@ def scan_corpus(
             # which only fires on completion events.
             _ws_stop = _threading.Event()
 
+            def _format_counter(c: tuple[int, int]) -> str:
+                cur, total = c
+                if total <= 0:
+                    return ""
+                # Compact for large numbers: "12k/65k" instead of full digits.
+                def _h(n: int) -> str:
+                    if n >= 1_000_000:
+                        return f"{n / 1_000_000:.1f}M".replace(".0M", "M")
+                    if n >= 1_000:
+                        return f"{n / 1_000:.0f}k"
+                    return f"{n:,d}"
+                return f"{_h(cur)}/{_h(total)}"
+
             def _workers_loop() -> None:
                 while not _ws_stop.wait(0.1):
+                    now = time.perf_counter()
                     with _active_lock:
                         snapshot = sorted(_active_strategies.items())
-                    mine_spinner.set_workers([
-                        (lbl, "running", "") for lbl, _start in snapshot
-                    ])
+                    rows: list[tuple[str, str, str]] = []
+                    for lbl, st in snapshot:
+                        elapsed = _format_time(now - st.started)
+                        bits = [elapsed]
+                        if st.phase:
+                            bits.append(f"[{st.phase}]")
+                        c_str = _format_counter(st.counter)
+                        if c_str:
+                            bits.append(c_str)
+                        if st.current_item:
+                            bits.append(st.current_item)
+                        # Pack the full strategy detail into the
+                        # `item` slot of the (worker, section, item)
+                        # tuple — empty `section` so the language-tag
+                        # bracket is omitted (it would be redundant
+                        # with the strategy label here).
+                        rows.append((lbl, "", "  ".join(bits)))
+                    mine_spinner.set_workers(rows)
 
             _ws_thread = _threading.Thread(target=_workers_loop, daemon=True)
             _ws_thread.start()

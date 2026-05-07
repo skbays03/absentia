@@ -23,6 +23,8 @@ suppress, formatters, and cross-strategy dedup all keep working.
 """
 from __future__ import annotations
 
+from typing import Any
+
 import re
 from collections import defaultdict
 
@@ -53,6 +55,7 @@ def find_series_gaps(
     *,
     min_members: int = _DEFAULT_MIN_MEMBERS,
     max_intra_cluster_gap: int = _MAX_INTRA_CLUSTER_GAP,
+    progress_hook: Any = None,
 ) -> tuple[list[Rule], list[Gap]]:
     """Detect missing-number gaps in same-directory file sequences.
 
@@ -81,8 +84,16 @@ def find_series_gaps(
 
     rules: list[Rule] = []
     gaps: list[Gap] = []
+    n_dirs = len(by_dir)
+    if progress_hook is not None:
+        progress_hook(phase="grouping by directory", counter=(0, n_dirs))
 
-    for directory, members in by_dir.items():
+    for di, (directory, members) in enumerate(by_dir.items()):
+        if progress_hook is not None:
+            progress_hook(
+                counter=(di, n_dirs),
+                item=lambda d=directory: d or "/",
+            )
         if len(members) < min_members:
             continue
         members.sort()
