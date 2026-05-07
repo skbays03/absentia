@@ -92,6 +92,12 @@ def _emit_function(
     features = FeatureSet(by_kind={
         "decorator": frozenset(decorators),
         "calls": frozenset(_walk_calls(fn_node)),
+        # has_docstring is populated for every function so mining sees
+        # the function as eligible; the value "docstring" is present
+        # iff the function actually has one. Mining reads "X% of group
+        # members have value 'docstring'; this one doesn't" → emits
+        # gap "missing docstring".
+        "has_docstring": _docstring_marker(fn_node),
     })
     return entity, features
 
@@ -114,6 +120,7 @@ def _emit_class(
         FeatureSet(by_kind={
             "decorator": frozenset(decorators),
             "parent_class": parents,
+            "has_docstring": _docstring_marker(class_node),
         }),
     )
 
@@ -153,6 +160,7 @@ def _emit_method(
     features = FeatureSet(by_kind={
         "decorator": frozenset(decorators),
         "calls": frozenset(_walk_calls(fn_node)),
+        "has_docstring": _docstring_marker(fn_node),
     })
     return entity, features
 
@@ -170,6 +178,37 @@ def _walk_calls(root: Node) -> Iterator[str]:
     for _, captures in cursor.matches(root):
         for target in captures.get("target", ()):
             yield clean_call_name(target.text.decode("utf-8").strip())
+
+
+def _docstring_marker(definition_node: Node) -> frozenset[str]:
+    """Return ``frozenset({"docstring"})`` if the def has a non-empty
+    docstring, else ``frozenset()``. Empty/missing docstring → eligible
+    for the missing-docstring gap; populated → contributes to the
+    "X% of group has docstring" denominator.
+
+    A Python docstring is the first statement of the body, an
+    ``expression_statement`` whose only child is a ``string``. We
+    require at least one non-quote character — pure ``""""""``
+    placeholders shouldn't count.
+    """
+    body = definition_node.child_by_field_name("body")
+    if body is None:
+        return frozenset()
+    for child in body.children:
+        if child.type == "comment":
+            continue  # leading comments don't disqualify a docstring
+        if child.type != "expression_statement":
+            return frozenset()
+        for sub in child.children:
+            if sub.type != "string":
+                return frozenset()
+            text = sub.text.decode("utf-8")
+            # Strip the quote pairs (`"""..."""`, `"..."`, `'...'`)
+            # and check there's any non-whitespace content left.
+            stripped = text.strip().strip('"').strip("'").strip()
+            return frozenset({"docstring"}) if stripped else frozenset()
+        return frozenset()
+    return frozenset()
 
 
 def _decorators_of(decorated_node: Node) -> Iterator[str]:

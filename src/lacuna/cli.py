@@ -982,6 +982,8 @@ def scan_corpus(
                 lambda h: _mine_kind("parent_class", h)),
             ("frequency:sibling_test",
                 lambda h: _mine_kind("sibling_test", h)),
+            ("frequency:has_docstring",
+                lambda h: _mine_kind("has_docstring", h)),
             ("symmetry pairs",
                 lambda h: find_symmetry_gaps(entities, progress_hook=h)),
             ("call-pair",
