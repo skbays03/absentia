@@ -79,30 +79,35 @@ lacuna check
 You should see something like:
 
 ```text
-Scanning 5 files (155 B) — est. ~0.0 s at jobs=4
+Scanning ~3 files (~200 B) — est. ~0.0 s at default jobs
 
-✓ Walked corpus  ·  5 files, 155 B  ·  0s
+✓ Walked corpus  ·  3 files  ·  0s
 ✓ Loaded store  ·  6 entities  ·  0s
-✓ Mined rules  ·  1 rules, 1 candidate gaps  ·  0s
+✓ Mined rules  ·  3 rules, 1 candidate gaps  ·  0s
 ✓ Finalized  ·  1 gaps after dedup  ·  0s
 
 GAPS                                              confidence ≥ 0.80   1
 
-  api/users.py:11                          function `delete_user`           missing @audit                   0.80  g-XXXXXXX
+  api/users.py:15                          function `delete_user`           missing @audit                   0.80  g-XXXXXXX
 
 ────────────────────────────────────────────────────────────
-  1 gaps  ·  1 rules
+  1 gaps  ·  3 rules
 
-  6 entities scanned, 2 groups, 1 rules in 0.00s
+  6 entities scanned, 2 groups, 3 rules in 0.01s
 ```
 
-(The five `✓` lines are the per-stage progress display, shown when
-running interactively. They auto-suppress in CI / piped output.)
+(The five `✓` lines and the file-count preamble are the per-stage
+progress display, shown when running interactively. They auto-suppress
+in CI / piped output. Default `jobs=` is half your detected cores.)
 
 Lacuna found:
 
-- A **rule**: 4 of 5 functions in `api/` have `@audit` (confidence 0.80)
-- A **gap**: `delete_user` doesn't have it — that's the divergence
+- The headline **rule**: 4 of 5 functions in `api/` have `@audit`
+  (confidence 0.80). The other two rules are about docstrings and
+  type-annotation conventions inside `decorators.py` itself —
+  separate convention checks lacuna runs by default.
+- A **gap**: `delete_user` doesn't have `@audit` — that's the
+  divergence the tutorial's setup is designed to surface.
 
 The short ID `g-XXXXXXX` is your handle for this gap. Copy it.
 
@@ -131,7 +136,7 @@ lacuna check
 ```text
 No gaps. (lacuna found nothing wrong.)
 
-  6 entities scanned, 2 groups, 1 rules in 0.00s (2 unchanged), 1 suppressed
+  6 entities scanned, 2 groups, 3 rules in 0.01s (2 unchanged), 1 suppressed
 ```
 
 The "1 suppressed" tells you lacuna found the gap but you've
@@ -192,6 +197,15 @@ Tighten it to filter to the strongest signals only:
 ```bash
 lacuna check --min-confidence 0.95
 ```
+
+> **Note** — if you skipped step 6 inside the `lacuna_demo/` project
+> from earlier in this tutorial, you'll see "No gaps" because the
+> step-4 suppression silenced the only divergence the demo had.
+> Run `lacuna suppress g-XXXXXXX --remove` first (using the same gap
+> ID you suppressed) to see how `--min-confidence 0.6` vs `0.95`
+> changes which gaps surface. On a real project with a richer
+> mining surface, the difference is more visible without that
+> reset step.
 
 ## What just happened?
 
