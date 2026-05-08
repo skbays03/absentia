@@ -25,6 +25,13 @@ Each stage is testable in isolation and replaceable. The data
 between stages is plain Python dataclasses (frozen, hashable) — a
 new selector or feature-kind plugs in without touching the others.
 
+The four stages above describe the *algorithm*. The runtime
+progress display shows **five stages** — `walk → parse → store →
+mine → finalize` — adding a file-discovery preamble and an
+output/persistence postamble around the conceptual core. The
+conceptual *group* and *compare* steps fold into the *mine*
+stage's progress line. See [Progress UX](#progress-ux) below.
+
 ## The pieces, top to bottom
 
 ### `parsing` — file discovery
@@ -73,32 +80,38 @@ that import absentia as a library.
 
 ## Performance benchmarks
 
-The following are scan times on a single MacBook (M-series, single
-process per scan, `--jobs 1`), each on a shallow-cloned (`--depth 1`)
-public repo. Times include parse + extract + group + mine. Storage
-was cold for each run (no incremental cache). Multi-core scans (the
-default since `--jobs` defaults to half of detected cores) are
-substantially faster on the long-running ones; see *Parallel scans*
-below.
+The following are `--jobs 1` cold-scan times on smoke-test-sized
+public repos — the per-language sanity-check corpora that
+`scripts/scan_remote.py` knows about (`KNOWN_CORPORA`'s first
+entry per language). They show absentia's per-language baseline
+on small-to-medium codebases; the *Headline numbers* section
+below covers the big-corpus case study (Linux kernel, 65 k files
+/ 687 k entities). Storage was cold for each run (no incremental
+cache).
 
-| Language | Repo | Entities | Groups | Rules | Cold scan |
-|---|---|---:|---:|---:|---:|
-| Python | [python/cpython](https://github.com/python/cpython) | 70,092 | 867 | 475 | 4.6s |
-| JavaScript | [nodejs/node](https://github.com/nodejs/node) | 29,124 | 439 | 89 | 6.3s |
-| TypeScript | [microsoft/vscode](https://github.com/microsoft/vscode) | 109,189 | 2,043 | 806 | 10.2s |
-| Rust | [rust-lang/rust](https://github.com/rust-lang/rust) | 199,594 | 2,480 | 722 | 13.2s |
-| Go | [kubernetes/kubernetes](https://github.com/kubernetes/kubernetes) | 120,130 | 2,159 | 256 | 12.4s |
-| Java | [apache/kafka](https://github.com/apache/kafka) | 60,279 | 646 | 144 | 5.7s |
-| Ruby | [rails/rails](https://github.com/rails/rails) | 20,490 | 196 | 127 | 1.6s |
-| C# | [dotnet/runtime](https://github.com/dotnet/runtime) | 348,023 | 4,210 | 1,388 | 56.4s |
-| Swift | [apple/swift](https://github.com/apple/swift) | 112,273 | 1,464 | 222 | 7.5s |
-| **C** | **[torvalds/linux](https://github.com/torvalds/linux)** | **666,574** | **3,210** | **113** | **96.7s** |
-| C++ | [llvm/llvm-project](https://github.com/llvm/llvm-project) | 341,050 | 4,161 | 1,212 | 47.0s |
-| PHP | [laravel/framework](https://github.com/laravel/framework) | 32,380 | 363 | 107 | 2.3s |
-| Kotlin | [JetBrains/kotlin](https://github.com/JetBrains/kotlin) | 254,670 | 7,687 | 2,945 | 23.1s |
-| Scala | [apache/spark](https://github.com/apache/spark) | 61,670 | 1,135 | 421 | 7.8s |
-| Lua | [nvim-lua/plenary.nvim](https://github.com/nvim-lua/plenary.nvim) | 372 | 11 | 1 | 0.05s |
-| Bash | [Bash-it/bash-it](https://github.com/Bash-it/bash-it) | 861 | 41 | 10 | 0.08s |
+| Language | Corpus | Files | Entities | Rules | Gaps | Cold scan |
+|---|---|---:|---:|---:|---:|---:|
+| Python | [pallets/flask](https://github.com/pallets/flask) | 84 | 893 | 45 | 16 | 0.22s |
+| JavaScript | [expressjs/express](https://github.com/expressjs/express) | 141 | 55 | 1 | 0 | 0.15s |
+| TypeScript | [nestjs/nest](https://github.com/nestjs/nest) | 1,718 | 4,066 | 310 | 121 | 0.38s |
+| Rust | [BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) | 103 | 2,694 | 60 | 291 | 0.27s |
+| Go | [urfave/cli](https://github.com/urfave/cli) | 66 | 914 | 24 | 35 | 0.18s |
+| Java | [google/gson](https://github.com/google/gson) | 262 | 2,509 | 84 | 280 | 0.30s |
+| Ruby | [sinatra/sinatra](https://github.com/sinatra/sinatra) | 147 | 204 | 0 | 0 | 0.17s |
+| C# | [serilog/serilog](https://github.com/serilog/serilog) | 214 | 985 | 51 | 43 | 0.22s |
+| C++ | [nlohmann/json](https://github.com/nlohmann/json) | 491 | 1,856 | 144 | 197 | 0.78s |
+| PHP | [slimphp/Slim](https://github.com/slimphp/Slim) | 125 | 852 | 73 | 90 | 0.18s |
+| Kotlin | [Kotlin/kotlinx.coroutines](https://github.com/Kotlin/kotlinx.coroutines) | 1,106 | 7,277 | 369 | 345 | 0.67s |
+| Scala | [playframework/playframework](https://github.com/playframework/playframework) | 1,526 | 8,556 | 418 | 366 | 0.98s |
+| Lua | [nvim-lua/plenary.nvim](https://github.com/nvim-lua/plenary.nvim) | 114 | 373 | 2 | 3 | 0.16s |
+| Bash | [Bash-it/bash-it](https://github.com/Bash-it/bash-it) | 336 | 861 | 16 | 28 | 0.18s |
+| Swift | [Alamofire/Alamofire](https://github.com/Alamofire/Alamofire) | 108 | 1,656 | 94 | 204 | 0.33s |
+
+> *Measured 2026-05-07 on a 10-core M-series MacBook at commit
+> `a48c4c7`, jobs=1, shallow-cloned (`--depth 1`) via*
+> `scripts/scan_remote.py`. *Re-running on different hardware will
+> shift wall-clock proportionally; `absentia est` calibrates per
+> machine.*
 
 **Headline numbers** (absentia against the Linux kernel — 65,004 files
 / 686,923 entities across ~30 million lines of C, on a 10-core
@@ -229,11 +242,14 @@ just superseded by better data as you accumulate it.
 
 A `absentia check` run in interactive text mode (TTY stderr, no
 `--json`, no `--quiet`) renders a five-stage display: walking
-corpus, scanning, loading store, mining rules, finalizing. Each
-stage finishes with a ✓ summary line + elapsed time and stays on
-screen as the next stage begins, so the eventual transcript is a
-clean record of where time went. Live spinners run during
-indeterminate stages so the tool never feels hung.
+corpus, scanning, loading store, mining rules, finalizing. (These
+are the runtime stages — `walk → parse → store → mine → finalize`
+— that bookend the four conceptual stages from
+[*The pipeline*](#the-pipeline) above.) Each stage finishes with a
+✓ summary line + elapsed time and stays on screen as the next
+stage begins, so the eventual transcript is a clean record of
+where time went. Live spinners run during indeterminate stages so
+the tool never feels hung.
 
 When `--jobs N > 1`, the parse stage shows **one sub-line per
 worker** — each tagged with the language it's currently chewing on
@@ -309,7 +325,7 @@ Workers are spawned lazily: projects with no changed files (warm
 rescans) and projects with very few changed files pay no overhead.
 The pool only kicks in when a chunk has at least four files per
 worker, which is the break-even point against process-startup cost
-(~150 ms per worker on M-series).
+(~60 ms per worker on M-series).
 
 Smaller repos see negligible improvement because the parse stage
 isn't long enough to amortize the worker pool's startup cost; the

@@ -22,7 +22,7 @@ kind_filter = ["function", "class"]
 enabled     = true
 min_members = 3
 include     = ["*"]                       # all decorators
-exclude     = ["@property", "@staticmethod"]
+exclude     = ["@property", "@staticmethod", "@classmethod"]
 match_args  = false                       # @app.route("/x") groups with @app.route("/y")
 
 [selectors.parent_class]

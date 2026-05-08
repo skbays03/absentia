@@ -38,7 +38,7 @@ Options:
 [selectors.decorator]
 enabled     = true
 min_members = 3
-exclude     = ["@property", "@staticmethod"]
+exclude     = ["@property", "@staticmethod", "@classmethod"]
 ```
 
 > **Previewed but not yet wired:** the `include` allow-list and

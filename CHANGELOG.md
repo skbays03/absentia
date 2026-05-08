@@ -31,8 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previous `hasattr(os, "process_cpu_count")` fallback dance.
   CI matrix narrowed to 3.13 + 3.14; ruff `target-version` and mypy
   `python_version` bumped to match.
-- **Mining stage is ~30× faster on large corpora.** Linux kernel
-  scan: mine 320.8 s → 10.7 s, gap counts byte-identical (15,330).
+- **Mining stage is ~23× faster on large corpora.** Linux kernel
+  scan: mine ~5 min → ~14 s, gap counts byte-identical to the
+  pre-optimization baseline at the same ``feature_kinds`` set.
   Three landed wins: (a) ``find_symmetry_gaps`` refactor —
   pre-compute ``_short_name(ent)`` once per entity, look up by name
   in O(1) instead of an O(P×N) per-pair-per-entity scan; (b)

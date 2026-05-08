@@ -80,6 +80,7 @@ scripts/           Maintenance + diagnostic scripts
   update_ts.py     Tree-sitter grammar version sweep
   scan_remote.py   Sanity-check against public corpora
   diagnose_scan.py Per-stage scan timing for cross-machine debugging
+  profile_scan.py  cProfile harness for opt-pass hotspot validation
   release.sh       Interactive bump + tag + push (triggers release-checks.yml)
   local_ci.sh      Mirror of CI checks (ruff + mypy + pytest+cov + mkdocs --strict)
 docs/              Mkdocs-material site (Diátaxis structure)

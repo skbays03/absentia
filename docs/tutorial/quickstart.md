@@ -96,9 +96,10 @@ GAPS                                              confidence ≥ 0.80   1
   6 entities scanned, 2 groups, 3 rules in 0.01s
 ```
 
-(The five `✓` lines and the file-count preamble are the per-stage
-progress display, shown when running interactively. They auto-suppress
-in CI / piped output. Default `jobs=` is half your detected cores.)
+(The five `✓` lines and the file-count preamble are the runtime
+progress display — `walk → parse → store → mine → finalize` — shown
+when running interactively. They auto-suppress in CI / piped output.
+Default `jobs=` is half your detected cores.)
 
 Absentia found:
 
@@ -210,10 +211,13 @@ absentia check --min-confidence 0.95
 ## What just happened?
 
 You created a project with a real (if simulated) pattern violation,
-and absentia found it. The engine ran four stages — *parse*, *group*,
-*mine*, *compare* — entirely on your machine, in milliseconds, with
-no model and no API. Every gap traced back to a rule, every rule
-traced back to the members of your codebase that exhibit it.
+and absentia found it. The engine ran four conceptual stages —
+*parse*, *group*, *mine*, *compare* — entirely on your machine, in
+milliseconds, with no model and no API. (The five `✓` lines you saw
+above are the runtime view of this: `walk` and `finalize` bookend the
+conceptual core, and `group` + `compare` fold into `mine`.) Every
+gap traced back to a rule, every rule traced back to the members of
+your codebase that exhibit it.
 
 That's the whole pitch. Try `absentia est .` next to see a per-jobs
 prediction of cold-scan time (it auto-improves as you run more

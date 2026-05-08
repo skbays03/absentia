@@ -72,7 +72,7 @@ for the full per-selector explanation; this section is the schema.
 |---|---|---|---|
 | `enabled` | bool | `true` | Toggle this selector. |
 | `min_members` | int | `3` | Skip parent classes with fewer subclasses. |
-| `exclude` | list of string | `["object", "Exception", ...]` | Parent classes too universal to group on. |
+| `exclude` | list of string | `["object"]` | Parent classes too universal to group on. |
 | `kind_filter` | list of string | class-like kinds across all supported languages | Kinds eligible for grouping: `class`, `struct`, `enum`, `extension`, `protocol`, `interface`, `trait`, `impl`, `module`, `record`. |
 
 ```toml
