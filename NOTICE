@@ -1,5 +1,61 @@
 lacuna
 Copyright 2026 Shawn Bays
 
-This product includes software developed by Shawn Bays
-(https://github.com/).
+This product includes software developed by Shawn Bays and the lacuna
+contributors. Licensed under the Apache License, Version 2.0; see
+LICENSE for the full text.
+
+================================================================================
+Third-party software embedded or required at runtime
+================================================================================
+
+lacuna depends on the following third-party Python packages and
+tree-sitter language grammars. Each carries its own license; this file
+acknowledges them as required by Apache 2.0 §4(c). Full license texts
+are available from each project's source repository or PyPI page.
+
+Core parsing infrastructure:
+
+  tree-sitter (Python bindings)
+    https://github.com/tree-sitter/py-tree-sitter
+    Licensed under MIT.
+
+  tree-sitter (C library, vendored by the Python bindings)
+    https://github.com/tree-sitter/tree-sitter
+    Licensed under MIT.
+
+Per-language tree-sitter grammars (each upstream project ships its own
+parser; lacuna loads them via Python wrapper packages):
+
+  tree-sitter-python      MIT — https://github.com/tree-sitter/tree-sitter-python
+  tree-sitter-javascript  MIT — https://github.com/tree-sitter/tree-sitter-javascript
+  tree-sitter-typescript  MIT — https://github.com/tree-sitter/tree-sitter-typescript
+  tree-sitter-rust        MIT — https://github.com/tree-sitter/tree-sitter-rust
+  tree-sitter-go          MIT — https://github.com/tree-sitter/tree-sitter-go
+  tree-sitter-java        MIT — https://github.com/tree-sitter/tree-sitter-java
+  tree-sitter-ruby        MIT — https://github.com/tree-sitter/tree-sitter-ruby
+  tree-sitter-c-sharp     MIT — https://github.com/tree-sitter/tree-sitter-c-sharp
+  tree-sitter-swift       MIT — https://github.com/alex-pinkus/tree-sitter-swift
+  tree-sitter-c           MIT — https://github.com/tree-sitter/tree-sitter-c
+  tree-sitter-cpp         MIT — https://github.com/tree-sitter/tree-sitter-cpp
+  tree-sitter-php         MIT — https://github.com/tree-sitter/tree-sitter-php
+  tree-sitter-kotlin-ng   MIT — https://github.com/fwcd/tree-sitter-kotlin
+  tree-sitter-scala       MIT — https://github.com/tree-sitter/tree-sitter-scala
+  tree-sitter-lua         MIT — https://github.com/tree-sitter-grammars/tree-sitter-lua
+  tree-sitter-bash        MIT — https://github.com/tree-sitter/tree-sitter-bash
+
+User-facing interface:
+
+  Textual               MIT — https://github.com/Textualize/textual
+                        (powers the lacuna TUI)
+
+  Rich                  MIT — https://github.com/Textualize/rich
+                        (powers the lacuna CLI text output)
+
+Build-time tooling (compiled into wheels, not runtime dependencies
+once installed):
+
+  hatchling             MIT — https://github.com/pypa/hatch
+  hatch-mypyc           MIT — https://github.com/mypyc/hatch-mypyc
+  mypyc                 MIT — bundled with mypy
+                        (compiles mining.py + symmetry.py to C extensions)
