@@ -31,9 +31,17 @@ class Settings:
     `absentia --info` for an introduction" hint hasn't been shown
     yet. The CLI sets it to an ISO 8601 UTC timestamp the first
     time the hint fires (TTY only) so the hint shows once, ever.
+
+    ``default_export_path`` is the base directory the post-check
+    export prompt writes to when the user picks "default". ``None``
+    means "no default set yet" — the prompt asks the user to pick
+    one and saves the choice. Stored as a string (so ``~``-style
+    paths round-trip cleanly through JSON); the export module
+    expands ``~`` and resolves on use.
     """
     jobs_default: int | None = None
     info_hint_shown_at: str | None = None
+    default_export_path: str | None = None
 
 
 def settings_path() -> Path:
@@ -60,7 +68,14 @@ def load_settings(path: Path | None = None) -> Settings:
         ihs = raw.get("info_hint_shown_at")
         if ihs is not None and not isinstance(ihs, str):
             ihs = None
-        return Settings(jobs_default=jd, info_hint_shown_at=ihs)
+        dep = raw.get("default_export_path")
+        if dep is not None and not isinstance(dep, str):
+            dep = None
+        return Settings(
+            jobs_default=jd,
+            info_hint_shown_at=ihs,
+            default_export_path=dep,
+        )
     except (OSError, ValueError, TypeError):
         return Settings()
 

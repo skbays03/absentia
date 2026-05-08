@@ -792,6 +792,25 @@ def _run_check(
                   f"{scan_stats['duration_ms'] / 1000:.2f}s{cache_note}{suppressed_note}")
             print()
 
+        # Post-check export prompt — interactive text mode only.
+        # Skipped on --json (machine output), --quiet (footer
+        # suppressed), and any non-TTY context (CI, piped). Failures
+        # surface inside prompt_and_export; we ignore the return
+        # value because the prompt is advisory, not load-bearing.
+        if (
+            not quiet
+            and sys.stdin.isatty()
+            and sys.stdout.isatty()
+        ):
+            from .export import prompt_and_export
+            prompt_and_export(
+                root=root,
+                gaps=gaps,
+                rules_by_id=rules_by_id,
+                entities=entities,
+                scan_stats=scan_stats,
+            )
+
     # Exit policy: --max-gaps N tolerates up to N gaps before failing
     # the build. Default (None) keeps the original "any gap fails"
     # behavior, which matches what users expect from a strict check.

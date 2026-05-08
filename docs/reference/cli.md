@@ -272,3 +272,45 @@ The progress display auto-suppresses on non-TTY stdout, when
 `--json` is set, and when `--quiet` is set. See
 [architecture and performance](../explanation/architecture.md#progress-ux)
 for the full mechanism.
+
+## Post-check export
+
+After a `check` run finishes (interactive TTY mode only — skipped
+on `--json`, `--quiet`, and non-TTY contexts), absentia prompts:
+
+```
+Export results? [y/N]:
+```
+
+Answering `y` walks you through three menus:
+
+1. **Format** (six options)
+   1. Markdown (`.md`) — pastes into PRs and issues
+   2. HTML (`.html`) — print-ready CSS for Cmd/Ctrl+P → Save as PDF
+   3. Text (`.txt`) — plain ASCII; pipes/diffs cleanly
+   4. JSON (`.json`) — same shape as `--json` plus a metadata wrapper
+   5. CSV (`.csv`) — one row per gap; opens in Excel/Numbers/Sheets
+   6. SARIF (`.sarif.json`) — consumed by GitHub Code Scanning,
+      IntelliJ, VS Code, and most IDE/CI dashboards
+
+2. **Location**
+   1. Custom path — type one in
+   2. Default path — read from `default_export_path` in
+      `~/.absentia/settings.json`. If no default is set, you're
+      prompted to pick one and the choice is saved.
+
+3. The file lands at:
+   ```
+   <base>/docs/absentia/<corpus_name>/gaps-<UTC-timestamp>.<ext>
+   ```
+   `<corpus_name>` is the basename of the path you ran `check`
+   against (e.g. `/tmp/linux` → `linux`). Timestamp is filename-
+   safe ISO 8601 (`2026-05-08T23-45-30`) so multiple exports
+   accumulate without overwriting — useful for auditability.
+
+On success: `Exported to : <full path>` (path in cyan). On
+failure (permission denied, invalid format, no destination
+chosen): `Export Failed!` in red on stderr.
+
+Cancel at any prompt with `n`, blank Enter, or Ctrl-C — no file
+is written.

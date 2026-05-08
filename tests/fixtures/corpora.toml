@@ -16,17 +16,19 @@
 name = "absentia-self"
 path = "."           # always present (relative to repo root)
 language = "python"
-expected_gaps = 58        # 133 → 58 alongside the --info flag +
-                          # first-run hint (cmd_info, _first_run_hint,
-                          # _INFO_LINES, info_hint_shown_at field).
-                          # The new entities tipped several rules below
-                          # min_confidence — verified by inspection:
-                          # the drop is rules disappearing, not gaps
-                          # being silently masked. Same signal the
-                          # corpus-regression mechanism is designed to
-                          # surface; not a behavior regression.
-expected_rules = 25       # 26 → 25
-expected_entities = 919   # 911 → 919; +8 from new functions / fields
+expected_gaps = 59        # 58 → 59 with the post-check export feature
+                          # (src/absentia/export.py: build_export_path
+                          # + 6 renderers + prompt_and_export +
+                          # _read_choice + _resolve_base_path +
+                          # _meta_dict + default_export_path field).
+                          # +1 gap because the new entities shifted
+                          # confidence thresholds by a hair — verified
+                          # by inspection that no rules silently
+                          # disappeared this round. Earlier 133 → 58
+                          # drop accompanied the --info / first-run
+                          # hint addition (commit 220a4bf).
+expected_rules = 25       # unchanged
+expected_entities = 950   # 919 → 950; +31 from export module
 optional = false
 
 [[corpus]]
