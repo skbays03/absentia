@@ -8,9 +8,9 @@ per language) and a parallelism level. Two pieces:
    than Python because of deeper ASTs and larger translation units.
 
 2. **Amdahl's law** — speedup with N workers is
-   ``1 / ((1-p) + p/N)`` where ``p`` ≈ 0.80 (parse + extract is the
-   parallel ~80%; group + mine + storage is the serial ~20%). The
-   asymptote is therefore 1/(1-p) ≈ 5×, no matter how many cores
+   ``1 / ((1-p) + p/N)`` where ``p`` ≈ 0.55 (parse + extract is the
+   parallel ~55%; group + mine + storage is the serial ~45%). The
+   asymptote is therefore 1/(1-p) ≈ 2.22×, no matter how many cores
    you throw at it.
 
 The constants below are M-series MacBook baselines. They get
@@ -35,6 +35,7 @@ M_SERIES_BPS: dict[str, int] = {
     "python":     32_000_000,
     "javascript": 18_000_000,
     "typescript": 18_000_000,
+    "tsx":        18_000_000,
     "rust":       19_000_000,
     "go":         22_000_000,
     "java":       16_000_000,
@@ -53,11 +54,14 @@ M_SERIES_BPS: dict[str, int] = {
 # Catch-all for languages not yet in the baseline table.
 DEFAULT_BPS: int = 15_000_000
 
-# Parallelizable fraction. Empirically ~0.80 for absentia's pipeline.
-PARALLEL_FRACTION: float = 0.80
+# Parallelizable fraction. Empirically ~0.55 for absentia's pipeline
+# (mining + storage + finalize together account for ~45% serial tail).
+PARALLEL_FRACTION: float = 0.55
 
 # Per-worker startup cost: process spawn + tree-sitter grammar load.
-WORKER_STARTUP_S: float = 0.15
+# Measured 58-75 ms on a 10-core M-series MacBook (2026-05-07); use
+# 60 ms as the central estimate.
+WORKER_STARTUP_S: float = 0.06
 
 
 @dataclass(frozen=True)
@@ -744,7 +748,7 @@ def format_estimate_report(
         parallel_never_helps = all(e.speedup <= 1.001 for e in curve)
         if parallel_never_helps and len(curve) > 1:
             p("[yellow]Note:[/] this corpus is too small for parallelism to pay off.")
-            p("      Worker spawn cost (~0.15 s each) exceeds the work")
+            p("      Worker spawn cost (~0.06 s each) exceeds the work")
             p("      itself, so  absentia will stay single-process here even")
             p("      at higher --jobs values. Speedup column reads 1.00×")
             p("      across the board because that's the truth, not a bug.")

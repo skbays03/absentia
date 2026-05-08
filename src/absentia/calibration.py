@@ -71,7 +71,7 @@ class CalibrationData:
     calibration_files: int
     calibration_bytes: int
     calibration_duration_s: float
-    amdahl_p: float = 0.80
+    amdahl_p: float = 0.55
     # Optional: per-jobs measurements that produced the fit, for the
     # curious user (and as evidence in the methodology doc). Older
     # calibration files lack this; treat absence as "no observations."
@@ -208,7 +208,7 @@ def run_calibration(
     When ``fit_amdahl`` is True (the default), additional scans run at
     jobs ∈ {2, 4, 8, ...} up to a bounded number of points so we can
     fit ``p`` from the observed speedup curve. Set False to skip and
-    fall back to ``PARALLEL_FRACTION = 0.80``.
+    fall back to ``PARALLEL_FRACTION = 0.55``.
 
     ``progress`` (optional) is a callable accepting ``(jobs, n_runs)``
     invoked before each sub-scan so callers can render progress.
@@ -216,7 +216,7 @@ def run_calibration(
     Raises ``ValueError`` if the corpus is too small to calibrate
     reliably.
     """
-    from .estimator import serial_time_for, walk_corpus
+    from .estimator import PARALLEL_FRACTION, serial_time_for, walk_corpus
     from .extractors import discover_extractors, extension_dispatch
     from .storage import SCHEMA_VERSION
 
@@ -326,7 +326,7 @@ def run_calibration(
     factor = min(5.0, max(0.05, raw_factor))
     fitted_p = (
         fit_amdahl_p(observations)
-        if fit_amdahl and len(observations) >= 2 else 0.80
+        if fit_amdahl and len(observations) >= 2 else PARALLEL_FRACTION
     )
 
     per_lang_bps = calibrate_per_language(
