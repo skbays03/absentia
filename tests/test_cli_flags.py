@@ -323,3 +323,106 @@ def test_est_json_shape_is_stable(tmp_path):
         "parallel_fraction",
     }
     assert expected_keys.issubset(payload.keys())
+
+
+# ── --info / first-run hint ────────────────────────────────────────
+
+
+def test_cmd_info_prints_intro_sections(capsys):
+    """cmd_info renders all four section headers + key bullets."""
+    from absentia.cli import cmd_info
+
+    code = cmd_info()
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "absentia — find what you forgot to write" in out
+    assert "What it does" in out
+    assert "What it finds" in out
+    assert "Quick start" in out
+    assert "Learn more" in out
+    # A couple of stable phrases — guard against silent content drift.
+    assert "Decorator inconsistency" in out
+    assert "absentia init" in out
+    assert "github.com/skbays03/absentia" in out
+
+
+def test_first_run_hint_silent_when_stdout_not_tty(tmp_path, capsys):
+    """Skip the hint on non-TTY (CI / piped). Settings stay untouched."""
+    from absentia import cli as cli_mod
+    from absentia.settings import Settings, load_settings
+
+    settings_file = tmp_path / "settings.json"
+    with patch("absentia.settings.settings_path", return_value=settings_file):
+        with patch.object(cli_mod.sys.stdout, "isatty", return_value=False):
+            cli_mod._first_run_hint()
+    err = capsys.readouterr().err
+    assert "absentia --info" not in err
+    # No write happened — settings file shouldn't exist.
+    assert not settings_file.exists()
+    assert load_settings(settings_file) == Settings()
+
+
+def test_first_run_hint_fires_once_then_silent(tmp_path, capsys):
+    """First TTY invocation prints + writes timestamp; second is silent."""
+    from absentia import cli as cli_mod
+    from absentia.settings import load_settings
+
+    settings_file = tmp_path / "settings.json"
+    with patch("absentia.settings.settings_path", return_value=settings_file):
+        with patch.object(cli_mod.sys.stdout, "isatty", return_value=True):
+            cli_mod._first_run_hint()
+            err1 = capsys.readouterr().err
+            assert "absentia --info" in err1
+            # Settings file now exists with timestamp populated.
+            saved = load_settings(settings_file)
+            assert saved.info_hint_shown_at is not None
+            stamp = saved.info_hint_shown_at
+
+            cli_mod._first_run_hint()
+            err2 = capsys.readouterr().err
+            assert "absentia --info" not in err2
+            # Timestamp is unchanged on the second call.
+            assert load_settings(settings_file).info_hint_shown_at == stamp
+
+
+def test_first_run_hint_silent_when_already_shown(tmp_path, capsys):
+    """Pre-existing info_hint_shown_at suppresses the hint."""
+    from absentia import cli as cli_mod
+    from absentia.settings import Settings, save_settings
+
+    settings_file = tmp_path / "settings.json"
+    save_settings(
+        Settings(info_hint_shown_at="2026-01-01T00:00:00+00:00"),
+        path=settings_file,
+    )
+    with patch("absentia.settings.settings_path", return_value=settings_file):
+        with patch.object(cli_mod.sys.stdout, "isatty", return_value=True):
+            cli_mod._first_run_hint()
+    err = capsys.readouterr().err
+    assert "absentia --info" not in err
+
+
+def test_settings_round_trip_info_hint(tmp_path):
+    """Settings persists info_hint_shown_at across save/load."""
+    from absentia.settings import Settings, load_settings, save_settings
+
+    settings_file = tmp_path / "settings.json"
+    save_settings(
+        Settings(jobs_default=4, info_hint_shown_at="2026-05-08T23:42:00+00:00"),
+        path=settings_file,
+    )
+    loaded = load_settings(settings_file)
+    assert loaded.jobs_default == 4
+    assert loaded.info_hint_shown_at == "2026-05-08T23:42:00+00:00"
+
+
+def test_settings_load_drops_invalid_info_hint_shape(tmp_path):
+    """A non-string info_hint_shown_at in JSON is silently dropped."""
+    import json
+
+    from absentia.settings import load_settings
+
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text(json.dumps({"info_hint_shown_at": 12345}))
+    loaded = load_settings(settings_file)
+    assert loaded.info_hint_shown_at is None

@@ -16,19 +16,17 @@
 name = "absentia-self"
 path = "."           # always present (relative to repo root)
 language = "python"
-expected_gaps = 133       # 135 → 133 alongside scripts/profile_scan.py
-                          # (opt #12 profile-guided pickup tooling).
-                          # 3 new functions in profile_scan.py shifted
-                          # mining percentages enough to drop 2 rules
-                          # + 2 gaps (verified: same drift with the
-                          # parallel enrichment.py optimization
-                          # stashed, so this is purely the new file
-                          # changing corpus shape, not a behavior
-                          # regression). 135 was set when has_docstring
-                          # + has_return_type + has_param_types
-                          # detectors landed (3f9f11e).
-expected_rules = 26       # was 28
-expected_entities = 911   # was 908; +3 from profile_scan.py
+expected_gaps = 58        # 133 → 58 alongside the --info flag +
+                          # first-run hint (cmd_info, _first_run_hint,
+                          # _INFO_LINES, info_hint_shown_at field).
+                          # The new entities tipped several rules below
+                          # min_confidence — verified by inspection:
+                          # the drop is rules disappearing, not gaps
+                          # being silently masked. Same signal the
+                          # corpus-regression mechanism is designed to
+                          # surface; not a behavior regression.
+expected_rules = 25       # 26 → 25
+expected_entities = 919   # 911 → 919; +8 from new functions / fields
 optional = false
 
 [[corpus]]

@@ -26,8 +26,14 @@ class Settings:
     ``jobs_default`` of ``None`` means "auto" — fall back to
     ``cpu_count // 2``. A positive integer pins the default; a
     user can still override per-invocation with ``check --jobs N``.
+
+    ``info_hint_shown_at`` of ``None`` means the first-run "Tip: run
+    `absentia --info` for an introduction" hint hasn't been shown
+    yet. The CLI sets it to an ISO 8601 UTC timestamp the first
+    time the hint fires (TTY only) so the hint shows once, ever.
     """
     jobs_default: int | None = None
+    info_hint_shown_at: str | None = None
 
 
 def settings_path() -> Path:
@@ -51,7 +57,10 @@ def load_settings(path: Path | None = None) -> Settings:
         jd = raw.get("jobs_default")
         if jd is not None and (not isinstance(jd, int) or jd < 1):
             jd = None
-        return Settings(jobs_default=jd)
+        ihs = raw.get("info_hint_shown_at")
+        if ihs is not None and not isinstance(ihs, str):
+            ihs = None
+        return Settings(jobs_default=jd, info_hint_shown_at=ihs)
     except (OSError, ValueError, TypeError):
         return Settings()
 

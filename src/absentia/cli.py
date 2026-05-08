@@ -160,6 +160,14 @@ def main(argv: list[str] | None = None) -> int:
              "dev work — opposite pole from --quiet. Doesn't change scan "
              "behavior; only what gets printed.",
     )
+    parser.add_argument(
+        "--info",
+        action="store_true",
+        help="Print a 30-second introduction to absentia (what it does, "
+             "what it finds, quick-start commands, where to learn more) "
+             "and exit. The same intro is one-line-hinted on first "
+             "invocation in a TTY.",
+    )
     sub = parser.add_subparsers(dest="cmd")
 
     init = sub.add_parser("init", help="Create absentia.toml + .absentia/ in the current dir.")
@@ -332,6 +340,12 @@ def main(argv: list[str] | None = None) -> int:
         # Surface immediately so the user sees we got the flag.
         print("[absentia debug] verbose mode on", file=sys.stderr)
 
+    # --info is an early exit — print the intro and stop. Skips
+    # the first-run hint (the user is already getting the full
+    # intro, hinting at it would be redundant).
+    if args.info:
+        return cmd_info()
+
     # Top-level purge / settings flags run before subcommand dispatch.
     if args.purge_all:
         return cmd_purge_all(confirm=not args.yes)
@@ -342,6 +356,12 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.jobs_default is not None:
         return cmd_jobs_default(args.jobs_default, confirm=not args.yes)
+
+    # First-run hint: a one-liner pointing at --info that fires once,
+    # ever, on the first TTY invocation that reaches subcommand
+    # dispatch. Skips silently on non-TTY (CI / piped) and after
+    # settings.json records info_hint_shown_at.
+    _first_run_hint()
 
     if args.cmd is None:
         # No subcommand: launch the TUI when run from a TTY, otherwise
@@ -485,6 +505,80 @@ def _apply_scope_overrides(
             languages=new_languages,
         ),
     )
+
+
+_INFO_LINES: tuple[str, ...] = (
+    "",
+    "[bold]absentia[/] — find what you forgot to write",
+    "    [dim]The holes your code already drew.[/]",
+    "",
+    "[bold]What it does[/]",
+    "  Pattern-mines your codebase and surfaces places where one piece breaks",
+    "  ranks. Nine endpoints have @audit, the tenth doesn't — that's a gap.",
+    "",
+    "  No LLM. No rule files. Deterministic. Same input → same gaps.",
+    "",
+    "[bold]What it finds[/]",
+    "  • Decorator inconsistency  — N of M functions in src/api/ have @audit",
+    "  • Missing sibling tests    — N of M files in src/ have a tests/* sibling",
+    "  • Inheritance gaps         — N of M classes in panels/ extend BasePanel",
+    "  • Series gaps              — migrations/0001, 0002, 0004 (where's 0003?)",
+    "  …plus call-pair, has_docstring, has_return_type, has_param_types.",
+    "",
+    "[bold]Quick start[/]",
+    "  [cyan]absentia init[/]           # generate absentia.toml in cwd",
+    "  [cyan]absentia check[/]          # human-readable list of gaps; exit 1 if any",
+    "  [cyan]absentia check --json[/]   # machine-readable for CI",
+    "  [cyan]absentia[/]                # interactive TUI (Textual)",
+    "  [cyan]absentia est[/]            # cold-scan time prediction with confidence band",
+    "  [cyan]absentia suppress <id>[/]  # mark a gap as known-intentional with a reason",
+    "",
+    "[bold]Learn more[/]",
+    "  Source     [cyan]https://github.com/skbays03/absentia[/]",
+    "  Tutorial   [cyan]docs/tutorial/quickstart.md[/]",
+    "",
+)
+
+
+def cmd_info() -> int:
+    """Print the 30-second introduction. Triggered by ``--info``.
+
+    Width is fixed at 80 columns by design — narrower terminals get
+    wrap; wider terminals don't get padding. Renders to stdout so
+    it's pipe-able (e.g., ``absentia --info | less``).
+    """
+    for line in _INFO_LINES:
+        stdout_console.print(line, width=80, overflow="fold")
+    return 0
+
+
+def _first_run_hint() -> None:
+    """Print the one-liner pointing to ``--info`` on first invocation.
+
+    Fires when ``settings.json`` has ``info_hint_shown_at = None``
+    AND stdout is a TTY (skips on piped output / CI). Updates the
+    field after printing so the hint shows once, ever — even if the
+    user never actually runs ``absentia --info``.
+
+    Goes to stderr via ``stderr_console`` so it doesn't pollute
+    stdout pipes when only stdout is piped.
+    """
+    if not sys.stdout.isatty():
+        return
+    from .settings import load_settings, save_settings
+    s = load_settings()
+    if s.info_hint_shown_at is not None:
+        return
+    stderr_console.print(
+        "[dim]Tip: run [/dim][cyan]`absentia --info`[/cyan]"
+        "[dim] for a 30-second introduction.[/dim]",
+    )
+    from dataclasses import replace as _replace
+    from datetime import datetime, timezone
+    save_settings(_replace(
+        s,
+        info_hint_shown_at=datetime.now(timezone.utc).isoformat(),
+    ))
 
 
 def cmd_init(*, root: Path, force: bool, quiet: bool = False) -> int:

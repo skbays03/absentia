@@ -38,6 +38,13 @@ in `~/.absentia/`.
   Sets `ABSENTIA_DEBUG=1` in the environment so any code that wants
   to add diagnostic prints can check the env var without importing
   CLI internals.
+- `--info` — print a 30-second introduction (what absentia does, what
+  it finds, quick-start commands, where to learn more) and exit.
+  Always prints, regardless of any prior invocation. The same intro
+  is one-line-hinted on stderr the first time you invoke any
+  subcommand in a TTY (the hint shows once, ever — controlled by
+  `info_hint_shown_at` in `~/.absentia/settings.json`). Skipped on
+  non-TTY (CI / piped) so scripted output stays clean.
 
 ## `absentia [path]`
 
