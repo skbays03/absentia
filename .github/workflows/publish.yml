@@ -13,10 +13,16 @@ name: Publish to PyPI
 #      pypa/gh-action-pypi-publish action.
 #
 # TestPyPI rehearsal path (workflow_dispatch):
-#   Builds a fresh sdist + pure-Python wheel and publishes to
-#   test.pypi.org. Skips the mypyc matrix — that's for the real
-#   release; the rehearsal is just to confirm the upload + install
-#   loop. Choose target=testpypi (default) or target=pypi.
+#   Builds an sdist only and publishes to test.pypi.org. The mypyc
+#   matrix is wheels.yml's job — it produces manylinux/macOS/Windows
+#   binary wheels that PyPI requires for compiled distributions.
+#   The dispatch path can't replicate that (a Linux runner's
+#   `python -m build` would emit a raw linux_x86_64-tagged wheel,
+#   which PyPI rejects), so the rehearsal validates publish.yml +
+#   auth + sdist round-trip only. `pip install absentia` from
+#   TestPyPI on a user's machine falls back to building the sdist,
+#   which re-runs mypyc locally — exercising that path on the
+#   install side. Choose target=testpypi (default) or target=pypi.
 #
 # Required secrets:
 #   PYPI_API_TOKEN       — scoped to the absentia project on PyPI.
@@ -61,11 +67,11 @@ jobs:
             --pattern "*.tar.gz"
           ls -la dist/
 
-      - name: Build sdist + pure-Python wheel (dispatch path)
+      - name: Build sdist (dispatch path)
         if: github.event_name == 'workflow_dispatch'
         run: |
           python -m pip install --upgrade build
-          python -m build
+          python -m build --sdist
           ls -la dist/
 
       - name: Publish to TestPyPI
