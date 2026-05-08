@@ -259,7 +259,7 @@ def test_exclude_filter_drops_matching_paths(tmp_path):
 def test_fingerprint_bump_invalidates_cache(tmp_path):
     """A scan after EXTRACTOR_FINGERPRINT changes must re-extract every
     file (cache miss) instead of trusting the now-stale cached entities.
-    Simulates the "user upgrades lacuna; new feature_kinds shipped"
+    Simulates the "user upgrades absentia; new feature_kinds shipped"
     scenario — without this guarantee the new detectors would be
     invisible until the user manually --cold or --purge.
     """

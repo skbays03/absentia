@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """scripts/scan_remote.py — clone a git repo into a temp dir, run
-``lacuna check`` against it, and clean up.
+``absentia check`` against it, and clean up.
 
-Use as a smoke test that lacuna's tooling works on real-world
+Use as a smoke test that absentia's tooling works on real-world
 codebases, especially after adding a new language extractor. Runs
 shallow clones by default (`git clone --depth 1`) so even very large
 repos use modest disk space.
@@ -19,10 +19,10 @@ multiple are listed, automatically if there's only one.
 Options:
     --keep                Leave the clone in place after scanning
     --full                Full clone instead of shallow (--depth 1)
-    --languages X[,Y,..]  Restrict lacuna to these languages
-                          (writes a temp lacuna.toml in the clone)
-    --min-confidence N    Pass through to lacuna check
-    --json                Pass through to lacuna check
+    --languages X[,Y,..]  Restrict absentia to these languages
+                          (writes a temp absentia.toml in the clone)
+    --min-confidence N    Pass through to absentia check
+    --json                Pass through to absentia check
 
 ═══════════════════════════════════════════════════════════════════════
 CONVENTION: when adding a new language extractor, add at least one
@@ -30,11 +30,11 @@ entry to KNOWN_CORPORA below. Pick a public repo that's:
 
   - Idiomatic for the language
   - Small-to-medium sized (clones quickly with --depth 1)
-  - Convention-rich (so lacuna actually finds something)
+  - Convention-rich (so absentia actually finds something)
   - Well-maintained (won't disappear)
 
 This list is *the* sanity-check resource. If a language ships in
-lacuna without a corpus entry here, we have no quick way to verify
+absentia without a corpus entry here, we have no quick way to verify
 the extractor still works on real code.
 ═══════════════════════════════════════════════════════════════════════
 """
@@ -219,20 +219,20 @@ def _clone(url: str, dest: Path, *, shallow: bool) -> int:
 
 
 def _write_languages_config(dest: Path, languages: list[str]) -> None:
-    """Drop a minimal lacuna.toml restricting scan.languages."""
+    """Drop a minimal absentia.toml restricting scan.languages."""
     lines = ["[scan]\nlanguages = ["]
     for lang in languages:
         lines.append(f'    "{lang}",')
     lines.append("]\n")
-    (dest / "lacuna.toml").write_text("\n".join(lines))
+    (dest / "absentia.toml").write_text("\n".join(lines))
 
 
-def _run_lacuna(
+def _run_absentia(
     dest: Path, *,
     min_confidence: float | None, as_json: bool,
 ) -> int:
     cmd = [
-        shutil.which("lacuna") or "lacuna",
+        shutil.which("absentia") or "absentia",
         "check", str(dest),
     ]
     if min_confidence is not None:
@@ -246,7 +246,7 @@ def _run_lacuna(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="scan_remote",
-        description="Clone a git repo, scan it with lacuna, clean up.",
+        description="Clone a git repo, scan it with absentia, clean up.",
     )
     src_group = parser.add_mutually_exclusive_group()
     src_group.add_argument("url", nargs="?",
@@ -261,7 +261,7 @@ def main(argv: list[str] | None = None) -> int:
                        help="Full clone instead of shallow --depth 1")
     parser.add_argument("--languages", default=None,
                        help="Comma-separated list of languages to restrict "
-                            "lacuna's scan to (writes a temp lacuna.toml)")
+                            "absentia's scan to (writes a temp absentia.toml)")
     parser.add_argument("--min-confidence", type=float, default=None)
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args(argv)
@@ -280,7 +280,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 1
 
-    tmp_root = Path(tempfile.mkdtemp(prefix="lacuna_scan_"))
+    tmp_root = Path(tempfile.mkdtemp(prefix="absentia_scan_"))
     try:
         clone_started = time.perf_counter()
         rc = _clone(url, tmp_root, shallow=not args.full)
@@ -295,7 +295,7 @@ def main(argv: list[str] | None = None) -> int:
                          if s.strip()]
             _write_languages_config(tmp_root, languages)
 
-        return _run_lacuna(
+        return _run_absentia(
             tmp_root,
             min_confidence=args.min_confidence,
             as_json=args.as_json,

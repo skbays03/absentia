@@ -1,12 +1,12 @@
 # Why no LLM
 
-Lacuna is deliberately not an AI tool. The engine is classical:
+Absentia is deliberately not an AI tool. The engine is classical:
 tree-sitter parses, frequent-itemset mining counts, plain statistics
 rank. There's no language model, no embeddings, no fine-tuning, no
 cloud API.
 
 This is a choice, and a counter-cultural one in 2026. This doc
-explains why determinism beats inference for lacuna's specific job,
+explains why determinism beats inference for absentia's specific job,
 and what the tradeoffs are.
 
 ## What an AI tool would do here
@@ -23,27 +23,27 @@ take this brief and do roughly the same thing:
 3. Use a language model to *describe* what's "off" about a piece
 4. Generate a natural-language explanation per finding
 
-That works, sort of. It's also four reasons lacuna doesn't do it.
+That works, sort of. It's also four reasons absentia doesn't do it.
 
 ## What you get from determinism
 
 ### Run twice, same answer
 
-Lacuna's output is a function of your code. No randomness, no
-temperature, no model version. Run lacuna at 9 AM and again at
+Absentia's output is a function of your code. No randomness, no
+temperature, no model version. Run absentia at 9 AM and again at
 9:01 AM and you get *byte-identical* results unless the code
 changed. This matters because:
 
-- CI turns lacuna into a real check, not advice that drifts
+- CI turns absentia into a real check, not advice that drifts
 - Suppression IDs stay stable across runs, so silenced gaps stay silenced
-- A regression test for "lacuna found this gap last week" is meaningful
+- A regression test for "absentia found this gap last week" is meaningful
 
 Try writing a regression test against an LLM's output. The test passes
 or fails depending on the model's mood that minute.
 
 ### Free explanations as a byproduct of mining
 
-Every gap lacuna shows you traces back to a rule. Every rule traces
+Every gap absentia shows you traces back to a rule. Every rule traces
 back to the members of your codebase that exhibit it. Both traces are
 *deterministic facts*, not narrative reconstructions:
 
@@ -69,7 +69,7 @@ explanation is generated separately, you have two things to trust.
 
 ### Sub-100ms interactions
 
-Lacuna's TUI scans the Linux kernel in seconds. Every keystroke in
+Absentia's TUI scans the Linux kernel in seconds. Every keystroke in
 the UI — filtering, navigating, suppressing, switching views — is
 sub-100ms because the data is already in memory and the operations
 are integer counters. No model inference, no API call, no waiting.
@@ -81,11 +81,11 @@ through 800 gaps."
 
 ### Zero ongoing cost
 
-Lacuna runs on your laptop. It doesn't phone home. It doesn't bill
+Absentia runs on your laptop. It doesn't phone home. It doesn't bill
 you. There's no rate limit, no token budget, no "you've used 80% of
 your monthly allowance" email. Run it on every commit, in every CI
 job, on every developer's machine, on every repo you own — the cost
-is the disk space for `.lacuna/` (single-digit megabytes for medium
+is the disk space for `.absentia/` (single-digit megabytes for medium
 repos).
 
 This is harder than it looks for the AI alternative. Even
@@ -96,14 +96,14 @@ party every time you press save.
 ### Code never leaves the machine
 
 For a tool whose job is *reading every file in your codebase*, the
-where-does-the-data-go question matters. Lacuna's answer: nowhere.
+where-does-the-data-go question matters. Absentia's answer: nowhere.
 Tree-sitter parses locally. SQLite stores locally. Mining computes
 locally. Suppressions live locally. There's no telemetry phoning
 home, no inference endpoint, no "we use your code to improve our
 service" clause.
 
 For proprietary, regulated, or security-sensitive codebases, this
-isn't a nice-to-have — it's a requirement. Lacuna meets it
+isn't a nice-to-have — it's a requirement. Absentia meets it
 trivially because it never had a network code path to begin with.
 
 ## The trust argument
@@ -112,7 +112,7 @@ The four things above (determinism, free explanations, speed, cost
 + privacy) are individually real but together they add up to one
 thing: **a tool you can trust without trust.**
 
-That's the actual pitch. Lacuna doesn't ask you to trust it. It asks
+That's the actual pitch. Absentia doesn't ask you to trust it. It asks
 you to verify it — and the mechanism is *built so verification is
 trivial*. Click on any gap, read the rule it came from, look at the
 members of the group, confirm the count. The math is right there.
@@ -123,14 +123,14 @@ it confidently makes things up, and you can't tell which without
 domain knowledge that often exceeds what the tool is supposedly
 giving you.
 
-We pitch lacuna at the audience that wants the engine where they can
+We pitch absentia at the audience that wants the engine where they can
 see it. That audience exists, and they're tired of dashboards that
 hide the math behind a chat box.
 
 ## Where ML *might* still belong
 
 This isn't a holy war. There are places where ML is genuinely the
-right tool, and lacuna's architecture has clean seams for them:
+right tool, and absentia's architecture has clean seams for them:
 
 ### Cross-document semantic matching (embeddings, not LLMs)
 
@@ -139,7 +139,7 @@ topics I keep reading about but never write notes on" — needs
 cross-document similarity. Sentence embeddings handle this well; a
 small local embedding model (~100MB) is enough. **This is not the
 same as putting an LLM in the engine.** Embeddings are deterministic
-distance computations; they're closer to lacuna's frequency counters
+distance computations; they're closer to absentia's frequency counters
 than to chat.
 
 If we ever ship the personal-knowledge variant, embeddings will be
@@ -168,7 +168,7 @@ If you're looking for:
 - *"Suggest a refactor"* — use Copilot
 - *"Detect bugs by understanding intent"* — use the latest model
 
-Lacuna is the wrong tool for every one of those. It doesn't model
+Absentia is the wrong tool for every one of those. It doesn't model
 your code's intent. It doesn't reason. It counts.
 
 But for *"surface every place my codebase diverged from a convention
@@ -176,7 +176,7 @@ it already follows,"* counting is exactly the right operation, and
 counting is what you want to be deterministic, fast, free,
 explainable, and verifiable.
 
-That's the deal lacuna offers. Read the [how-mining-works
+That's the deal absentia offers. Read the [how-mining-works
 explanation](how-mining-works.md) for the mechanics, or the
 [what-is-negative-space explanation](what-is-negative-space.md) for
 the framing.

@@ -1,6 +1,6 @@
 # The cold-scan time estimator
 
-`lacuna est` predicts how long a cold scan will take *before* you
+`absentia est` predicts how long a cold scan will take *before* you
 run one. It walks the corpus, applies a calibrated cost model, and
 prints a jobs-vs-time table. The model is simple math, not magic
 — this doc explains the math, the calibration, and how accurate
@@ -9,7 +9,7 @@ you should expect the result to be.
 ## What the output means
 
 ```
-lacuna est — cold-scan estimate for /Users/shawn/myrepo
+absentia est — cold-scan estimate for /Users/shawn/myrepo
 
 Files               395   (5.5 MB)
 By language
@@ -23,7 +23,7 @@ Total check estimate      ~1.4 s ± 0.2 s   (medium confidence)
 
 Single-process baseline   0.8 s
 At default jobs (= 5)       ~0.8 s   (1.00× speedup, 10% efficiency)
-Last actual cold scan     1.4 s   (from .lacuna/last_run.json — ground truth, jobs=5)
+Last actual cold scan     1.4 s   (from .absentia/last_run.json — ground truth, jobs=5)
 Last cold-scan stage breakdown
                walk          0 s   (enumerate files; serial)
                parse       0.8 s   (scales with --jobs)
@@ -47,7 +47,7 @@ Four blocks worth understanding:
 - **Top:** what's being scanned. File count and bytes per language
   drive the cost model.
 - **Headline:** "Total check estimate" is the single number you
-  came here for — predicted total `lacuna check` time at default
+  came here for — predicted total `absentia check` time at default
   jobs, with a ± confidence band. The label after the band is one
   of `high` (±5–18%), `medium` (±18–30%), or `low` (>30%). The
   "components" line tells you whether the mining tail came from a
@@ -56,9 +56,9 @@ Four blocks worth understanding:
   runs`).
 - **Middle:** the per-stage numbers. Single-process baseline is
   the predicted time at `--jobs 1`; "default jobs" is what you
-  get if you run plain `lacuna check`. The "Last actual cold scan"
+  get if you run plain `absentia check`. The "Last actual cold scan"
   + "Last cold-scan stage breakdown" lines appear when
-  `.lacuna/last_run.json` exists, exposing where time actually
+  `.absentia/last_run.json` exists, exposing where time actually
   went on the prior run.
 - **Bottom:** the jobs-vs-time table at powers of two up to your
   CPU's core count. The `+mine(obs)` or `+mine(est)` column shows
@@ -88,7 +88,7 @@ serial_time = Σ (language_bytes / language_throughput)
 
 ### 2. Amdahl's law for parallel speedup
 
-Lacuna's pipeline has a parallel part and a serial tail. The
+Absentia's pipeline has a parallel part and a serial tail. The
 **parallel part** (parse + extract) runs per-file across a worker
 pool. The **serial tail** is everything that runs once over the
 whole entity collection after extraction:
@@ -145,7 +145,7 @@ throw at it. The serial tail wins eventually.
 | ∞  | 5.00× |   0% |
 
 This is the "tapering efficiency" — past 4–8 cores, additional
-workers contribute less and less. Real lacuna defaults to half
+workers contribute less and less. Real absentia defaults to half
 your detected cores, which sits in the sweet spot.
 
 ### 3. Worker-startup overhead + serial-fallback clamp
@@ -160,7 +160,7 @@ parallel_time = min(serial_time,
                     serial_time / speedup(N) + (N − 1) × 0.15)
 ```
 
-The clamp matters because real lacuna has a serial-fallback escape
+The clamp matters because real absentia has a serial-fallback escape
 hatch: when a chunk has fewer files than `jobs × 4`, it stays
 single-process. So on small corpora, "asking for 8 workers" doesn't
 actually spawn them — and the estimator must match that behavior
@@ -178,16 +178,16 @@ baselines. Out of the box, they can be off by 2–4× on different
 hardware (especially for codebases with lots of small files, where
 per-file overhead matters more than per-byte cost).
 
-`lacuna est` corrects for this with a one-time calibration on
+`absentia est` corrects for this with a one-time calibration on
 first run.
 
 ### What calibration does
 
 Three measurement passes, all run in a throwaway state dir so your
-real `.lacuna/` cache isn't polluted (and so every scan is cold):
+real `.absentia/` cache isn't polluted (and so every scan is cold):
 
 1. **Validate the corpus.** Walk the chosen path (default: the
-   directory you ran `lacuna est` in). Refuse if it has fewer than
+   directory you ran `absentia est` in). Refuse if it has fewer than
    30 files or less than 100 KB total — below that, fixed pipeline
    overhead dominates the timing signal and the result would be
    noise. Pass `--use-synthetic` to calibrate against a bundled
@@ -206,12 +206,12 @@ real `.lacuna/` cache isn't polluted (and so every scan is cold):
    dominated, so smaller languages fall back to the global
    `machine_speed_factor` × baseline scaling.
 
-The full result is cached at `~/.lacuna/calibration.json`:
+The full result is cached at `~/.absentia/calibration.json`:
 
 ```json
 {
   "calibrated_at": "...",
-  "lacuna_version": "...",
+  "absentia_version": "...",
   "core_count": 10,
   "machine_speed_factor": 0.26,
   "calibration_corpus_path": "...",
@@ -232,16 +232,16 @@ corpus (recorded in `calibration_corpus_languages`) get
 global-speed-factor scaling on the M-series baseline; languages
 that didn't get the baseline only. The fitted `p` flows into the
 Amdahl curve. `mining_seconds_per_byte` lets the estimator predict
-the mining tail before the user runs check; once `~/.lacuna/runs.jsonl`
+the mining tail before the user runs check; once `~/.absentia/runs.jsonl`
 has ≥3 fresh runs of compatible cores+version, that aggregated
 value supersedes this one.
 
 ### When calibration re-prompts
 
-The cache becomes stale (and `lacuna est` re-prompts you on next
+The cache becomes stale (and `absentia est` re-prompts you on next
 invocation) when:
 
-- **Lacuna's version changed.** Extractors may have shifted; the
+- **Absentia's version changed.** Extractors may have shifted; the
   baseline coefficients no longer match. This also catches
   pipeline additions like new mining strategies (symmetry, call
   pairs, sibling-test enrichment) — fresh calibration absorbs the
@@ -254,15 +254,15 @@ invocation) when:
   hardware changes that don't trigger the version-or-cores check.
 - **You pass `--recalibrate`.** Manual override.
 
-If your `~/.lacuna/calibration.json` is missing, `lacuna est`
+If your `~/.absentia/calibration.json` is missing, `absentia est`
 treats it as first-run.
 
 ### Skipping calibration
 
-In non-interactive contexts (CI, piped output), `lacuna est` skips
+In non-interactive contexts (CI, piped output), `absentia est` skips
 prompts entirely. You'll see a one-line note at the top of the
 output (`(running uncalibrated — pipe to a terminal or run`
-`` `lacuna est` `` ` interactively to calibrate)`) and the M-series
+`` `absentia est` `` ` interactively to calibrate)`) and the M-series
 baselines are used.
 
 To run uncalibrated even in a TTY, answer `n` to the first-run
@@ -287,43 +287,43 @@ with 395 files, mostly small):
 
 The estimator never claims to be a benchmark. It's a "should I go
 grab coffee?" predictor. If you need exact wall-clock numbers, run
-`lacuna check --jobs 1` and time it.
+`absentia check --jobs 1` and time it.
 
 ## How to recalibrate
 
 ```bash
-lacuna est --recalibrate              # re-prompt and re-measure
-lacuna est --recalibrate --use-synthetic   # calibrate against bundled corpus
+absentia est --recalibrate              # re-prompt and re-measure
+absentia est --recalibrate --use-synthetic   # calibrate against bundled corpus
 ```
 
-Or delete the cache file and run `lacuna est` again:
+Or delete the cache file and run `absentia est` again:
 
 ```bash
-rm ~/.lacuna/calibration.json
-lacuna est
+rm ~/.absentia/calibration.json
+absentia est
 ```
 
-If you change machines, upgrade lacuna, or 90 days pass, the cache
+If you change machines, upgrade absentia, or 90 days pass, the cache
 invalidates itself — you'll be re-prompted automatically.
 
 ## Where this surfaces in normal flows
 
-Once calibration runs, the cost model is in service across lacuna:
+Once calibration runs, the cost model is in service across absentia:
 
-- **`lacuna est`** — the dedicated UI, prints the full ASCII
+- **`absentia est`** — the dedicated UI, prints the full ASCII
   jobs-vs-time table.
-- **`lacuna check`** — one-line preamble before scanning
+- **`absentia check`** — one-line preamble before scanning
   (`Scanning N files (M MB) — est. ~Xs at jobs=Y`). Skipped when
   output is JSON, when `--quiet` is passed, or when stderr isn't a
   terminal (CI logs stay clean).
-- **`lacuna init`** — first-scan estimate as a footer between the
-  init confirmation and the "Run lacuna check" line.
+- **`absentia init`** — first-scan estimate as a footer between the
+  init confirmation and the "Run absentia check" line.
 - **TUI** — transient `estimating ~Xs · scanning…` subtitle on
   cold scans, replaced by the post-scan stats once the scan
   completes.
 
 All four paths share the same `quick_estimate_line()` helper and
-read the same `~/.lacuna/calibration.json` cache.
+read the same `~/.absentia/calibration.json` cache.
 
 ## Status and future work
 
@@ -343,8 +343,8 @@ Shipped:
 - ✅ Pipeline-overhead subtraction in calibration so synthetic and
   small-corpus calibrations don't fall victim to fixed-overhead
   noise
-- ✅ Runs-log aggregation (`~/.lacuna/runs.jsonl`) — every
-  `lacuna check` automatically refines `mining_seconds_per_byte`,
+- ✅ Runs-log aggregation (`~/.absentia/runs.jsonl`) — every
+  `absentia check` automatically refines `mining_seconds_per_byte`,
   no explicit recalibration needed; confidence band tightens with
   sample count
 

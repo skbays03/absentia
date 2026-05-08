@@ -1,21 +1,21 @@
-# lacuna
+# absentia
 
 > **Find what you forgot to write.**
 > *(The holes your code already drew.)*
 
-Most code analyzers find what's wrong. **lacuna finds what's missing.**
+Most code analyzers find what's wrong. **absentia finds what's missing.**
 
 Take 48 event handlers in your codebase. 47 call `bus.unsubscribe()` in their
 cleanup paths. One doesn't. That one is a memory leak waiting for the user
 who triggers the right interaction — and no linter, type-checker, or AI
 reviewer will catch it, because nothing told them to expect that pattern.
-Lacuna learns the pattern from the 47 and flags the outlier with a
+Absentia learns the pattern from the 47 and flags the outlier with a
 0.94-confidence score.
 
 Pattern mining over your AST. No LLM, no rule database, deterministic — same
 input, same gaps. The rules come from your code itself: if 9 of your 10 API
-endpoints use `@audit`, lacuna tells you about the 10th; if 8 of your 10
-panels have a corresponding test file, lacuna tells you about the 2 that
+endpoints use `@audit`, absentia tells you about the 10th; if 8 of your 10
+panels have a corresponding test file, absentia tells you about the 2 that
 don't. Every gap traces back to the rule that produced it, and every rule
 traces back to the members of your codebase that exhibit it.
 
@@ -47,30 +47,30 @@ Neither answers the question that actually keeps codebases consistent over years
 **"Does this code follow the patterns the rest of *this codebase* follows?"**
 
 Most code drift isn't bugs and isn't style violations — it's a piece that diverged
-from a convention nobody wrote down. lacuna mines the conventions and finds the
+from a convention nobody wrote down. absentia mines the conventions and finds the
 divergences. It's the difference between *"your `if` should have a space after it"*
 (a global rule) and *"every other endpoint in this folder logs the user_id, this
 one doesn't"* (a local pattern your team established without writing it down).
 
 ## Install
 
-Lacuna isn't on PyPI yet (still pre-1.0). Install from the repo:
+Absentia isn't on PyPI yet (still pre-1.0). Install from the repo:
 
 ```bash
-git clone https://github.com/skbays03/lacuna.git
-cd lacuna
+git clone https://github.com/skbays03/absentia.git
+cd absentia
 pip install .                   # or `pip install -e .` for an editable install
 ```
 
-Or with [pipx](https://pipx.pypa.io/) (recommended for CLI tools — installs into an isolated environment, puts `lacuna` on your PATH):
+Or with [pipx](https://pipx.pypa.io/) (recommended for CLI tools — installs into an isolated environment, puts `absentia` on your PATH):
 
 ```bash
-git clone https://github.com/skbays03/lacuna.git
-pipx install ./lacuna
+git clone https://github.com/skbays03/absentia.git
+pipx install ./absentia
 ```
 
 Requires Python 3.13+. Cross-platform (macOS, Linux, Windows).
-On Windows, the same `pip install .` / `pipx install ./lacuna`
+On Windows, the same `pip install .` / `pipx install ./absentia`
 commands work in PowerShell or `cmd`; if you want a venv first,
 activate it with `.venv\Scripts\activate` instead of the
 POSIX `source .venv/bin/activate`.
@@ -80,36 +80,36 @@ POSIX `source .venv/bin/activate`.
 From any project directory:
 
 ```bash
-lacuna init      # create lacuna.toml + .lacuna/
-lacuna           # open the TUI
+absentia init      # create absentia.toml + .absentia/
+absentia           # open the TUI
 ```
 
-That's it. lacuna scans your code, mines patterns, and shows you a navigable list
+That's it. absentia scans your code, mines patterns, and shows you a navigable list
 of gaps. Use `j`/`k` to move, `↵` to open in your editor, `s` to suppress with a
 reason, `e` to see why a gap was flagged.
 
 For CI and scripting:
 
 ```bash
-lacuna check               # human-readable list; exit 1 if any gaps
-lacuna check --json        # machine-readable
-lacuna check --max-gaps 5  # tolerate up to 5 gaps before failing the build
-lacuna check --cold        # dev-time: ignore parse cache and re-parse the
+absentia check               # human-readable list; exit 1 if any gaps
+absentia check --json        # machine-readable
+absentia check --max-gaps 5  # tolerate up to 5 gaps before failing the build
+absentia check --cold        # dev-time: ignore parse cache and re-parse the
                            # whole tree (or just `--cold src/foo.py` for one
                            # file). Useful when you suspect cache weirdness
                            # or are benchmarking the parse stage.
-lacuna check --language python,rust          # restrict to specific languages
-lacuna check --exclude '**/vendor/**'        # skip a glob pattern
-lacuna check --exclude tests --exclude docs  # multiple --exclude allowed
-lacuna --debug check                          # diagnostic prints to stderr
-lacuna --no-color check                       # force-disable ANSI color
+absentia check --language python,rust          # restrict to specific languages
+absentia check --exclude '**/vendor/**'        # skip a glob pattern
+absentia check --exclude tests --exclude docs  # multiple --exclude allowed
+absentia --debug check                          # diagnostic prints to stderr
+absentia --no-color check                       # force-disable ANSI color
 ```
 
-Symmetric flags: `lacuna est` accepts the same `--config`, `--jobs`,
+Symmetric flags: `absentia est` accepts the same `--config`, `--jobs`,
 `--json`, `--quiet`, `--language`, `--exclude`, `--cold` as `check`,
 so muscle memory transfers between the two.
 
-## What lacuna finds
+## What absentia finds
 
 Examples of typical gaps:
 
@@ -166,12 +166,12 @@ Four deterministic stages:
 4. **Compare** — entities in a rule's group that don't satisfy its predicate
    become **gaps**.
 
-Run lacuna twice on the same code and you get the same output. See
+Run absentia twice on the same code and you get the same output. See
 [how mining works](docs/explanation/how-mining-works.md) for the full picture.
 
 ## Performance
 
-lacuna scans the entire Linux kernel — 65,004 files / 686,923 entities
+absentia scans the entire Linux kernel — 65,004 files / 686,923 entities
 across ~30 million lines of C — in **~28 seconds warm / ~50 seconds
 cold** at default jobs on a 10-core M-series MacBook. Warm breakdown:
 parse ~8 s (cache hits) + mine ~14 s + store ~3 s. Cold breakdown:
@@ -197,25 +197,25 @@ languages; TypeScript and TSX share a tree-sitter grammar but emit
 distinct extractors) and ~2.4 M entities in
 [architecture and performance](docs/explanation/architecture.md).
 
-Curious what your machine looks like? Run `lacuna est` from any project
+Curious what your machine looks like? Run `absentia est` from any project
 directory for a hardware-calibrated cold-scan estimate — see
 [the estimator methodology](docs/explanation/estimator.md) for the math.
 
-## What lacuna is not
+## What absentia is not
 
-- **Not a linter.** Linters enforce rules someone else wrote. lacuna enforces
+- **Not a linter.** Linters enforce rules someone else wrote. absentia enforces
   rules *your codebase already follows*.
-- **Not a code reviewer.** lacuna doesn't critique correctness, security, or
+- **Not a code reviewer.** absentia doesn't critique correctness, security, or
   design. It surfaces consistency gaps.
-- **Not a fixer.** lacuna finds; humans fix. Auto-patching is a different
+- **Not a fixer.** absentia finds; humans fix. Auto-patching is a different
   product with very different tradeoffs.
 - **Not a resource-leak detector.** Patterns like `open()`/`close()`,
   `lock()`/`release()` — anything where the language or runtime defines the
   pair — are the linter's job. Use pylint, flake8-resource-leak, or
-  Python's `with` statement for those. lacuna catches *project-specific*
+  Python's `with` statement for those. absentia catches *project-specific*
   paired calls (your event-bus `subscribe`/`unsubscribe`, your custom
   audit `begin`/`commit`) — conventions no off-the-shelf linter knows.
-- **Not a control-flow analyzer.** lacuna's read is coarse: "this function
+- **Not a control-flow analyzer.** absentia's read is coarse: "this function
   calls A but not B." It won't verify that B is called along every code
   path. Type systems and resource-leak linters own that layer.
 - **Not AI.** No LLM, no embeddings, no model. Rules are statistical facts
@@ -223,18 +223,18 @@ directory for a hardware-calibrated cold-scan estimate — see
 
 ## TUI vs CLI
 
-Bare `lacuna` opens the **TUI** — the primary interface, built for exploration.
+Bare `absentia` opens the **TUI** — the primary interface, built for exploration.
 Drill from a gap to its rule, from a rule to its other members, from there to
 *their* gaps. Filter live with `/`. Suppress with `s`. Watch mode (`w`) re-mines
 on file change.
 
-`lacuna check` is the **batch mode** for CI, scripting, and editor integrations.
+`absentia check` is the **batch mode** for CI, scripting, and editor integrations.
 It honors `--json`, `--max-gaps`, `--quiet`, and exits with a meaningful status
 code.
 
 ## Configuration
 
-Per-project config in `lacuna.toml`:
+Per-project config in `absentia.toml`:
 
 ```toml
 [scan]
@@ -255,11 +255,11 @@ enabled = true
 exclude = ["@property", "@staticmethod"]
 ```
 
-See [the configuration reference](docs/reference/lacuna-toml.md) for every option.
+See [the configuration reference](docs/reference/absentia-toml.md) for every option.
 
 ## Status
 
-**Alpha.** lacuna is under active development. Public API and config format may
+**Alpha.** absentia is under active development. Public API and config format may
 change before 1.0. Pin to an exact version if you depend on the output format.
 
 ## Documentation
@@ -268,7 +268,7 @@ change before 1.0. Pin to an exact version if you depend on the output format.
 - [What is negative-space search?](docs/explanation/what-is-negative-space.md)
 - [How mining works](docs/explanation/how-mining-works.md)
 - [Why no LLM](docs/explanation/why-no-llm.md)
-- [Configuration reference](docs/reference/lacuna-toml.md)
+- [Configuration reference](docs/reference/absentia-toml.md)
 - [CLI reference](docs/reference/cli.md)
 - [TUI keybindings](docs/reference/tui-keys.md)
 

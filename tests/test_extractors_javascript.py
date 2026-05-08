@@ -37,7 +37,7 @@ def test_extracts_function_expression_assigned_to_const():
 
 
 def test_skips_non_function_lexical_declarations():
-    src = "const PI = 3.14;\nlet name = 'lacuna';\n"
+    src = "const PI = 3.14;\nlet name = 'absentia';\n"
     root = _parse(src)
     assert list(extract_javascript_entities(root, "x.js")) == []
 

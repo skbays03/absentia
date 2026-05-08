@@ -2,7 +2,7 @@
 # Verify EXTRACTOR_FINGERPRINT was bumped when extractor source changed.
 #
 # Compares the current branch's diff against a base commit (default:
-# origin/main). Fails if any file under src/lacuna/extractors/ changed
+# origin/main). Fails if any file under src/absentia/extractors/ changed
 # in the diff but EXTRACTOR_FINGERPRINT in extractors/__init__.py
 # didn't.
 #
@@ -34,8 +34,8 @@ if ! git rev-parse "$BASE_REF" >/dev/null 2>&1; then
     fi
 fi
 
-EXTRACTOR_DIR="src/lacuna/extractors/"
-FINGERPRINT_FILE="src/lacuna/extractors/__init__.py"
+EXTRACTOR_DIR="src/absentia/extractors/"
+FINGERPRINT_FILE="src/absentia/extractors/__init__.py"
 FINGERPRINT_REGEX='^[+-]EXTRACTOR_FINGERPRINT'
 
 # Did any extractor source change?
@@ -73,7 +73,7 @@ fixed bug that changes emitted shape, new built-in extractor language):
   1. Bump EXTRACTOR_FINGERPRINT in $FINGERPRINT_FILE
      (e.g. "v2" → "v3"). Add a one-line comment in the bump-history
      section naming what changed.
-  2. Re-run the corpora regression: $(grep -l 'lacuna-self' tests/fixtures/corpora.toml >/dev/null && echo "tests/test_corpus_regression.py")
+  2. Re-run the corpora regression: $(grep -l 'absentia-self' tests/fixtures/corpora.toml >/dev/null && echo "tests/test_corpus_regression.py")
      and update corpora.toml if any counts drifted.
   3. Commit both changes together.
 

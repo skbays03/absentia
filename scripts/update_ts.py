@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """scripts/update_ts.py — discover and update installed tree-sitter packages.
 
-Lacuna's polyglot story depends on staying current with tree-sitter grammar
+Absentia's polyglot story depends on staying current with tree-sitter grammar
 releases (parser bug fixes, new node types). This script discovers every
 installed package whose name starts with ``tree-sitter`` or ``tree_sitter``
 and offers to upgrade them.

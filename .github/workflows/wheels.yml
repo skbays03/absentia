@@ -5,7 +5,7 @@ name: Build wheels
 # uploaded as workflow artifacts; PyPI publish is a separate manual
 # step (see .github/workflows/publish.yml when added).
 #
-# Without this workflow, `pip install lacuna` falls back to the sdist
+# Without this workflow, `pip install absentia` falls back to the sdist
 # build, which works (pure-Python source is valid) but skips the
 # mypyc speedup. Pre-built wheels deliver Row 2+3 perf to all users.
 
@@ -52,7 +52,7 @@ jobs:
           # and verify the basic mining flow works end-to-end.
           CIBW_TEST_REQUIRES: "pytest>=7.0 pytest-asyncio>=0.21"
           CIBW_TEST_COMMAND: >-
-            python -c "import lacuna.mining, lacuna.symmetry; print('compiled:', lacuna.mining.__file__)" &&
+            python -c "import absentia.mining, absentia.symmetry; print('compiled:', absentia.mining.__file__)" &&
             pytest {project}/tests/test_mining.py {project}/tests/test_symmetry.py -q
 
       - name: Upload wheel artifacts

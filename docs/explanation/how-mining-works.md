@@ -1,6 +1,6 @@
 # How mining works
 
-Lacuna's engine has four stages:
+Absentia's engine has four stages:
 
 1. **Parse** every source file into an AST.
 2. **Group** the extracted entities by selector (directory, decorator,
@@ -14,13 +14,13 @@ Each stage is a few hundred lines of Python. There is no model. There
 is no learned anything. The whole engine is counting and joining.
 
 This doc walks each stage with concrete examples, explains the math,
-and shows what lacuna's mining deliberately doesn't do.
+and shows what absentia's mining deliberately doesn't do.
 
 ## Stage 1: parse
 
-Lacuna uses [tree-sitter](https://tree-sitter.github.io/) for every
+Absentia uses [tree-sitter](https://tree-sitter.github.io/) for every
 language. Each per-language extractor walks the AST and yields
-**entities** — discrete things lacuna can reason about (functions,
+**entities** — discrete things absentia can reason about (functions,
 classes, methods, etc.) — paired with the **features** they exhibit.
 
 For a Python file like:
@@ -77,7 +77,7 @@ the rest of the codebase does:
 > with the asymmetry is a gap regardless of how many other
 > classes use the protocol.
 
-This is what the latin "lacuna" gestures at — a void implied by
+This is what the latin "absentia" gestures at — a void implied by
 everything around it, not just by frequency. The symmetry-pair
 pass produces these gaps. It runs alongside frequency mining,
 emits the same `Rule` and `Gap` shapes, but consults its own
@@ -86,7 +86,7 @@ distribution.
 
 Two sources of pairs:
 
-**Hardcoded language protocols** (in `src/lacuna/symmetry.py`):
+**Hardcoded language protocols** (in `src/absentia/symmetry.py`):
 
 | Pair | Scope | Rule |
 |---|---|---|
@@ -151,7 +151,7 @@ This is the latin "lacuna in a manuscript" sense: a void at a
 specific known position in a structured sequence. Different from
 frequency ("9 of 10 do X"), different from symmetry ("you have
 left without right"), and different from call-pair ("you call A
-without B"). All four shapes ship with lacuna.
+without B"). All four shapes ship with absentia.
 
 A few things worth noting:
 
@@ -171,7 +171,7 @@ A **selector** is conceptually a function: `entities → list[Group]`.
 Each selector emits zero or more groups; an entity can be in many
 groups simultaneously.
 
-Lacuna ships three built-in selectors:
+Absentia ships three built-in selectors:
 
 | Selector | One group per | Example membership |
 |---|---|---|
@@ -197,7 +197,7 @@ because tiny groups produce statistical noise.
 
 This is the heart of the engine, and it's a single counter.
 
-Within each group, lacuna walks every member's `FeatureSet`,
+Within each group, absentia walks every member's `FeatureSet`,
 **counts how often each feature value appears**, and divides by the
 group size:
 
@@ -232,7 +232,7 @@ matching. The arithmetic is one division.
 
 ## Stage 4: compare
 
-For each rule, lacuna walks the group's members again and emits a
+For each rule, absentia walks the group's members again and emits a
 **gap** for every member that *doesn't* have the rule's value:
 
 ```text
@@ -246,9 +246,9 @@ RULE @app.route (4/5)
 ```
 
 A gap is `(rule_id, entity_id)`. That tuple, hashed, gives the short
-ID you see in lacuna's output (`g-78bb4c8`).
+ID you see in absentia's output (`g-78bb4c8`).
 
-The output you see in `lacuna check`:
+The output you see in `absentia check`:
 
 ```text
 GAPS                                              confidence ≥ 0.80   2
@@ -259,7 +259,7 @@ GAPS                                              confidence ≥ 0.80   2
 
 Both gaps are *real divergences from a real pattern*. Whether they're
 *intentional* divergences (suppress them with a reason) or
-*oversights* (fix them) is the human's job — lacuna's job is just
+*oversights* (fix them) is the human's job — absentia's job is just
 surfacing them.
 
 ## Eligibility-aware mining
@@ -292,7 +292,7 @@ One more refinement, also subtle: when the rule says "members of
 itself is in `src/exceptions/`, the base class shouldn't be flagged
 as missing itself. It can't extend itself in any language.
 
-Lacuna detects this case (gap entity's leaf name == rule's feature
+Absentia detects this case (gap entity's leaf name == rule's feature
 value, for `parent_class` rules) and silently drops it. This caught
 real false positives during the 17-language audit (PHP/Slim was the
 clearest example).
@@ -311,9 +311,9 @@ The current engine mines one feature value at a time:
 or similar:
 *"members have BOTH `@audit` AND `@app.route`."*
 
-This is gated by `mining.max_predicate_size` in `lacuna.toml`
+This is gated by `mining.max_predicate_size` in `absentia.toml`
 (default 1, meaning single-feature rules only). When set higher,
-lacuna will discover co-occurrence patterns — useful for catching
+absentia will discover co-occurrence patterns — useful for catching
 *"every endpoint should be both decorated and tested,"* not just one
 or the other.
 
@@ -322,30 +322,30 @@ well-understood since the 1990s, when it was the original "data
 mining" technique applied to retail basket analysis. We're using it
 for code instead of supermarket purchases.
 
-## What lacuna's mining doesn't do
+## What absentia's mining doesn't do
 
 Worth being explicit:
 
-- **Lacuna doesn't understand semantics.** It doesn't know what
+- **Absentia doesn't understand semantics.** It doesn't know what
   `@audit` *means*. If 9/10 functions have a useless decorator, it
   flags the 10th as a gap with the same confidence as if they all
   had a critical decorator. Humans interpret.
-- **Lacuna doesn't find bugs.** A function might have `@audit` and
+- **Absentia doesn't find bugs.** A function might have `@audit` and
   still be buggy. Use mypy, pyright, ruff, or semgrep for that.
-- **Lacuna doesn't suggest fixes.** It surfaces divergences; you
+- **Absentia doesn't suggest fixes.** It surfaces divergences; you
   decide whether to fix or suppress. There's no "auto-apply" because
   the right action depends on context the tool can't see.
-- **Lacuna doesn't track behavior over time** beyond the per-run
+- **Absentia doesn't track behavior over time** beyond the per-run
   counts. It doesn't know that this same gap appeared yesterday or
   three releases ago — every run is from the current state of the
   code.
-- **Lacuna doesn't model multi-step reasoning.** It can't say "fix
+- **Absentia doesn't model multi-step reasoning.** It can't say "fix
   X, then Y becomes possible." Each gap stands alone.
 
-These aren't limitations of lacuna's specific implementation; they're
+These aren't limitations of absentia's specific implementation; they're
 limitations of frequency-based mining as a category. If you need any
-of them, lacuna is the wrong tool. If you don't, the simplicity is a
-feature: lacuna is fast, deterministic, and explainable specifically
+of them, absentia is the wrong tool. If you don't, the simplicity is a
+feature: absentia is fast, deterministic, and explainable specifically
 because it does this one thing.
 
 ## Where to learn more
@@ -354,8 +354,8 @@ because it does this one thing.
   framing and value prop
 - [Why no LLM?](why-no-llm.md) — why the engine is classical
 - [Selectors reference](../reference/selectors.md) — every built-in
-  selector, configurable in `lacuna.toml`
+  selector, configurable in `absentia.toml`
 - The [`mining.py`
-  source](https://github.com/skbays03/lacuna/blob/main/src/lacuna/mining.py)
+  source](https://github.com/skbays03/absentia/blob/main/src/absentia/mining.py)
   is ~120 lines including comments. The whole engine fits on one
   screen.

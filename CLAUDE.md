@@ -1,6 +1,6 @@
 # CLAUDE.md — guidance for AI assistants in this repo
 
-## What lacuna is
+## What absentia is
 
 A code-hygiene tool that mines patterns a codebase already follows and surfaces
 places that don't follow them. **No LLM in the engine** — purely classical
@@ -22,11 +22,11 @@ Raw layer        files, content hashes, parse cache      incremental on disk cha
 
 Two consumers of the engine library:
 
-- **TUI** — `lacuna` (default invocation), Textual-based, primary UX
-- **Batch CLI** — `lacuna check` for CI, scripts, editor integrations
+- **TUI** — `absentia` (default invocation), Textual-based, primary UX
+- **Batch CLI** — `absentia check` for CI, scripts, editor integrations
 
 A future third consumer: a Dev-Dashboard panel that imports the engine as a
-Python library or shells out to `lacuna check --json`.
+Python library or shells out to `absentia check --json`.
 
 ## Locked-in decisions
 
@@ -41,7 +41,7 @@ a reversal seems warranted, surface the reasoning explicitly.
 2. **TUI is the primary UX.** Built with Textual. Batch CLI is the secondary
    scriptable mode. Number keys for view switching; lowercase for actions.
 3. **Standalone repo, not a Dev-Dashboard panel.** Lives at
-   `Transcending-Binary/projects/lacuna/`. Designed for Dev-Dashboard (or any
+   `Transcending-Binary/projects/absentia/`. Designed for Dev-Dashboard (or any
    other host) to embed via library import or `--json` shellout.
 4. **Python + SQLite for the MVP.** Rust + alternate stores reserved for the
    enterprise tier. Don't pre-build that infrastructure.
@@ -56,7 +56,7 @@ a reversal seems warranted, surface the reasoning explicitly.
 ## Repo layout
 
 ```
-src/lacuna/        Engine package
+src/absentia/        Engine package
   cli.py           Argparse dispatch + subcommand bodies
   tui/             Textual TUI (interactive front-end)
   extractors/      Per-language tree-sitter extractors (17)
@@ -67,10 +67,10 @@ src/lacuna/        Engine package
   enrichment.py    Corpus-level features (sibling_test)
   storage.py       SQLite-backed entity + suppression store
   parallel.py      ProcessPool helpers, default_jobs() policy
-  estimator.py     Cold-scan cost model + `lacuna est` renderer
-  calibration.py   First-run calibration + ~/.lacuna/calibration.json
-  runs_log.py      Machine-wide ~/.lacuna/runs.jsonl accumulator
-  settings.py      ~/.lacuna/settings.json (jobs_default, etc.)
+  estimator.py     Cold-scan cost model + `absentia est` renderer
+  calibration.py   First-run calibration + ~/.absentia/calibration.json
+  runs_log.py      Machine-wide ~/.absentia/runs.jsonl accumulator
+  settings.py      ~/.absentia/settings.json (jobs_default, etc.)
   progress.py      ProgressBar / Spinner / StepIndicator
   output.py        Gap rendering (text + JSON)
   _color.py        ANSI escape constants for in-place progress UI
@@ -88,20 +88,20 @@ docs/              Mkdocs-material site (Diátaxis structure)
   reference/       Look-up authoritative
   explanation/     Concepts + ADRs (in decisions/)
 pyproject.toml     Package config
-lacuna.toml.example   Sample per-project config
+absentia.toml.example   Sample per-project config
 README.md          Public-facing pitch
 DEFERRALS.md       Publication-blocking items intentionally deferred
 CHANGELOG.md       Per-release notes
 ```
 
 In **user projects** (not this repo):
-- `lacuna.toml` — committed per-project config + project-wide suppressions
-- `.lacuna/` — gitignored runtime state directory (entity DB, parse cache, etc.)
+- `absentia.toml` — committed per-project config + project-wide suppressions
+- `.absentia/` — gitignored runtime state directory (entity DB, parse cache, etc.)
 
 ## Dev scripts
 
 `scripts/update_ts.py` discovers every installed `tree-sitter*` package and
-checks pip for updates. Run periodically as new lacuna extractors are added —
+checks pip for updates. Run periodically as new absentia extractors are added —
 keeps grammars current without hardcoding the list.
 
 Three modes:
@@ -128,7 +128,7 @@ on the next run.
 
 ### `scripts/scan_remote.py` — sanity-check against real codebases
 
-Clones a public repo into a temp dir, runs `lacuna check`, and cleans up.
+Clones a public repo into a temp dir, runs `absentia check`, and cleans up.
 The default is `--depth 1` shallow clone, so even large repos use modest
 disk space. Use it to verify a freshly added extractor actually works on
 real-world code.

@@ -1,4 +1,4 @@
-"""Profile a `lacuna check` run with cProfile and dump the top hotspots.
+"""Profile a `absentia check` run with cProfile and dump the top hotspots.
 
 Optimization-plan #12 (profile-guided pickup) made repeatable. After
 the structural perf wins shipped (mining 30×, mypyc compilation, Query
@@ -8,7 +8,7 @@ correct, or is there a non-obvious hotspot we missed?"
 Usage:
   python scripts/profile_scan.py /tmp/linux               # full kernel scan
   python scripts/profile_scan.py /tmp/redis --top 30      # custom top-N
-  python scripts/profile_scan.py /tmp/linux --output /tmp/lacuna.prof
+  python scripts/profile_scan.py /tmp/linux --output /tmp/absentia.prof
   python scripts/profile_scan.py /tmp/linux --no-cold     # warm scan only
 
 Notes:
@@ -65,7 +65,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--no-cold",
         action="store_true",
-        help="Don't blow away .lacuna/ before profile (warm rescan).",
+        help="Don't blow away .absentia/ before profile (warm rescan).",
     )
     return p.parse_args()
 
@@ -86,45 +86,45 @@ def main() -> int:
         return 1
 
     if not args.no_cold:
-        lacuna_dir = args.corpus / ".lacuna"
-        if lacuna_dir.exists():
-            print(f"  Cold scan: removing {lacuna_dir}/ ...")
-            shutil.rmtree(lacuna_dir)
+        absentia_dir = args.corpus / ".absentia"
+        if absentia_dir.exists():
+            print(f"  Cold scan: removing {absentia_dir}/ ...")
+            shutil.rmtree(absentia_dir)
 
     output = args.output or Path.cwd() / f"{args.corpus.name}.prof"
 
-    print(f"  Profiling lacuna check on {args.corpus}")
+    print(f"  Profiling absentia check on {args.corpus}")
     print(f"  jobs={args.jobs}, top={args.top}")
     print(f"  Output: {output}")
     print()
 
-    # Run lacuna in-process so cProfile sees the work. Importing inside
+    # Run absentia in-process so cProfile sees the work. Importing inside
     # main() so the import itself is profiled (extractor discovery is
     # part of cold-start cost we want visibility on).
     started = time.perf_counter()
     profiler = cProfile.Profile()
     profiler.enable()
 
-    # Use subprocess instead of importing because lacuna's CLI does
+    # Use subprocess instead of importing because absentia's CLI does
     # signal handlers + sys.exit; subprocess isolates the profile from
     # the rest of this script. cProfile.run() can't profile a child
     # process, so we instead use cProfile against an in-process call.
-    from lacuna.cli import main as lacuna_main
+    from absentia.cli import main as absentia_main
 
     rc = 0
     try:
-        # Mimic `lacuna check <corpus> --jobs N --quiet`. --quiet
+        # Mimic `absentia check <corpus> --jobs N --quiet`. --quiet
         # suppresses progress UI noise that would inflate the profile
         # with rendering overhead unrelated to the scan engine.
         sys.argv = [
-            "lacuna",
+            "absentia",
             "check",
             str(args.corpus),
             "--jobs",
             str(args.jobs),
             "--quiet",
         ]
-        lacuna_main()
+        absentia_main()
     except SystemExit as e:
         rc = int(e.code) if e.code is not None else 0
 
@@ -143,7 +143,7 @@ def main() -> int:
     print(f"\n  Wall-clock (incl. profile overhead): {elapsed:.2f}s")
     print(f"  Raw profile: {output}")
     print(f"  Inspect:     python -m pstats {output}")
-    print(f"  lacuna exit: {rc}")
+    print(f"  absentia exit: {rc}")
     return 0
 
 

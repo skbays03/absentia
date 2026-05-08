@@ -1,11 +1,11 @@
-# `lacuna.toml` Reference
+# `absentia.toml` Reference
 
-Lacuna reads `lacuna.toml` from the project root (or any ancestor
-of the path you pass to `lacuna check`). Every section is optional;
-defaults below are sensible starting points. `lacuna init` writes
-a working `lacuna.toml` for you.
+Absentia reads `absentia.toml` from the project root (or any ancestor
+of the path you pass to `absentia check`). Every section is optional;
+defaults below are sensible starting points. `absentia init` writes
+a working `absentia.toml` for you.
 
-A working sample with comments lives at `lacuna.toml.example` in
+A working sample with comments lives at `absentia.toml.example` in
 the repo root.
 
 ## `[scan]` — what to look at
@@ -42,7 +42,7 @@ min_confidence = 0.8
 min_group_size = 5
 ```
 
-CLI overrides: `lacuna check --min-confidence 0.9 --min-group-size 10`.
+CLI overrides: `absentia check --min-confidence 0.9 --min-group-size 10`.
 
 ## `[selectors.*]` — how groups are formed
 
@@ -91,16 +91,16 @@ enabled     = true
 min_members = 3
 ```
 
-## Previewed in `lacuna.toml.example` but not yet wired
+## Previewed in `absentia.toml.example` but not yet wired
 
 The example file previews several sections that are **not yet
 implemented in the engine**: the `name_pattern` and `cluster`
 selectors, `[[selectors.manual]]`, `[output]`, project-wide
 `[[suppress]]` records, and `max_predicate_size` under `[mining]`.
-Treat them as a roadmap; the sections above are what `lacuna check`
+Treat them as a roadmap; the sections above are what `absentia check`
 actually reads today.
 
 For ad-hoc / personal suppressions (the only kind currently
-supported), use `lacuna suppress <gap-id> --reason "..."` or press
-`s` in the TUI. Those live in `.lacuna/state.db` and aren't
+supported), use `absentia suppress <gap-id> --reason "..."` or press
+`s` in the TUI. Those live in `.absentia/state.db` and aren't
 committed to version control.

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to lacuna will be documented in this file.
+All notable changes to absentia will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -58,7 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   kernel scan surfaced `enrich_sibling_tests` consuming 7.8 s of
   cProfile-cumulative time (~6% of profiled wall-clock) — about 4×
   the back-of-envelope estimate that informed the pass on opt #8.
-  Three contained changes in `src/lacuna/enrichment.py`:
+  Three contained changes in `src/absentia/enrichment.py`:
   - Memoize `_candidate_test_files` per source-file path inside the
     enrichment loop. ~640k entities across ~65k unique source files
     on the kernel = ~10× redundant candidate-list computations
@@ -88,7 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`scripts/profile_scan.py` — repeatable cProfile harness.**
   Optimization-plan #12 (profile-guided pickup) made repeatable.
-  `python scripts/profile_scan.py /tmp/linux --top 25` runs `lacuna
+  `python scripts/profile_scan.py /tmp/linux --top 25` runs `absentia
   check` under cProfile and dumps top-N hotspots by cumulative time,
   total time, and call count. Defaults to `--jobs 1` for clean
   profile data; `--no-cold` skips the cache-blow-away for warm
@@ -117,13 +117,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   constant invalidates every cached entry on the next scan — so
   when a release ships new feature_kinds, new entity kinds, or
   extractor logic fixes, users automatically pick up the new
-  behavior on the first `lacuna check` after the upgrade without
+  behavior on the first `absentia check` after the upgrade without
   having to know to `--cold` or `--purge`. Bump policy + history
   live as a docstring on the constant. Initial value bumped to
   `"v2"` to absorb today's `has_docstring` / `has_return_type` /
   `has_param_types` detectors.
 
-- **Multi-worker progress UI.** ``lacuna check --jobs N`` in
+- **Multi-worker progress UI.** ``absentia check --jobs N`` in
   interactive text mode now shows one sub-line per worker (parse
   stage) and one sub-line per running strategy (mining stage),
   each tagged with a per-language color: Python blue, Rust orange,
@@ -137,9 +137,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stage now records ``mine_by_strategy_ms`` (one entry per
   strategy: symmetry pairs, call-pair, frequency:decorator, etc.)
   alongside the existing ``stage_ms`` totals. Surfaces in
-  ``lacuna est --history`` and turns the previously opaque mining
+  ``absentia est --history`` and turns the previously opaque mining
   tail into a profiling-grade signal.
-- **`--cold [PATH]` flag on `lacuna check` and `lacuna est`.** Dev-
+- **`--cold [PATH]` flag on `absentia check` and `absentia est`.** Dev-
   time cache-bust: forces re-parse of files at PATH (default: the
   whole scanned root). Recursive — passing a directory cold-busts
   every file under it. Doesn't delete the cache (next scan without
@@ -158,7 +158,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **`init`** gained `--quiet` so scripts that init then
     immediately run check don't have to redirect stdout.
   - **`suppress`** now accepts the project root as a positional
-    argument (`lacuna suppress <gap_id> <path>`) for symmetry with
+    argument (`absentia suppress <gap_id> <path>`) for symmetry with
     init/check/est. The legacy `--path` is preserved as a deprecated
     alias and emits a one-line hint when used.
   - **`check` and `est`** gained `--language LANG[,LANG]` (override
@@ -176,7 +176,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Use cases: validating extractor changes (no stale cached
   entities), benchmarking the parse stage in isolation, debugging
-  suspected cache weirdness without nuking ``.lacuna/``.
+  suspected cache weirdness without nuking ``.absentia/``.
 
 - **Mining-stage progress detail (phase + counter + current item).**
   Each running strategy now surfaces a live ``[phase] N/M item``
@@ -192,33 +192,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
-- **Per-stage progress UI.** `lacuna check` in interactive text
+- **Per-stage progress UI.** `absentia check` in interactive text
   mode now emits five ✓ summary lines (walk / parse / store / mine
   / finalize), each with elapsed time, plus live spinners during
   long stages. Mining-stage spinner sub-line surfaces per-strategy
   completion ("3/7 done · last: symmetry pairs · 47 rules so far"),
   turning the previously silent multi-minute mining tail into a
   visible, diagnosable stage. Auto-suppresses on non-TTY.
-- **`--max-gaps N` CI tolerance flag.** `lacuna check --max-gaps 5`
+- **`--max-gaps N` CI tolerance flag.** `absentia check --max-gaps 5`
   exits non-zero only when the gap count exceeds 5. Default
   behavior (no flag) keeps the strict "any gap fails" exit policy.
-  Useful for adopting lacuna on an existing codebase without
+  Useful for adopting absentia on an existing codebase without
   blocking the build the first day.
-- **`lacuna --jobs-default N`** — pin the default worker count for
-  `lacuna check`. Saved to `~/.lacuna/settings.json`. If N exceeds
+- **`absentia --jobs-default N`** — pin the default worker count for
+  `absentia check`. Saved to `~/.absentia/settings.json`. If N exceeds
   detected core count, re-prompts to confirm; non-TTY contexts
   refuse without `--yes`. `--jobs-default 0` reverts to auto.
-- **`lacuna --purge [PATH]` and `lacuna --purge-all`.** Top-level
-  flags to remove `.lacuna/` per-project state and the machine-wide
+- **`absentia --purge [PATH]` and `absentia --purge-all`.** Top-level
+  flags to remove `.absentia/` per-project state and the machine-wide
   cache, with a `[y/N]` prompt + non-TTY refusal.
-- **`lacuna est --history`** — print the recent `lacuna check`
+- **`absentia est --history`** — print the recent `absentia check`
   runs that feed the estimator, plus the aggregated mining
   throughput. Useful for auditing what data the prediction is
   based on.
-- **Continuous-calibration runs log** at `~/.lacuna/runs.jsonl`.
-  Every successful `lacuna check` appends a row (timestamp,
+- **Continuous-calibration runs log** at `~/.absentia/runs.jsonl`.
+  Every successful `absentia check` appends a row (timestamp,
   version, cores, jobs, root, language-byte shape, per-stage
-  timings). `lacuna est` aggregates ≥3 fresh compatible runs into
+  timings). `absentia est` aggregates ≥3 fresh compatible runs into
   a refined `mining_seconds_per_byte`, replacing the static
   calibration value with real-world data. The more often you run
   check, the more accurate the prediction becomes — no explicit
@@ -233,19 +233,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`est` parse + mine_tail = check column** in the per-jobs
   table. Mining is treated as a fixed serial tail (it doesn't
   scale with workers past the 4-thread cap), so the new column
-  shows full `lacuna check` time at each `--jobs` setting, not
+  shows full `absentia check` time at each `--jobs` setting, not
   just parse.
 - **Calibrated mining-tail prediction** (`mining_seconds_per_byte`
-  in `calibration.json`) so `lacuna est` can predict full check
+  in `calibration.json`) so `absentia est` can predict full check
   time before the user has run check even once.
-- **Per-stage timings persisted** to `.lacuna/last_run.json`
+- **Per-stage timings persisted** to `.absentia/last_run.json`
   (`stage_durations_ms` map for walk / parse / store / mine /
   finalize) so the est report can cite real ground truth.
 
 ### Changed
 
-- **`lacuna init` no longer hardcodes `languages = ["python"]`.**
-  The generated `lacuna.toml` comments out the line, so omitting
+- **`absentia init` no longer hardcodes `languages = ["python"]`.**
+  The generated `absentia.toml` comments out the line, so omitting
   it activates every built-in extractor (17 covering 16
   languages). Set the key explicitly to scan a subset.
 - **TUI scans with `jobs=1`.** Spawn-mode `ProcessPoolExecutor`
@@ -296,7 +296,7 @@ on Shawn's hardware. See `~/Desktop/lacuna_doc_todos.txt §2`.)
   off-the-shelf linter knows about. Conservative defaults
   (min_confidence=0.9, min_support=5) filter out noise from
   language built-ins. Doesn't try control-flow analysis — that's
-  linter territory; lacuna stays at the project-convention layer.
+  linter territory; absentia stays at the project-convention layer.
 - **Cross-strategy gap dedup.** Frequency mining, symmetry pairs,
   and call-pair mining can each independently flag the same entity
   for the same missing thing. A post-mining pass collapses
@@ -329,7 +329,7 @@ on Shawn's hardware. See `~/Desktop/lacuna_doc_todos.txt §2`.)
   tree-sitter: Python, JavaScript, TypeScript, TSX, Rust, Go,
   Java, Ruby, C#, Swift, C, C++, PHP, Kotlin, Scala, Lua, Bash.
   TS and TSX share a tree-sitter grammar but emit distinct
-  extractors. Pluggable via the `lacuna.extractors` entry-point
+  extractors. Pluggable via the `absentia.extractors` entry-point
   group.
 - **Mining engine** — frequent-itemset over `(group, feature)`
   pairs with confidence threshold. Three built-in selectors
@@ -340,28 +340,28 @@ on Shawn's hardware. See `~/Desktop/lacuna_doc_todos.txt §2`.)
   warm rescans complete in milliseconds.
 - **Two front-ends.** A Textual TUI for interactive exploration
   (Gaps / Rules / Groups / Stats views; filter, follow, suppress,
-  watch mode) and `lacuna check` for CI batch use.
+  watch mode) and `absentia check` for CI batch use.
 - **`e` explain modal** in the TUI — peek-style "why was this gap
   flagged" panel that doesn't move you off the gaps list.
-- **Parallel parse + extract** across a worker pool. `lacuna check
+- **Parallel parse + extract** across a worker pool. `absentia check
   --jobs N`; default is half of detected CPU cores. Workers spawn
   lazily and skip the pool entirely on small jobs.
-- **`lacuna est`** — cold-scan time estimator. Walks the corpus,
+- **`absentia est`** — cold-scan time estimator. Walks the corpus,
   applies a calibrated cost model (per-language throughput +
   Amdahl's law), prints a jobs-vs-time table.
-- **First-run calibration** with cache at `~/.lacuna/calibration.json`.
+- **First-run calibration** with cache at `~/.absentia/calibration.json`.
   Multi-jobs Amdahl `p` fitting, per-language BPS measurement,
   bundled synthetic corpus (`--use-synthetic`), version +
   core-count + 90-day staleness invalidation.
-- **Estimate integration points.** Preamble line in `lacuna check`
-  text mode; first-scan footer in `lacuna init`; transient
+- **Estimate integration points.** Preamble line in `absentia check`
+  text mode; first-scan footer in `absentia init`; transient
   "estimating ~Xs" subtitle in the TUI on cold scans.
 - **Apache 2.0 license** (see `LICENSE` and `NOTICE`).
 - **CI pipeline** — pytest matrix on Python 3.11/3.12/3.13, ruff,
   mypy (lenient), `mkdocs build --strict`.
 - **Documentation** via Diátaxis + mkdocs-material:
   - Tutorials: quickstart
-  - Reference: CLI, `lacuna.toml`, selectors, TUI keybindings
+  - Reference: CLI, `absentia.toml`, selectors, TUI keybindings
   - Explanation: what-is-negative-space, why-no-llm,
     how-mining-works, architecture-and-performance, the
     cold-scan time estimator
@@ -369,7 +369,7 @@ on Shawn's hardware. See `~/Desktop/lacuna_doc_todos.txt §2`.)
 ### Performance
 
 Benchmarked on 16 large public corpora totaling ~2.4M entities.
-Headline: lacuna scans the entire Linux kernel — 666,574 entities
+Headline: absentia scans the entire Linux kernel — 666,574 entities
 across ~30 million lines of C — in 96.7s on a single Python process
 on an M-series MacBook. Full table in
 `docs/explanation/architecture.md`.

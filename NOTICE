@@ -1,7 +1,7 @@
-lacuna
+absentia
 Copyright 2026 Shawn Bays
 
-This product includes software developed by Shawn Bays and the lacuna
+This product includes software developed by Shawn Bays and the absentia
 contributors. Licensed under the Apache License, Version 2.0; see
 LICENSE for the full text.
 
@@ -9,7 +9,7 @@ LICENSE for the full text.
 Third-party software embedded or required at runtime
 ================================================================================
 
-lacuna depends on the following third-party Python packages and
+absentia depends on the following third-party Python packages and
 tree-sitter language grammars. Each carries its own license; this file
 acknowledges them as required by Apache 2.0 §4(c). Full license texts
 are available from each project's source repository or PyPI page.
@@ -25,7 +25,7 @@ Core parsing infrastructure:
     Licensed under MIT.
 
 Per-language tree-sitter grammars (each upstream project ships its own
-parser; lacuna loads them via Python wrapper packages):
+parser; absentia loads them via Python wrapper packages):
 
   tree-sitter-python      MIT — https://github.com/tree-sitter/tree-sitter-python
   tree-sitter-javascript  MIT — https://github.com/tree-sitter/tree-sitter-javascript
@@ -47,10 +47,10 @@ parser; lacuna loads them via Python wrapper packages):
 User-facing interface:
 
   Textual               MIT — https://github.com/Textualize/textual
-                        (powers the lacuna TUI)
+                        (powers the absentia TUI)
 
   Rich                  MIT — https://github.com/Textualize/rich
-                        (powers the lacuna CLI text output)
+                        (powers the absentia CLI text output)
 
 Build-time tooling (compiled into wheels, not runtime dependencies
 once installed):

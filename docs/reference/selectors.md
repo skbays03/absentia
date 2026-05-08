@@ -2,8 +2,8 @@
 
 A *selector* turns the flat collection of extracted entities into
 **groups** — sets of entities mining will compare against each
-other. Lacuna ships three built-in selector types, all configured
-under `[selectors.*]` in `lacuna.toml`.
+other. Absentia ships three built-in selector types, all configured
+under `[selectors.*]` in `absentia.toml`.
 
 ## Built-in selectors
 
@@ -42,7 +42,7 @@ exclude     = ["@property", "@staticmethod"]
 ```
 
 > **Previewed but not yet wired:** the `include` allow-list and
-> `match_args` toggle appear in `lacuna.toml.example` as roadmap
+> `match_args` toggle appear in `absentia.toml.example` as roadmap
 > placeholders. The engine doesn't read them today; decorator
 > arguments are always dropped (so `@app.route("/x")` groups with
 > `@app.route("/y")` regardless), and all decorators not in
@@ -67,7 +67,7 @@ kind_filter = ["class", "struct", "enum", "extension", "protocol",
 ```
 
 > **Previewed but not yet wired:** the `include_inherited` toggle
-> appears in `lacuna.toml.example` as a roadmap placeholder. Today
+> appears in `absentia.toml.example` as a roadmap placeholder. Today
 > the engine groups by direct parent only; transitive inheritance
 > chains aren't walked.
 
@@ -83,9 +83,9 @@ full mechanics.
 ## Adding new selectors
 
 A community plugin SDK is planned; until it lands, the
-`lacuna.extractors` entry-point group is the only registration
+`absentia.extractors` entry-point group is the only registration
 mechanism for adding language extractors. New *selector* types
 are still in-tree only.
 
-See `lacuna.toml.example` in the repo root for a working sample
+See `absentia.toml.example` in the repo root for a working sample
 with every option commented.

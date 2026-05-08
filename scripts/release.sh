@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────
-# lacuna Release Script
+# absentia Release Script
 #
 # Bumps the version in pyproject.toml, promotes the CHANGELOG's
 # [Unreleased] section, commits, annotated-tags, and pushes — which
@@ -68,7 +68,7 @@ cd "$PROJECT_DIR"
 
 PYPROJECT="pyproject.toml"
 CHANGELOG="CHANGELOG.md"
-REPO="skbays03/lacuna"
+REPO="skbays03/absentia"
 
 # ── Colors ───────────────────────────────────────────────────
 
@@ -114,7 +114,7 @@ for arg in "$@"; do
         --validate)       VALIDATE_MODE=true; INTERACTIVE=false ;;
         --help|-h)
             echo ""
-            echo -e "${BOLD}lacuna Release Script${NC}"
+            echo -e "${BOLD}absentia Release Script${NC}"
             echo ""
             echo -e "${BOLD}Interactive mode:${NC}"
             echo "  bash scripts/release.sh"
@@ -154,7 +154,7 @@ done
 if [ "$INTERACTIVE" = true ]; then
     echo ""
     echo -e "  ${BOLD}═══════════════════════════════════════════════${NC}"
-    echo -e "  ${BOLD}  lacuna Release CLI${NC}"
+    echo -e "  ${BOLD}  absentia Release CLI${NC}"
     echo -e "  ${BOLD}═══════════════════════════════════════════════${NC}"
     echo ""
     echo -e "  Current version: ${CYAN}$CURRENT_VERSION${NC}"

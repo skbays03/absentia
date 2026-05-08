@@ -1,32 +1,32 @@
 # CLI Reference
 
-The lacuna command-line interface. Run any subcommand with `--help`
+The absentia command-line interface. Run any subcommand with `--help`
 for the full flag list as printed by argparse — this page is the
 narrative companion to those messages.
 
 ## Top-level flags
 
 These run before subcommand dispatch. Most affect machine-wide state
-in `~/.lacuna/`.
+in `~/.absentia/`.
 
 - `--version` — print the installed version and exit.
-- `--purge [PATH]` — delete the `.lacuna/` state directory at PATH
+- `--purge [PATH]` — delete the `.absentia/` state directory at PATH
   (default: cwd). Removes the entity cache, suppression DB, and
-  `last_run.json`. Source code and `lacuna.toml` are untouched.
+  `last_run.json`. Source code and `absentia.toml` are untouched.
   Prompts `[y/N]` first; refuses in non-TTY contexts unless `--yes`
   is also passed.
-- `--purge-all` — sweep `$HOME` for every `.lacuna/` state
-  directory, plus the machine-wide cache at `~/.lacuna/` (the
+- `--purge-all` — sweep `$HOME` for every `.absentia/` state
+  directory, plus the machine-wide cache at `~/.absentia/` (the
   calibration cache, settings, and runs log). Same prompt + non-TTY
   refusal as `--purge`.
 - `--yes` / `-y` — skip the `[y/N]` prompt on `--purge` /
   `--purge-all`. Use only when scripted; the prompt is the safety net.
-- `--jobs-default N` — pin the default worker count for `lacuna
-  check` to N. Saved to `~/.lacuna/settings.json`. `--jobs-default 0`
+- `--jobs-default N` — pin the default worker count for `absentia
+  check` to N. Saved to `~/.absentia/settings.json`. `--jobs-default 0`
   reverts to auto (half of CPU cores). If N exceeds your detected
   core count you'll be re-prompted to confirm — over-subscribing
   usually slows scans because workers contend for CPU. Per-invocation
-  `lacuna check --jobs N` always overrides.
+  `absentia check --jobs N` always overrides.
 - `--no-color` — force-disable ANSI color in CLI output. Equivalent
   to setting `NO_COLOR=1` in the environment; the flag wins if both
   are set. Honored by both the rich-based output (gap rows,
@@ -35,11 +35,11 @@ in `~/.lacuna/`.
   decision points (resolved root, language list, exclude patterns,
   cold-path matching, etc.). Tied to dev work — opposite pole from
   `--quiet`. Doesn't change scan behavior; only what gets printed.
-  Sets `LACUNA_DEBUG=1` in the environment so any code that wants
+  Sets `ABSENTIA_DEBUG=1` in the environment so any code that wants
   to add diagnostic prints can check the env var without importing
   CLI internals.
 
-## `lacuna [path]`
+## `absentia [path]`
 
 Run with no subcommand, from a TTY, to launch the
 [interactive TUI](tui-keys.md). Outside a TTY, prints help.
@@ -47,9 +47,9 @@ Run with no subcommand, from a TTY, to launch the
 Pass an optional path to open the TUI in a different directory:
 
 ```bash
-lacuna                  # TUI in cwd
-lacuna ~/myrepo         # TUI in ~/myrepo
-lacuna /tmp/linux       # TUI in /tmp/linux
+absentia                  # TUI in cwd
+absentia ~/myrepo         # TUI in ~/myrepo
+absentia /tmp/linux       # TUI in /tmp/linux
 ```
 
 The path shorthand only fires when the argument is a real,
@@ -59,29 +59,29 @@ existing directory and not a known subcommand (`init`, `check`,
 The TUI scans with `--jobs 1` regardless of your `--jobs-default`
 setting. Spawn-mode `ProcessPoolExecutor` (the macOS multiprocessing
 default) doesn't play well inside Textual's running event loop, so
-the safe choice is single-process. The CLI path (`lacuna check`)
+the safe choice is single-process. The CLI path (`absentia check`)
 keeps full parallelism. Most TUI scans are incremental anyway, so
 the threshold for parallelism wouldn't fire.
 
-## `lacuna init [path]`
+## `absentia init [path]`
 
-Bootstraps a project: writes a default `lacuna.toml` and creates a
-`.lacuna/` state directory (also added to `.gitignore` if one
+Bootstraps a project: writes a default `absentia.toml` and creates a
+`.absentia/` state directory (also added to `.gitignore` if one
 exists). Prints a first-scan time estimate at the end so you know
-roughly how long the first `lacuna check` will take.
+roughly how long the first `absentia check` will take.
 
-The generated `lacuna.toml` does NOT restrict the language list —
+The generated `absentia.toml` does NOT restrict the language list —
 omitting the `languages` key activates every built-in extractor.
 Set the key explicitly to scan a subset.
 
 Flags:
 
-- `--force` — overwrite an existing `lacuna.toml`.
-- `--quiet` / `-q` — suppress the "Initialized lacuna in PATH"
+- `--force` — overwrite an existing `absentia.toml`.
+- `--quiet` / `-q` — suppress the "Initialized absentia in PATH"
   message and the first-scan estimate footer. Useful for scripts
-  that init then immediately run `lacuna check`.
+  that init then immediately run `absentia check`.
 
-## `lacuna check [path]`
+## `absentia check [path]`
 
 Batch mode: scans the project, mines patterns, prints gaps. Exits
 non-zero on any gap by default; `--max-gaps N` raises the
@@ -101,7 +101,7 @@ when `--json`, `--quiet`, or non-TTY.
 
 Flags:
 
-- `--config PATH` — explicit `lacuna.toml` path (default: search
+- `--config PATH` — explicit `absentia.toml` path (default: search
   upward from `path`).
 - `--min-confidence FLOAT` — override `mining.min_confidence` from
   config.
@@ -116,7 +116,7 @@ Flags:
 - `--max-gaps N` — CI tolerance flag. Exit non-zero only when the
   gap count exceeds N. `--max-gaps 0` fails on any gap (matches
   the default behavior); `--max-gaps 5` lets up to 5 gaps slide
-  before failing the build. Useful for adopting lacuna on an
+  before failing the build. Useful for adopting absentia on an
   existing codebase without blocking the build the first day.
 - `--cold [PATH]` — force re-parse of files at PATH (default:
   the whole scanned root). Recursive — passing a directory
@@ -127,18 +127,18 @@ Flags:
   `--cold` is back to warm).
 - `--language LANG[,LANG]` — restrict the scan to specific
   languages (comma-separated). Overrides `[scan.languages]` in
-  `lacuna.toml`. Useful for "I just edited Python; only re-scan
+  `absentia.toml`. Useful for "I just edited Python; only re-scan
   Python this run." Validates against the registered extractors.
 - `--exclude PATTERN` — skip files / directories matching PATTERN
   (POSIX glob, e.g. `'**/vendor/**'`). May be passed multiple
   times (`--exclude tests --exclude docs`). *Appends* to
-  `[scan.exclude]` in `lacuna.toml` rather than replacing — the
+  `[scan.exclude]` in `absentia.toml` rather than replacing — the
   config typically holds long-lived excludes (vendored deps,
   build artifacts) and the flag adds one-off exclusions for this
   run. Pattern matching uses `PurePosixPath.full_match`, so `**`
   segments work as expected.
 
-## `lacuna est [path]` (alias: `lacuna estimate`)
+## `absentia est [path]` (alias: `absentia estimate`)
 
 Predicts cold-scan time *without* actually scanning. Walks the
 project, applies a calibrated cost model, prints a headline total
@@ -154,8 +154,8 @@ Total check estimate     ~7m 30s ± 1m 30s   (medium confidence)
 
 Three confidence levels — `high`, `medium`, `low` — derived from
 how much of your project's language mix the calibration covers,
-the calibration's age, and how many prior `lacuna check` runs
-have accumulated in `~/.lacuna/runs.jsonl`. The band tightens as
+the calibration's age, and how many prior `absentia check` runs
+have accumulated in `~/.absentia/runs.jsonl`. The band tightens as
 you accumulate samples: every cold scan automatically refines the
 mining-throughput model, no explicit recalibration required.
 
@@ -163,15 +163,15 @@ For the full methodology — cost model, Amdahl's law, calibration
 internals, runs aggregation, accuracy expectations — see
 [the estimator doc](../explanation/estimator.md).
 
-On first run (when no `~/.lacuna/calibration.json` exists), prompts
+On first run (when no `~/.absentia/calibration.json` exists), prompts
 you to calibrate against a corpus on your machine. The cache is
-re-prompted when lacuna upgrades, when the core count changes
+re-prompted when absentia upgrades, when the core count changes
 (e.g. you swap laptops), or when 90 days pass.
 
 Flags:
 
-- `--config PATH` — explicit `lacuna.toml` path (default: search
-  upward from `path`). Mirrors `lacuna check --config`.
+- `--config PATH` — explicit `absentia.toml` path (default: search
+  upward from `path`). Mirrors `absentia check --config`.
 - `--jobs N` (`-j N`) — override which worker count is highlighted
   as the headline. The full per-jobs table still renders; this
   only changes which row is the bottom-line prediction. Defaults
@@ -203,14 +203,14 @@ Flags:
   non-interactive (no calibration prompts).
 - `--recalibrate` — force re-running calibration even if a fresh
   cache exists. Calibration runs against the `path` argument
-  (default: cwd), so `lacuna est ~/myrepo --recalibrate` produces
+  (default: cwd), so `absentia est ~/myrepo --recalibrate` produces
   a calibration tuned to that codebase's language mix.
 - `--use-synthetic` — calibrate against a bundled synthetic Python
   corpus instead of `path`. Useful when the current directory is
   empty or too small (< 30 files / < 100 KB) for reliable
   calibration.
-- `--history` — print recent `lacuna check` runs from
-  `~/.lacuna/runs.jsonl` (when, jobs, files, check time, parse
+- `--history` — print recent `absentia check` runs from
+  `~/.absentia/runs.jsonl` (when, jobs, files, check time, parse
   time, mine time, root) plus the aggregated mining throughput
   across compatible runs. Useful for auditing what data the
   prediction is based on.
@@ -220,15 +220,15 @@ Flags:
   argument; the symmetry with `check --cold` keeps muscle memory
   consistent across subcommands.
 - `--language LANG[,LANG]` — scope the prediction to specific
-  languages. Mirrors `lacuna check --language`.
+  languages. Mirrors `absentia check --language`.
 - `--exclude PATTERN` — skip files / directories matching PATTERN
   from the corpus walk used for the prediction. May be passed
-  multiple times. Mirrors `lacuna check --exclude`.
+  multiple times. Mirrors `absentia check --exclude`.
 
-## `lacuna suppress [gap-id] [path]`
+## `absentia suppress [gap-id] [path]`
 
 Marks a gap as known / intentional so it stops appearing in
-`lacuna check` output and the TUI Gaps view. Equivalent to pressing
+`absentia check` output and the TUI Gaps view. Equivalent to pressing
 `s` in the TUI.
 
 The optional `path` positional argument is the project root

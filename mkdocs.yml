@@ -1,6 +1,6 @@
-site_name: lacuna
+site_name: absentia
 site_description: Find the holes your code already drew.
-# site_url: https://lacuna.dev   # Deferred — see DEFERRALS.md
+# site_url: https://absentia.dev   # Deferred — see DEFERRALS.md
 
 theme:
   name: material
@@ -25,7 +25,7 @@ nav:
   - Reference:
       - CLI: reference/cli.md
       - TUI keybindings: reference/tui-keys.md
-      - Configuration: reference/lacuna-toml.md
+      - Configuration: reference/absentia-toml.md
       - Selectors: reference/selectors.md
   - Explanation:
       - What is negative-space search?: explanation/what-is-negative-space.md

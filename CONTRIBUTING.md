@@ -1,9 +1,9 @@
-# Contributing to lacuna
+# Contributing to absentia
 
 Conventions established through working on the project. Follow them
 when adding code; depart from them only with explicit justification.
 
-For project context (what lacuna is, locked-in design decisions,
+For project context (what absentia is, locked-in design decisions,
 repo layout, dev scripts), see [CLAUDE.md](CLAUDE.md).
 
 ---
@@ -12,7 +12,7 @@ repo layout, dev scripts), see [CLAUDE.md](CLAUDE.md).
 
 Anything that can run for more than ~1 second from a human's
 perspective gets a progress indicator. Three flavors live in
-`src/lacuna/progress.py`:
+`src/absentia/progress.py`:
 
 | Use this | When |
 |---|---|
@@ -83,7 +83,7 @@ Any flag or subcommand that deletes data follows the
 2. **Default `[y/N]`** — capital N, so a bare Enter aborts.
 3. **Refuse outright in non-TTY contexts** unless the user passed
    `--yes` / `-y` to skip the prompt explicitly.
-4. **Sanity-check the target** before deleting. If a `.lacuna/`
+4. **Sanity-check the target** before deleting. If a `.absentia/`
    directory doesn't have the expected `version` or `state.db`,
    refuse — it might be an unrelated user file.
 5. Report per-deletion failures without aborting the rest of the
@@ -104,7 +104,7 @@ bash scripts/local_ci.sh
 
 # Or the four commands manually:
 .venv/bin/python -m ruff check .
-.venv/bin/python -m mypy src/lacuna
+.venv/bin/python -m mypy src/absentia
 .venv/bin/python -m pytest --cov --cov-report=term-missing -q
 .venv/bin/python -m mkdocs build --strict
 ```
@@ -133,7 +133,7 @@ source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -e .[dev,docs]
 ```
 
-`pip install lacuna` doesn't work — the package isn't on PyPI yet.
+`pip install absentia` doesn't work — the package isn't on PyPI yet.
 For everyday changes, `git pull` is enough; the editable install
 points at the working tree. Re-run `pip install -e .` only when
 `pyproject.toml` adds a new dependency.
@@ -145,7 +145,7 @@ When you ship a feature, update related docs **in the same commit**:
 | Touched | Doc to update |
 |---|---|
 | New CLI flag or subcommand | `docs/reference/cli.md` + `--help` epilog |
-| New config option | `docs/reference/lacuna-toml.md` + `lacuna.toml.example` |
+| New config option | `docs/reference/absentia-toml.md` + `absentia.toml.example` |
 | New TUI keybinding | `docs/reference/tui-keys.md` + in-app `?` help |
 | New selector | `docs/reference/selectors.md` |
 | Architectural shift | `docs/explanation/architecture.md` |
@@ -172,9 +172,9 @@ The work is the contract; the UI is decoration.
 
 ## 8. Bump `EXTRACTOR_FINGERPRINT` when extractor output changes
 
-The per-file content hash that drives lacuna's incremental cache is
+The per-file content hash that drives absentia's incremental cache is
 salted with `extractors.EXTRACTOR_FINGERPRINT` (a string constant
-in `src/lacuna/extractors/__init__.py`). Bumping the constant
+in `src/absentia/extractors/__init__.py`). Bumping the constant
 invalidates every cached entry on the next scan, so users
 automatically pick up new feature_kinds / entity kinds /
 extractor-logic-fixes without having to know to `--cold` or
@@ -191,12 +191,12 @@ Examples that DON'T need a bump:
 - comment / docstring changes inside extractor source
 - pure refactor (e.g. extracting a helper) with no output change
 - typo fixes
-- changes to `src/lacuna/mining.py`, `selectors.py`, `series.py`,
-  or anything *not* under `src/lacuna/extractors/` (mining runs
+- changes to `src/absentia/mining.py`, `selectors.py`, `series.py`,
+  or anything *not* under `src/absentia/extractors/` (mining runs
   from scratch every scan and doesn't read the cache)
 
 CI gate: `scripts/check_fingerprint_bump.sh` runs in CI and fails
-when any file under `src/lacuna/extractors/` changed in a PR but
+when any file under `src/absentia/extractors/` changed in a PR but
 `EXTRACTOR_FINGERPRINT` didn't. The gate has a refactor escape
 hatch — include the literal `[no-fingerprint-bump]` in any commit
 message in the diff range and the check skips, recording the

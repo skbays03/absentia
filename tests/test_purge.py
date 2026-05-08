@@ -44,7 +44,7 @@ def test_purge_refuses_unrelated_absentia_dir(tmp_path, capsys):
     """A .absentia/ that doesn't look like ours (no version/state.db) is refused."""
     rogue = tmp_path / ".absentia"
     rogue.mkdir()
-    (rogue / "random.txt").write_text("not lacuna")
+    (rogue / "random.txt").write_text("not absentia")
     rc = cmd_purge(tmp_path, confirm=False)
     assert rc == 1
     assert rogue.exists()  # not deleted

@@ -1,6 +1,6 @@
 # Architecture and performance
 
-Lacuna is a single-process Python program. It parses code with
+Absentia is a single-process Python program. It parses code with
 tree-sitter, mines patterns with classical frequent-itemset
 techniques, and persists state in SQLite. There's no daemon, no
 network, no model. This doc describes how the pieces fit together
@@ -43,7 +43,7 @@ in-tree extractor list and the entry-point group name.
 
 ### `selectors` — entities → groups
 A selector is conceptually a function `entities → list[Group]`.
-Lacuna ships three: `directory` (group by parent dir), `decorator`
+Absentia ships three: `directory` (group by parent dir), `decorator`
 (group by which decorator/annotation/attribute an entity carries),
 `parent_class` (group by inheritance / protocol conformance / trait
 impl). Adding a fourth is ~30 lines.
@@ -69,7 +69,7 @@ still walk every cached entity.
 Both consume the same `scan_corpus` function. The CLI prints text
 or JSON for CI/scripting; the TUI is an interactive Textual app for
 exploration. Anything either does is also available to embedders
-that import lacuna as a library.
+that import absentia as a library.
 
 ## Performance benchmarks
 
@@ -100,7 +100,7 @@ below.
 | Lua | [nvim-lua/plenary.nvim](https://github.com/nvim-lua/plenary.nvim) | 372 | 11 | 1 | 0.05s |
 | Bash | [Bash-it/bash-it](https://github.com/Bash-it/bash-it) | 861 | 41 | 10 | 0.08s |
 
-**Headline numbers** (lacuna against the Linux kernel — 65,004 files
+**Headline numbers** (absentia against the Linux kernel — 65,004 files
 / 686,923 entities across ~30 million lines of C, on a 10-core
 M-series MacBook):
 
@@ -131,11 +131,11 @@ the architecture seam this exploits.
 
 > *Numbers above measured 2026-05-07 on commit `a48c4c7` against
 > a clean Linux kernel checkout. To know what your hardware does,
-> run* `lacuna est` *— it walks the corpus, applies a calibrated
+> run* `absentia est` *— it walks the corpus, applies a calibrated
 > cost model, and prints a per-jobs estimate before you scan.*
 
 Numbers above are M-series specific. To know what your hardware
-does, run `lacuna est` from any project directory — it walks the
+does, run `absentia est` from any project directory — it walks the
 corpus, applies a calibrated cost model, and prints a per-jobs
 estimate before you scan. Methodology in
 [the estimator doc](estimator.md).
@@ -143,7 +143,7 @@ estimate before you scan. Methodology in
 ### Throughput
 
 Across all 16 sample corpora (one per supported language; TS+TSX
-share the TypeScript corpus), lacuna sustains
+share the TypeScript corpus), absentia sustains
 **5,000–15,000 entities per second** on a single Python process,
 with the variance driven mostly by per-language extractor cost
 (deeper AST = more nodes to walk). There's no quadratic term: the
@@ -174,12 +174,12 @@ Cold scan time vs. corpus size (entity count)
 
 ### Memory
 
-Lacuna's working set scales with entity count. Peak RSS during a cold
+Absentia's working set scales with entity count. Peak RSS during a cold
 kernel scan (686k entities) is ~2 GB at single-process and ~2.2 GB
 at default jobs (the 5 worker processes hold tree-sitter ASTs
 simultaneously during parse). Most projects sit far below that —
 a 30k-entity Python codebase peaks around 200 MB; a 100k-entity
-Rust project around 500 MB. Lacuna doesn't load every file's source
+Rust project around 500 MB. Absentia doesn't load every file's source
 into memory simultaneously — parses are streamed and ASTs released
 after extraction; the steady-state memory after extract is the entity
 store + mining indexes.
@@ -208,26 +208,26 @@ policy.
 
 ### Continuous calibration
 
-`lacuna est` (the cold-scan time predictor) starts from a one-shot
-calibration cache at `~/.lacuna/calibration.json`. Every successful
-`lacuna check` *also* appends a row to a machine-wide log at
-`~/.lacuna/runs.jsonl`: timestamp, version, cores, jobs, root,
+`absentia est` (the cold-scan time predictor) starts from a one-shot
+calibration cache at `~/.absentia/calibration.json`. Every successful
+`absentia check` *also* appends a row to a machine-wide log at
+`~/.absentia/runs.jsonl`: timestamp, version, cores, jobs, root,
 file-count, language-byte shape, per-stage timings. Once at least
-three compatible runs accumulate, `lacuna est` aggregates them into
+three compatible runs accumulate, `absentia est` aggregates them into
 a refined `mining_seconds_per_byte` value that overrides the static
 calibration's seed. No telemetry — the log is local-only.
 
-Practical effect: the first few `lacuna est` runs are seeded by
-calibration; once you've actually run `lacuna check` a handful of
+Practical effect: the first few `absentia est` runs are seeded by
+calibration; once you've actually run `absentia check` a handful of
 times, the predictor switches to real-world data and the confidence
 band tightens. The calibration step never strictly *expires* — it's
 just superseded by better data as you accumulate it.
 
-`lacuna est --history` prints the accumulated rows for auditing.
+`absentia est --history` prints the accumulated rows for auditing.
 
 ### Progress UX
 
-A `lacuna check` run in interactive text mode (TTY stderr, no
+A `absentia check` run in interactive text mode (TTY stderr, no
 `--json`, no `--quiet`) renders a five-stage display: walking
 corpus, scanning, loading store, mining rules, finalizing. Each
 stage finishes with a ✓ summary line + elapsed time and stays on
@@ -276,9 +276,9 @@ iterations. Net perf cost: below the noise floor of
 `time.perf_counter`. Lazy `item=lambda: ...` means f-strings only
 run *after* the throttle accepts.
 
-Stage timings are persisted to `.lacuna/last_run.json` (and the
-machine-wide runs log at `~/.lacuna/runs.jsonl`) so
-`lacuna est` can show a real "Last cold-scan stage breakdown"
+Stage timings are persisted to `.absentia/last_run.json` (and the
+machine-wide runs log at `~/.absentia/runs.jsonl`) so
+`absentia est` can show a real "Last cold-scan stage breakdown"
 block on subsequent runs. The runs log also stores
 `mine_by_strategy_ms` — per-strategy mine-stage timings — so
 profile-driven optimization work doesn't need ad-hoc
@@ -298,7 +298,7 @@ identical, only the rendering differs.
 ### Parallel scans
 
 Parse + extract is per-file independent, so we parallelize that
-stage across a worker pool of processes. `lacuna check --jobs N`
+stage across a worker pool of processes. `absentia check --jobs N`
 controls the worker count; the default is half of detected CPU
 cores (a sensible default on a developer machine where an IDE,
 browser, and chat tools are also competing for cores). Storage
@@ -338,8 +338,8 @@ mypyc accepted both modules as-is. The build hook is in
 [tool.hatch.build.targets.wheel.hooks.mypyc]
 dependencies = ["hatch-mypyc"]
 include = [
-    "src/lacuna/mining.py",
-    "src/lacuna/symmetry.py",
+    "src/absentia/mining.py",
+    "src/absentia/symmetry.py",
 ]
 ```
 
@@ -355,16 +355,16 @@ the headline mining speedup is missing.
 - **Single-machine first.** The largest target we publicly benchmark
   (Linux kernel) fits in 100 seconds on a laptop. Most projects fit
   in seconds. There's no engineering pressure for distributed scans
-  at the audiences lacuna targets.
+  at the audiences absentia targets.
 - **Plain Python**, no native code beyond the tree-sitter
-  bindings. Easy to install (`pip install lacuna`), trivial to
+  bindings. Easy to install (`pip install absentia`), trivial to
   inspect, debug, or extend.
 - **Deterministic.** Same input, same output; the engine is just
   counting. See [why no LLM](why-no-llm.md).
 - **Incremental.** Caching is content-hash-based, so every commit
   benefits from work the previous run did.
 - **Plug-in friendly.** New languages slot in via the
-  `lacuna.extractors` entry-point group; new selectors slot in via
+  `absentia.extractors` entry-point group; new selectors slot in via
   the same selector interface; new feature kinds slot in via the
   per-extractor feature emission. None of these require modifying
   the core engine.
@@ -378,7 +378,7 @@ the headline mining speedup is missing.
   already the bottleneck and it's CPU-bound C. We do parallelize
   parse + extract across CPU cores (see *Parallel scans* above).
 - Not a long-running service. Each scan is a process that starts,
-  reads its `.lacuna/` cache, scans, writes back, exits. The TUI is
+  reads its `.absentia/` cache, scans, writes back, exits. The TUI is
   the same scan loop wrapped in an interactive front-end.
 
 ## Reproducing the benchmarks
@@ -391,7 +391,7 @@ python scripts/scan_remote.py URL                  # scan an arbitrary repo
 The `KNOWN_CORPORA` table at the top of `scripts/scan_remote.py`
 lists curated targets per language. The benchmark numbers above
 were generated with shallow clones (`--depth 1` is the script's
-default), a cold `.lacuna/` directory each run, and `--jobs 1` to
+default), a cold `.absentia/` directory each run, and `--jobs 1` to
 isolate single-process performance. Hardware: M-series MacBook.
 Production runs (default `--jobs`) are faster on the long-running
 corpora; see *Parallel scans* above.

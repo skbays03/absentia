@@ -1,4 +1,4 @@
-"""Refactor-time output diff for ``lacuna check``.
+"""Refactor-time output diff for ``absentia check``.
 
 Two ways to use it. Both compare two scan outputs and report drift
 in the rules + gaps, exit 0 on identical, 1 on any divergence.
@@ -6,9 +6,9 @@ in the rules + gaps, exit 0 on identical, 1 on any divergence.
 The intended workflow is the "before/after a refactor" loop:
 
     # Before the change:
-    lacuna check . --json > /tmp/before.json
+    absentia check . --json > /tmp/before.json
     # ... edit code ...
-    lacuna check . --json > /tmp/after.json
+    absentia check . --json > /tmp/after.json
     python scripts/diff_scan.py /tmp/before.json /tmp/after.json
 
 If you'd rather skip writing files, the script can run the second
@@ -35,19 +35,19 @@ def _load(path: Path) -> dict:
         return json.loads(f.read())
 
 
-def _run_lacuna_json(target: Path) -> dict:
-    """Invoke ``lacuna check --json`` against ``target`` and return the
-    parsed JSON. Best-effort: if the lacuna CLI returns non-zero (which
+def _run_absentia_json(target: Path) -> dict:
+    """Invoke ``absentia check --json`` against ``target`` and return the
+    parsed JSON. Best-effort: if the absentia CLI returns non-zero (which
     it will if any gap is found, since --max-gaps defaults to 0), we
     still parse the JSON it printed to stdout."""
     proc = subprocess.run(
-        ["lacuna", "check", str(target), "--json"],
+        ["absentia", "check", str(target), "--json"],
         capture_output=True,
         text=False,
     )
     if not proc.stdout:
         sys.stderr.write(
-            f"diff_scan: lacuna check produced no JSON output. stderr:\n"
+            f"diff_scan: absentia check produced no JSON output. stderr:\n"
             f"{proc.stderr.decode('utf-8', errors='replace')}\n"
         )
         sys.exit(2)
@@ -65,7 +65,7 @@ def _gap_index(scan: dict) -> dict[str, dict]:
 
 
 def _rule_index(scan: dict) -> dict[str, dict]:
-    """Pull the unique rules referenced by the gap list. Lacuna's JSON
+    """Pull the unique rules referenced by the gap list. Absentia's JSON
     output nests the rule under each gap rather than emitting a
     top-level rules array, so we deduplicate by rule.id here."""
     out: dict[str, dict] = {}
@@ -142,12 +142,12 @@ def diff_scans(before: dict, after: dict) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Diff two `lacuna check --json` outputs."
+        description="Diff two `absentia check --json` outputs."
     )
     parser.add_argument(
         "before",
         type=Path,
-        help="Baseline scan JSON (from `lacuna check ... --json`).",
+        help="Baseline scan JSON (from `absentia check ... --json`).",
     )
     parser.add_argument(
         "after",
@@ -159,7 +159,7 @@ def main(argv: list[str] | None = None) -> int:
         "--against",
         type=Path,
         help=(
-            "Run `lacuna check --json` against this path and compare "
+            "Run `absentia check --json` against this path and compare "
             "to <before>. Skip writing the second JSON file yourself."
         ),
     )
@@ -171,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("Pass <after> OR --against, not both.")
 
     before = _load(args.before)
-    after = _load(args.after) if args.after else _run_lacuna_json(args.against)
+    after = _load(args.after) if args.after else _run_absentia_json(args.against)
 
     return diff_scans(before, after)
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Diagnose where lacuna spends time scanning a corpus.
+"""Diagnose where absentia spends time scanning a corpus.
 
 Run on the same target directory across machines (Mac vs WSL vs
 native Linux) to see if the bottleneck is filesystem I/O,
-tree-sitter parsing, lacuna's extractor, or storage commits.
+tree-sitter parsing, absentia's extractor, or storage commits.
 
 Reports per-stage timing for a representative sample of files,
 plus environment info (Python version, CPU count, WSL version,
@@ -252,7 +252,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="diagnose_scan",
         description=(
-            "Diagnose lacuna's per-stage scan timing. Run with the same "
+            "Diagnose absentia's per-stage scan timing. Run with the same "
             "target on Mac and WSL, diff the two outputs to see where the "
             "discrepancy lives."
         ),

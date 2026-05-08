@@ -70,7 +70,7 @@ run_step() {
 # in pyproject.toml [tool.coverage.report] and fires automatically
 # via the --cov flag.
 run_step "ruff (lint)"             "$RUFF" check .
-run_step "mypy (type check)"       "$MYPY" src/lacuna
+run_step "mypy (type check)"       "$MYPY" src/absentia
 run_step "pytest + coverage gate"  "$PY" -m pytest --cov --cov-report=term-missing -q
 run_step "mkdocs --strict (docs)"  "$MKDOCS" build --strict --quiet
 
