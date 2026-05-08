@@ -62,14 +62,14 @@ Wire the hook into a fresh clone:
 
 ```bash
 ln -sf ../../.githooks/commit-msg .git/hooks/commit-msg
-# or globally (also picks up pre-push, see §6):
+# or globally (also picks up pre-push, see §4):
 git config core.hooksPath .githooks
 ```
 
 There's also a **`pre-push` hook** at `.githooks/pre-push` that runs
 `scripts/local_ci.sh` (the same checks GitHub Actions runs: ruff,
 mypy, pytest + coverage gate, mkdocs --strict). The
-`git config core.hooksPath .githooks` install picks both up. See §6
+`git config core.hooksPath .githooks` install picks both up. See §4
 *Local CI before commit / push* for the manual invocation form and
 the skip-once escape hatch.
 
@@ -94,8 +94,9 @@ piping `y` through stdin.
 
 ## 4. Local CI before commit / push
 
-Two ways to run the same checks GitHub Actions runs
-(`.github/workflows/ci.yml`):
+Two ways to run the full check set (the union of what `ci.yml` runs
+on every push + what `release-checks.yml` runs on tag — see §9
+*Cutting a release* for the CI split):
 
 ```bash
 # One-shot script — orders cheapest-first so iteration is fast.
@@ -205,7 +206,50 @@ The bump-history docstring on the constant itself is the authoritative
 log of what each version absorbed. Keep the bump in the same commit
 as the extractor change; reviewers can see both at once.
 
-## 9. Stable IDs across runs
+## 9. Cutting a release
+
+Two GitHub Actions workflows split the verification load:
+
+- **`ci.yml`** — runs on every push to `main` and every PR. Cheap +
+  high-signal: `lint` (ruff) and `fingerprint-bump`. Fast feedback
+  on the gates that earn their keep pre-merge.
+- **`release-checks.yml`** — runs on tag push (`v*.*.*`) and
+  `workflow_dispatch`. Heavy: `pytest` matrix across Python 3.13 /
+  3.14, `mypy`, `mkdocs --strict`. Mirrors what `scripts/local_ci.sh`
+  runs locally — redundant per-push, valuable as a release gate.
+- **`wheels.yml`** — also tag-triggered. Builds mypyc wheels for
+  the platform × Python matrix.
+
+Use the release script rather than tagging manually:
+
+```bash
+bash scripts/release.sh           # interactive (validate / patch / minor / major / set / cancel)
+bash scripts/release.sh --patch   # 0.1.0 → 0.1.1
+bash scripts/release.sh --minor   # 0.1.0 → 0.2.0
+bash scripts/release.sh --major   # 0.1.0 → 1.0.0
+bash scripts/release.sh --set=1.0.0
+```
+
+The script bumps `pyproject.toml`, promotes the CHANGELOG's
+`[Unreleased]` heading to `[X.Y.Z] - YYYY-MM-DD` (and inserts a
+fresh empty `[Unreleased]` skeleton above it), commits with
+`release: vX.Y.Z (bump-type)`, annotated-tags `vX.Y.Z`, and pushes
+both. Each step rolls back on failure.
+
+If you need to verify the heavy CI matrix passes *before* cutting a
+real tag (e.g. you've changed something the local pre-push hook
+can't reproduce — a Python-3.14-specific bug, a mkdocs issue under
+strict mode), use:
+
+```bash
+bash scripts/release.sh --validate
+```
+
+That dispatches `release-checks.yml` on the current branch via
+`gh workflow run` — no version bump, no commit, no tag, no push.
+Requires the GitHub CLI (`gh`) authenticated.
+
+## 10. Stable IDs across runs
 
 Suppressions, follow-links, watchers, and external integrations
 all depend on stable IDs.

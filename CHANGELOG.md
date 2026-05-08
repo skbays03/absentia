@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **CI split: cheap gates per-push, heavy gates per-tag.** `ci.yml`
+  now runs only `lint` + `fingerprint-bump` on every push to main /
+  PR — both are seconds-cheap and earn their keep pre-merge.
+  The full `pytest` matrix (3.13 + 3.14), `mypy`, and
+  `mkdocs --strict` moved to the new `release-checks.yml` workflow,
+  triggered on `push: tags: ['v*.*.*']` and `workflow_dispatch`.
+  Mirrors the Dev-Dashboard pattern of tag-only release builds.
+  The local `scripts/local_ci.sh` (and the `.githooks/pre-push`
+  hook that calls it) still runs the full set on the developer's
+  machine before push, so heavy gates aren't bypassed — they're
+  just deferred to the release boundary instead of duplicated per
+  push. Saves substantial GitHub Actions minutes for a solo-dev
+  workflow with a Mac → push → WSL pull cross-platform cycle.
+
 - **Minimum Python is now 3.13** (was 3.11). No active downstream
   users yet, so the cost is zero and the cleanup is real:
   ``os.process_cpu_count()`` (cgroup-aware on Linux containers) is
@@ -38,6 +52,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   panes < 120 cols.
 
 ### Added
+
+- **`scripts/release.sh` — interactive release CLI.** Bumps
+  `pyproject.toml`, promotes CHANGELOG `[Unreleased]` to a
+  versioned heading, commits, annotated-tags, and pushes (each
+  step rolls back on failure). Tag push triggers
+  `release-checks.yml` + `wheels.yml`. Modes: interactive menu
+  (validate / patch / minor / major / set / cancel) plus
+  non-interactive flags (`--patch`, `--minor`, `--major`,
+  `--set=X.Y.Z`, `--validate`, `--no-verify`). `--validate`
+  dispatches `release-checks.yml` on the current branch via
+  `gh workflow run` without bumping anything — useful for
+  catching Python-3.14-specific failures the local pre-push
+  hook can't reproduce. Mirrors the Dev-Dashboard `build.sh`
+  style.
 
 - **`EXTRACTOR_FINGERPRINT` cache-invalidation salt.** The per-file
   content hash that decides "use cached extract or re-parse?" is

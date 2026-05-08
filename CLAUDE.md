@@ -80,6 +80,8 @@ scripts/           Maintenance + diagnostic scripts
   update_ts.py     Tree-sitter grammar version sweep
   scan_remote.py   Sanity-check against public corpora
   diagnose_scan.py Per-stage scan timing for cross-machine debugging
+  release.sh       Interactive bump + tag + push (triggers release-checks.yml)
+  local_ci.sh      Mirror of CI checks (ruff + mypy + pytest+cov + mkdocs --strict)
 docs/              Mkdocs-material site (Diátaxis structure)
   tutorial/        Learn-by-doing
   how-to/          Task-oriented recipes
@@ -146,6 +148,28 @@ well-maintained. The `KNOWN_CORPORA` dict is *the* sanity-check resource —
 if a language ships without an entry, we have no quick way to verify the
 extractor works on real code as the codebase evolves.
 
+### `scripts/release.sh` — interactive release CLI
+
+Bumps `pyproject.toml`, promotes the CHANGELOG's `[Unreleased]` heading
+to a versioned `[X.Y.Z] - YYYY-MM-DD`, commits, annotated-tags, and
+pushes — which triggers the heavy CI gates in `release-checks.yml`
+(test matrix · mypy · mkdocs --strict) plus the wheels build in
+`wheels.yml`. Mirrors the Dev-Dashboard `build.sh` style.
+
+```bash
+bash scripts/release.sh                # interactive: validate / patch / minor / major / set
+bash scripts/release.sh --patch        # 0.1.0 → 0.1.1
+bash scripts/release.sh --minor        # 0.1.0 → 0.2.0
+bash scripts/release.sh --major        # 0.1.0 → 1.0.0
+bash scripts/release.sh --set=1.0.0    # explicit
+bash scripts/release.sh --validate     # dispatch release-checks.yml on current branch (no bump)
+```
+
+`--validate` requires the GitHub CLI (`gh`) authenticated. Each step
+of a real release (commit / tag / push / tag-push) rolls back on
+failure. See `CONTRIBUTING.md` §9 for the CI split rationale (cheap
+gates on every push, heavy gates on tag).
+
 ## Conventions
 
 The full project-wide convention list lives in
@@ -161,6 +185,8 @@ making non-trivial code changes. Topics covered there:
 - Local CI before commit (`pytest && ruff && mypy && mkdocs --strict`).
 - Editable install for development.
 - Doc-with-feature — which docs to update for which kind of change.
+- Release flow — when to run `scripts/release.sh`, what the CI split
+  (cheap on push, heavy on tag) means for which gate catches what.
 - Defensive UI hooks (progress callbacks must never break the work).
 - Stable IDs across runs (suppressions and external integrations
   depend on it).

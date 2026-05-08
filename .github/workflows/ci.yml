@@ -1,5 +1,16 @@
 name: CI
 
+# Cheap, high-signal gates that fire on every push to main and every
+# PR. Heavy verification (test matrix across Python versions, mypy,
+# mkdocs --strict) lives in release-checks.yml and runs on tag push +
+# manual dispatch — see scripts/release.sh for the dispatch entry point.
+#
+# Rationale: the local pre-push hook (scripts/local_ci.sh) already runs
+# the full check set on the developer's machine before push, and the
+# Mac → push → WSL pull cycle covers cross-platform verification at no
+# cost. CI's remaining role here is the fingerprint-bump gate (which
+# only earns its keep pre-merge) plus a free lint pass.
+
 on:
   push:
     branches: [main]
@@ -15,31 +26,6 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: Test (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.13", "3.14"]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: pyproject.toml
-      - name: Install lacuna with dev extras
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-      - name: Run tests with coverage gate
-        # Coverage config (branch=true, omit mypyc files, fail_under=73)
-        # lives in pyproject.toml [tool.coverage.*]. The `--cov` flag
-        # picks it up; the gate fires automatically.
-        run: pytest --cov --cov-report=term -q
-
   lint:
     name: Lint (ruff)
     runs-on: ubuntu-latest
@@ -77,40 +63,3 @@ jobs:
             BASE="HEAD~1"
           fi
           bash scripts/check_fingerprint_bump.sh "$BASE"
-
-  typecheck:
-    name: Type check (mypy)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-          cache: pip
-          cache-dependency-path: pyproject.toml
-      - name: Install lacuna with dev extras
-        # mypy needs the dependencies importable to resolve types.
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-      - name: Run mypy
-        run: mypy src/lacuna
-
-  docs-build:
-    name: Docs build (mkdocs)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-          cache: pip
-          cache-dependency-path: pyproject.toml
-      - name: Install docs extras
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[docs]"
-      - name: Build the docs site
-        run: mkdocs build --strict
