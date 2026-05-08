@@ -60,8 +60,10 @@ A small SQLite schema holds files (with content hashes), entities,
 features, runs, and suppressions. Every scan is incremental:
 unchanged files (matching content hash) keep their cached entities
 and features; only changed files are re-parsed. Result: a warm
-re-scan of any project completes in milliseconds even when the cold
-scan took minutes.
+re-scan of a small edited subset completes in fractions of a second
+regardless of the project's total size; even a kernel-scale rescan
+with no file changes runs in tens of seconds because mining + storage
+still walk every cached entity.
 
 ### `cli` and `tui/` — two front-ends
 Both consume the same `scan_corpus` function. The CLI prints text
@@ -172,10 +174,15 @@ Cold scan time vs. corpus size (entity count)
 
 ### Memory
 
-Lacuna's working set is bounded: it holds the entity store and the
-mining tables in RAM, ~200–400 MB peak even on the Linux kernel. It
-doesn't load every file's source into memory simultaneously —
-parses are streamed, ASTs released after extraction.
+Lacuna's working set scales with entity count. Peak RSS during a cold
+kernel scan (686k entities) is ~2 GB at single-process and ~2.2 GB
+at default jobs (the 5 worker processes hold tree-sitter ASTs
+simultaneously during parse). Most projects sit far below that —
+a 30k-entity Python codebase peaks around 200 MB; a 100k-entity
+Rust project around 500 MB. Lacuna doesn't load every file's source
+into memory simultaneously — parses are streamed and ASTs released
+after extraction; the steady-state memory after extract is the entity
+store + mining indexes.
 
 ### Incremental scans
 
@@ -183,7 +190,21 @@ The first scan of a project is the cold case in the table. Every
 subsequent scan in the same project is incremental: a file's
 content hash determines whether it needs re-parsing. On a typical
 "edit one file, re-run" loop, the warm scan completes in well under
-a second regardless of the project's total size.
+a second on small-to-medium projects — only the changed file
+re-parses, and mining over the cached entity store is fast.
+
+A rescan with **no** file changes is the floor case: it skips the
+parse stage entirely (every file's content hash matches), but
+mining + storage still touch every cached entity. On a kernel-scale
+corpus that floor is tens of seconds (~28 s at default jobs); on
+medium projects it's sub-second. Per-project warm-scan time scales
+roughly linearly in entity count.
+
+The cache is salted with `extractors.EXTRACTOR_FINGERPRINT` so a
+release shipping new feature_kinds or extractor changes invalidates
+the affected entries automatically — users don't have to know to
+`--cold` after upgrading. See `CONTRIBUTING.md` §8 for the bump
+policy.
 
 ### Continuous calibration
 
