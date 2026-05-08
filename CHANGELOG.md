@@ -171,7 +171,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `--no-color` sets `NO_COLOR=1` before color-detection runs
     (flag wins over env, both supported). `--debug` enables
     diagnostic prints to stderr at config / scope / cold-path
-    decision points; opt-in, gated on `LACUNA_DEBUG=1` so other
+    decision points; opt-in, gated on `ABSENTIA_DEBUG=1` so other
     code can check it without importing CLI internals.
 
   Use cases: validating extractor changes (no stale cached
@@ -286,7 +286,7 @@ on Shawn's hardware. See `~/Desktop/lacuna_doc_todos.txt §2`.)
   ``missing 0003_*.py``. Clusters by sequential proximity (default
   max gap = 5) so a stray ``0099_*`` doesn't create a 96-element
   gap range against an early cluster. The fourth latin-flavored
-  category from lacuna_plan; lacuna now catches gaps in series,
+  category from lacuna_plan; absentia now catches gaps in series,
   not just gaps in patterns.
 - **Call-pair detection.** Mines paired-call symmetries within
   function scope: ``9 of 10 functions calling bus.subscribe also

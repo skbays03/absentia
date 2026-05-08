@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""commit-msg hook — enforce lacuna's commit message format.
+"""commit-msg hook — enforce absentia's commit message format.
 
 Rules:
   1. Subject line ≤72 chars
