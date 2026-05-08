@@ -62,7 +62,10 @@ one doesn't"* (a local pattern your team established without writing it down).
 
 ## Install
 
-Absentia isn't on PyPI yet (still pre-1.0). Install from the repo:
+The engine isn't on PyPI yet (still pre-1.0). The `absentia` name *is*
+claimed on PyPI as a metadata-only placeholder — `pip install absentia`
+today resolves to v0.0.1 with no CLI, just the pitch — so install from
+the repo until the v1.0 cut:
 
 ```bash
 git clone https://github.com/skbays03/absentia.git

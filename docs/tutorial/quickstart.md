@@ -6,7 +6,9 @@ suppress one, then point absentia at your own code.
 
 ## Prerequisites
 
-Absentia isn't on PyPI yet (still pre-1.0). Install from a local clone:
+The engine isn't on PyPI yet (still pre-1.0; the `absentia` name on
+PyPI today is a metadata-only v0.0.1 placeholder). Install from a
+local clone:
 
 ```bash
 git clone https://github.com/skbays03/absentia.git

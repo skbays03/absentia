@@ -362,8 +362,9 @@ the headline mining speedup is missing.
 - **Plain Python**, no native code beyond the tree-sitter
   bindings + the optional mypyc-compiled `mining.py` /
   `symmetry.py` wheels. Easy to install (`pip install .` from the
-  repo today; `pip install absentia` once the v1.0 PyPI publish
-  lands), trivial to inspect, debug, or extend.
+  repo today; the `absentia` name is claimed on PyPI as a v0.0.1
+  placeholder, with the engine arriving in v1.0), trivial to
+  inspect, debug, or extend.
 - **Deterministic.** Same input, same output; the engine is just
   counting. See [why no LLM](why-no-llm.md).
 - **Incremental.** Caching is content-hash-based, so every commit
