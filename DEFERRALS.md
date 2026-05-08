@@ -52,6 +52,42 @@ _None currently._
 
 ---
 
+## Optimization items considered and deferred
+
+Performance items walked through during the 2026-05-07 optimization-plan
+review and explicitly passed on. None are publication-blockers — they're
+recorded here so future-us doesn't re-discover the same conclusions, and
+so the *revisit triggers* are preserved alongside the rejection.
+
+Source: `~/Desktop/lacuna_optimization_plan.txt`.
+
+### Optimization #6 — Pipeline streaming (overlap parse with mining)
+- **Status:** Considered, passed 2026-05-07.
+- **Why deferred:** Original framing assumed mining was the 320 s anchor on the kernel critical path. Post-optimization #3 (mining-stage 30× speedup, commits `2af1db8` + `dcfd7f0` + `f3cbc51` + `37ce834`), kernel mining is ~10 s of a ~25-30 s end-to-end scan; best-case streaming wins ~25% wall-clock for an invasive storage-layer rewrite. Most mining work isn't streamable anyway (decorator/parent_class selectors are corpus-wide; symmetry, call-pair, and series-gap detection all need the full entity universe), and `enrich_sibling_tests` blocks any sibling-test-dependent mining until the full corpus is parsed.
+- **Revisit when:** Either a future detector reverses the mining/parse cost ratio, *or* the early-results UX win becomes valuable enough to justify on its own (in which case scope it as a UX change, not a streaming pipeline).
+
+### Optimization #8 — Incremental enrichment cache
+- **Status:** Considered, passed 2026-05-07. Profile-validated 2026-05-07: original proposal was the *wrong fix* for the right problem. Consumer-loop optimization landed instead (see CHANGELOG `[Unreleased]` Performance section).
+- **Why deferred:** Original framing assumed the cost was in `build_test_method_index` (the index build) — caching the index across rescans was the proposed fix. The cProfile run on cold kernel scan showed `build_test_method_index` doesn't even appear in the top-25 hotspots; the actual ~7.8 s of enrichment cost lives in the *consumer loop* (per-entity calls to `is_test_file` + `_candidate_test_files`). A persisted index cache would have saved ~half a second while inheriting the full `EXTRACTOR_FINGERPRINT`-style fingerprint + CI-gate + storage-seam architectural mass. The actual win came from in-process per-file memoization of the consumer-loop helpers, no persistence required.
+- **Revisit when:** Either (a) `enrich_all` grows past 2 enrichment passes (the compounding case for a persisted index), *or* (b) the in-process memoization stops being enough as new enrichment kinds add more per-entity work.
+
+### Optimization #9 — PyPy compatibility check
+- **Status:** Considered, passed 2026-05-07.
+- **Why deferred:** Ruled out structurally by the mypyc dependency. `wheels.yml` builds `mining.py` + `symmetry.py` as native CPython C extensions; PyPy can't load them and would silently fall through to the pure-Python sdist install — regressing from the 30× mining speedup landed in #3. PyPy also doesn't support the free-threaded Python builds (3.13t/3.14t) that `mining_worker_cap()` relies on for worker scaling. Even tree-sitter's C bindings would run via the slow cpyext path. The plan's "1-hour test, near-zero risk" framing pre-dated all three of those commitments.
+- **Revisit when:** Only if mypyc is removed from the build (no current plan to do so) — PyPy and mypyc-compiled wheels are mutually exclusive.
+
+### Optimization #11 — Persistent worker daemon (mypy --daemon style)
+- **Status:** Considered, passed 2026-05-07.
+- **Why deferred:** Solves a problem that doesn't exist for users who don't exist. The plan named "watch mode, editor integrations" as the target use case; neither has been built and neither is on the near-term roadmap. The TUI (locked-in decision #2 — "TUI is the primary UX") already holds extractors + entity store in memory across rescans, covering the "warm iteration" niche today. Locked-in decision #6 ("architectural seams designed for worst-case; implementation built for current case") explicitly chose engine-library + one-shot-CLI as the two consumer seams; a daemon IPC seam isn't on that list and would invert the deliberate boundary. Stale-state risk (daemon serves cached entities while files mutate underneath) erodes the determinism that's the project's core promise (locked-in decision #1). Cold-start tax of ~600 ms-1.5 s is <5% of any non-trivial scan.
+- **Revisit when:** A real watch-mode feature ships (file-watcher + incremental rescan loop), *or* an editor/IDE integration that drives `lacuna check` per save lands. The daemon should be motivated by a concrete consumer, not built in anticipation of one.
+
+### Optimization #10 — Cython / Rust port of hot helpers
+- **Status:** Considered, passed 2026-05-07.
+- **Why deferred:** The biggest target named by the plan ("per-pair counter loop in symmetry/call-pair mining") was already absorbed by the mypyc compilation of `mining.py` + `symmetry.py` shipped in #3. The two remaining named helpers — `walk_subtree` and `clean_call_name` in `src/lacuna/entities.py` — have a low realistic ceiling: `walk_subtree` is bottlenecked by `node.children` calls into the tree-sitter C extension (mypyc/Cython/Rust can't speed up calls *into* C); `clean_call_name` is hot but cheap (~1-2 s of a ~25-30 s end-to-end kernel scan). The mypyc-include variant (extending the include list to `entities.py`) is the only ROI-sane path but risks a typing-cascade refactor across all 17 extractor subclasses. The plan's own sequencing rule was "only after structural wins exhausted *and* use #12 profile-guided pickup to inform which" — neither precondition met.
+- **Revisit when:** Either (a) profile-guided pickup (#12) actually fingers `walk_subtree` or `clean_call_name` as a top-3 hotspot, *or* (b) parse-stage perf re-emerges as user-visible. Even then, prefer the mypyc-include variant over Cython/Rust to avoid duplicating the build toolchain.
+
+---
+
 ## Resolved
 
 ### ~~CI pipeline~~ → `.github/workflows/ci.yml`
