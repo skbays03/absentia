@@ -1,8 +1,8 @@
-"""Tests for src/lacuna/series.py."""
+"""Tests for src/absentia/series.py."""
 from __future__ import annotations
 
-from lacuna.entities import Entity
-from lacuna.series import find_series_gaps
+from absentia.entities import Entity
+from absentia.series import find_series_gaps
 
 
 def _func_in_file(file_path: str, name: str = "fn") -> Entity:

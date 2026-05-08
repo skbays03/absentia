@@ -1,4 +1,4 @@
-from lacuna.entities import Entity, FeatureSet, clean_call_name
+from absentia.entities import Entity, FeatureSet, clean_call_name
 
 
 def test_entity_id_is_qualified_name():

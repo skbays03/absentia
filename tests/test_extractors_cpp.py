@@ -2,7 +2,7 @@
 from tree_sitter import Language, Parser
 import tree_sitter_cpp
 
-from lacuna.extractors.cpp import extract_cpp_entities
+from absentia.extractors.cpp import extract_cpp_entities
 
 CPP = Language(tree_sitter_cpp.language())
 

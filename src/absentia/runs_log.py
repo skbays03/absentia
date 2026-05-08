@@ -1,13 +1,13 @@
 """Per-run timing log.
 
-Every successful ``lacuna check`` appends a JSON line to
-``~/.lacuna/runs.jsonl``. ``lacuna est`` aggregates the rows to refine
+Every successful ``absentia check`` appends a JSON line to
+``~/.absentia/runs.jsonl``. ``absentia est`` aggregates the rows to refine
 its predictions over time — the more often you run check, the more
 accurate the estimate becomes, with no explicit recalibration step.
 
 Privacy: the log is machine-local. It records the scanned root path,
 language-byte shape, and stage timings. Nothing leaves the machine.
-Users can ``rm ~/.lacuna/runs.jsonl`` at any time to start fresh.
+Users can ``rm ~/.absentia/runs.jsonl`` at any time to start fresh.
 
 Schema (one JSON object per line):
 
@@ -55,8 +55,8 @@ MIN_RUNS_FOR_AGGREGATION = 3
 
 
 def runs_log_path() -> Path:
-    """Default location: ``~/.lacuna/runs.jsonl``."""
-    return Path.home() / ".lacuna" / RUNS_LOG_FILENAME
+    """Default location: ``~/.absentia/runs.jsonl``."""
+    return Path.home() / ".absentia" / RUNS_LOG_FILENAME
 
 
 def append_run(record: dict, path: Path | None = None) -> None:

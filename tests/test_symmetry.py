@@ -1,8 +1,8 @@
-"""Tests for src/lacuna/symmetry.py."""
+"""Tests for src/absentia/symmetry.py."""
 from __future__ import annotations
 
-from lacuna.entities import Entity, FeatureSet
-from lacuna.symmetry import (
+from absentia.entities import Entity, FeatureSet
+from absentia.symmetry import (
     BUILTIN_PAIRS,
     SymmetryPair,
     find_call_pair_gaps,

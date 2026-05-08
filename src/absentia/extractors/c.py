@@ -1,7 +1,7 @@
 """C extractor.
 
 Top-level functions and structs. C has no classes, no decorators, no
-inheritance — the simplest mainstream language for lacuna's purposes.
+inheritance — the simplest mainstream language for absentia's purposes.
 Only the ``calls`` feature is emitted on functions.
 """
 from __future__ import annotations

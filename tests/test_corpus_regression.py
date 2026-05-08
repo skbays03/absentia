@@ -7,7 +7,7 @@ test — the fix is to commit a deliberate update to corpora.toml in
 the same commit that changed the mining behavior.
 
 Optional corpora (most external repos: redis, nestjs, etc.) are
-skipped when their path doesn't exist on disk. ``lacuna-self`` is
+skipped when their path doesn't exist on disk. ``absentia-self`` is
 non-optional so CI always exercises at least one corpus end-to-end.
 """
 from __future__ import annotations
@@ -24,7 +24,7 @@ FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
 def _load_corpora() -> list[dict]:
     """Parse corpora.toml. Resolve relative paths against the repo root
-    so '.' means the lacuna repo itself rather than tests/."""
+    so '.' means the  absentia repo itself rather than tests/."""
     data = tomllib.loads((FIXTURES_DIR / "corpora.toml").read_text())
     rows = data.get("corpus", [])
     for row in rows:
@@ -41,7 +41,7 @@ def _corpus_id(row: dict) -> str:
 
 @pytest.mark.parametrize("corpus", _load_corpora(), ids=_corpus_id)
 def test_corpus_counts_unchanged(corpus: dict) -> None:
-    """``lacuna check`` against this corpus produces the recorded
+    """``absentia check`` against this corpus produces the recorded
     gap + rule + entity counts.
 
     If this fails, you either:
@@ -60,12 +60,12 @@ def test_corpus_counts_unchanged(corpus: dict) -> None:
 
     # Import here so test collection doesn't load the whole engine
     # for tests that only check other modules.
-    from lacuna.cli import scan_corpus
-    from lacuna.config import Config
-    from lacuna.extractors import discover_extractors
-    from lacuna.storage import StateLock
+    from absentia.cli import scan_corpus
+    from absentia.config import Config
+    from absentia.extractors import discover_extractors
+    from absentia.storage import StateLock
 
-    state_dir = path / ".lacuna"
+    state_dir = path / ".absentia"
     state_dir.mkdir(exist_ok=True)
 
     with StateLock(state_dir / "lockfile"):

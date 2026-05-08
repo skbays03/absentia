@@ -2,7 +2,7 @@
 from tree_sitter import Language, Parser
 import tree_sitter_bash
 
-from lacuna.extractors.bash import extract_bash_entities
+from absentia.extractors.bash import extract_bash_entities
 
 BASH = Language(tree_sitter_bash.language())
 

@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from lacuna.config import Config
-from lacuna.tui import LacunaApp
+from absentia.config import Config
+from absentia.tui import AbsentiaApp
 
 
 def _write_corpus(root):
@@ -24,7 +24,7 @@ def _write_corpus(root):
 @pytest.mark.asyncio
 async def test_tui_mounts_and_runs_initial_scan(tmp_path):
     _write_corpus(tmp_path)
-    app = LacunaApp(root=tmp_path, config=Config())
+    app = AbsentiaApp(root=tmp_path, config=Config())
     async with app.run_test() as pilot:
         await pilot.pause()
         table = app.query_one("#main_table")
@@ -35,7 +35,7 @@ async def test_tui_mounts_and_runs_initial_scan(tmp_path):
 @pytest.mark.asyncio
 async def test_tui_rescan_keeps_gap_count_stable(tmp_path):
     _write_corpus(tmp_path)
-    app = LacunaApp(root=tmp_path, config=Config())
+    app = AbsentiaApp(root=tmp_path, config=Config())
     async with app.run_test() as pilot:
         await pilot.pause()
         table = app.query_one("#main_table")
@@ -48,7 +48,7 @@ async def test_tui_rescan_keeps_gap_count_stable(tmp_path):
 @pytest.mark.asyncio
 async def test_tui_subtitle_shows_scan_stats(tmp_path):
     _write_corpus(tmp_path)
-    app = LacunaApp(root=tmp_path, config=Config())
+    app = AbsentiaApp(root=tmp_path, config=Config())
     async with app.run_test() as pilot:
         await pilot.pause()
         assert "gaps" in app.sub_title
@@ -59,7 +59,7 @@ async def test_tui_subtitle_shows_scan_stats(tmp_path):
 @pytest.mark.asyncio
 async def test_tui_view_switching_changes_subtitle_and_table(tmp_path):
     _write_corpus(tmp_path)
-    app = LacunaApp(root=tmp_path, config=Config())
+    app = AbsentiaApp(root=tmp_path, config=Config())
     async with app.run_test() as pilot:
         await pilot.pause()
         assert "[Gaps]" in app.sub_title
@@ -86,7 +86,7 @@ async def test_tui_follow_then_back(tmp_path):
     """Selecting a gap and pressing `f` should land on its rule;
     `Esc` should walk back to the gaps view."""
     _write_corpus(tmp_path)
-    app = LacunaApp(root=tmp_path, config=Config())
+    app = AbsentiaApp(root=tmp_path, config=Config())
     async with app.run_test() as pilot:
         await pilot.pause()
         # Should start in Gaps view with at least one gap.
@@ -106,7 +106,7 @@ async def test_tui_follow_then_back(tmp_path):
 
 def test_editor_command_vi_family():
     """Traditional Unix editors take ``+<line> <file>``."""
-    from lacuna.tui.app import editor_command
+    from absentia.tui.app import editor_command
     from pathlib import Path
     p = Path("/tmp/x.py")
     for ed in ("vi", "vim", "nvim", "nano", "emacs", "pico"):
@@ -115,7 +115,7 @@ def test_editor_command_vi_family():
 
 def test_editor_command_vscode_family():
     """VS Code / Cursor / Windsurf use ``--goto <file>:<line>``."""
-    from lacuna.tui.app import editor_command
+    from absentia.tui.app import editor_command
     from pathlib import Path
     p = Path("/tmp/x.py")
     assert editor_command("code", p, 7) == ["code", "--goto", f"{p}:7"]
@@ -127,7 +127,7 @@ def test_editor_command_vscode_family():
 
 def test_editor_command_sublime_helix_micro_atom():
     """Editors that take ``<file>:<line>`` directly."""
-    from lacuna.tui.app import editor_command
+    from absentia.tui.app import editor_command
     from pathlib import Path
     p = Path("/tmp/x.py")
     for ed in ("subl", "sublime_text", "hx", "helix", "micro", "atom"):
@@ -135,14 +135,14 @@ def test_editor_command_sublime_helix_micro_atom():
 
 
 def test_editor_command_textmate():
-    from lacuna.tui.app import editor_command
+    from absentia.tui.app import editor_command
     from pathlib import Path
     p = Path("/tmp/x.py")
     assert editor_command("mate", p, 99) == ["mate", "-l", "99", str(p)]
 
 
 def test_editor_command_unknown_falls_back_to_vi_form():
-    from lacuna.tui.app import editor_command
+    from absentia.tui.app import editor_command
     from pathlib import Path
     p = Path("/tmp/x.py")
     assert editor_command("zed", p, 5) == ["zed", "+5", str(p)]
@@ -150,7 +150,7 @@ def test_editor_command_unknown_falls_back_to_vi_form():
 
 def test_editor_command_handles_full_path_to_binary():
     """``$EDITOR=/usr/local/bin/vim`` should still be detected as vim."""
-    from lacuna.tui.app import editor_command
+    from absentia.tui.app import editor_command
     from pathlib import Path
     p = Path("/tmp/x.py")
     # Full path resolved via Path(...).name → "vim"
@@ -166,14 +166,14 @@ def test_editor_command_handles_full_path_to_binary():
 async def test_tui_open_editor_callback_invoked_when_provided(tmp_path):
     """When ``on_open_editor`` is set, the TUI uses it instead of
     spawning a subprocess. This is the integration seam Dev-Dashboard
-    will hook when lacuna is embedded as a panel."""
+    will hook when absentia is embedded as a panel."""
     _write_corpus(tmp_path)
     captured: list[tuple[str, int]] = []
 
     def fake_open(file_path, line):
         captured.append((str(file_path), line))
 
-    app = LacunaApp(root=tmp_path, config=Config(), on_open_editor=fake_open)
+    app = AbsentiaApp(root=tmp_path, config=Config(), on_open_editor=fake_open)
     async with app.run_test() as pilot:
         await pilot.pause()
         # Trigger the open-editor action with a gap selected.
@@ -189,7 +189,7 @@ async def test_tui_open_editor_callback_invoked_when_provided(tmp_path):
 @pytest.mark.asyncio
 async def test_tui_watch_toggle_sets_timer(tmp_path):
     _write_corpus(tmp_path)
-    app = LacunaApp(root=tmp_path, config=Config())
+    app = AbsentiaApp(root=tmp_path, config=Config())
     async with app.run_test() as pilot:
         await pilot.pause()
         assert app._watch_timer is None

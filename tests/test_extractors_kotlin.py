@@ -2,7 +2,7 @@
 from tree_sitter import Language, Parser
 import tree_sitter_kotlin
 
-from lacuna.extractors.kotlin import extract_kotlin_entities
+from absentia.extractors.kotlin import extract_kotlin_entities
 
 KT = Language(tree_sitter_kotlin.language())
 

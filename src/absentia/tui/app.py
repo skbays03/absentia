@@ -1,4 +1,4 @@
-"""Textual app for lacuna's TUI.
+"""Textual app for absentia's TUI.
 
 Views:
   - Gaps    [1]  the default; what to fix
@@ -187,7 +187,7 @@ class HelpScreen(ModalScreen[None]):
     def compose(self) -> ComposeResult:
         with Vertical(id="help_dialog"):
             yield Static(
-                "[b cyan]Lacuna keybindings[/]\n\n"
+                "[b cyan]Absentia keybindings[/]\n\n"
                 "[b]Views[/]\n"
                 "  1  Gaps      4  Stats\n"
                 "  2  Rules\n"
@@ -317,8 +317,8 @@ _VIEW_LABELS = {
 }
 
 
-class LacunaApp(App[None]):
-    """The main lacuna TUI."""
+class AbsentiaApp(App[None]):
+    """The main  absentia TUI."""
 
     DEFAULT_CSS = """
     Screen { background: $surface; }
@@ -398,7 +398,7 @@ class LacunaApp(App[None]):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.title = f"lacuna — {self.root.name}"
+        self.title = f"absentia — {self.root.name}"
         # Show a quick estimate in the subtitle so the user has a sense
         # of how long the cold scan will take. The actual scan happens
         # one tick later via call_after_refresh — that lets Textual
@@ -461,13 +461,13 @@ class LacunaApp(App[None]):
         # child's fd validation surfaces as `bad value(s) in
         # fds_to_keep`. Mac users would hit this on any non-trivial
         # corpus. Single-process scans avoid the issue entirely; the CLI
-        # path (`lacuna check`) still gets full parallelism. Most TUI
+        # path (`absentia check`) still gets full parallelism. Most TUI
         # scans are incremental anyway, so should_parallelize would skip
         # the pool even at higher jobs.
         try:
             result = scan_corpus(
                 root=self.root,
-                state_dir=self.root / ".lacuna",
+                state_dir=self.root / ".absentia",
                 config=self.config,
                 jobs=1,
             )
@@ -575,7 +575,7 @@ class LacunaApp(App[None]):
         else:
             self._set_detail(
                 "[b green]No gaps to show.[/]\n\n"
-                "Either lacuna found nothing wrong, every divergence has "
+                "Either  absentia found nothing wrong, every divergence has "
                 "been suppressed, or your filter excludes them all. "
                 "[b]/[/] to change the filter, [b]Ctrl+R[/] to rescan."
             )
@@ -960,7 +960,7 @@ class LacunaApp(App[None]):
         gap = next((g for g in self._gaps if g.short_id == short_id), None)
         full_id = gap.id if gap else None
         try:
-            with Storage(self.root / ".lacuna") as storage:
+            with Storage(self.root / ".absentia") as storage:
                 storage.add_suppression(
                     short_id=short_id, full_id=full_id, reason=reason,
                 )
@@ -1031,18 +1031,18 @@ def run_tui(
 ) -> int:
     """Acquire the state lock and run the TUI.
 
-    Hosts that embed lacuna can pass ``on_open_editor`` to redirect
+    Hosts that embed  absentia can pass ``on_open_editor`` to redirect
     Enter / open-in-editor actions to their own editor surface
     (e.g. a Dev-Dashboard ``code_editor`` panel) instead of spawning
     ``$EDITOR`` via subprocess.
     """
-    state_dir = root / ".lacuna"
+    state_dir = root / ".absentia"
     try:
         with StateLock(state_dir / "lockfile"):
-            LacunaApp(
+            AbsentiaApp(
                 root=root, config=config, on_open_editor=on_open_editor,
             ).run()
     except StateLockError as exc:
-        print(f"lacuna: {exc}", file=__import__("sys").stderr)
+        print(f"absentia: {exc}", file=__import__("sys").stderr)
         return 2
     return 0

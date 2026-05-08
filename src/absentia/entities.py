@@ -1,4 +1,4 @@
-"""Entity model — the things lacuna mines.
+"""Entity model — the things  absentia mines.
 
 For the MVP, entities are top-level Python functions. Future extractors
 will add classes, methods, files, imports, and decorator-uses.
@@ -42,7 +42,7 @@ def walk_subtree(root):
     Use this instead of the recursive ``for child in node.children: ...
     yield from walk(child)`` pattern to avoid stack overflow on deeply
     nested code. Real-world: the Rust compiler's source crashed
-    lacuna's recursive call walker at >1000 levels deep. Order is
+    absentia's recursive call walker at >1000 levels deep. Order is
     unspecified — callers that collect into a set don't care; callers
     that care should sort.
 

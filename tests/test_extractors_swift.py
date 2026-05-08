@@ -2,7 +2,7 @@
 from tree_sitter import Language, Parser
 import tree_sitter_swift
 
-from lacuna.extractors.swift import extract_swift_entities
+from absentia.extractors.swift import extract_swift_entities
 
 SW = Language(tree_sitter_swift.language())
 

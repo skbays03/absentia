@@ -1,11 +1,11 @@
-"""Tests for src/lacuna/progress.py."""
+"""Tests for src/absentia/progress.py."""
 from __future__ import annotations
 
 import io
 import sys
 from unittest.mock import patch
 
-from lacuna.progress import (
+from absentia.progress import (
     ProgressBar,
     Spinner,
     StepIndicator,
@@ -408,7 +408,7 @@ def test_spinner_renders_current_item():
 def test_long_path_is_middle_truncated():
     """A path longer than the display budget gets ... in the middle
     so both ends stay visible."""
-    from lacuna.progress import _truncate_for_display
+    from absentia.progress import _truncate_for_display
 
     long_path = "a/" * 60 + "file.py"
     out = _truncate_for_display(long_path, max_width=40)
@@ -419,6 +419,6 @@ def test_long_path_is_middle_truncated():
 
 
 def test_short_path_passes_through():
-    from lacuna.progress import _truncate_for_display
+    from absentia.progress import _truncate_for_display
 
     assert _truncate_for_display("short.py", max_width=100) == "short.py"

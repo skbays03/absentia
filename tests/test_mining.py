@@ -1,6 +1,6 @@
-from lacuna.entities import FeatureSet
-from lacuna.mining import mine
-from lacuna.selectors import Group
+from absentia.entities import FeatureSet
+from absentia.mining import mine
+from absentia.selectors import Group
 
 
 def _features(*decorators: str) -> FeatureSet:

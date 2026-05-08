@@ -1,7 +1,7 @@
 """Command-line entry point.
 
 Subcommands:
-  init    create lacuna.toml + .lacuna/ in the current directory
+  init    create absentia.toml + .absentia/ in the current directory
   check   scan a project and print gaps (text or JSON)
 
 The TUI (default-when-no-subcommand) and `explain`, `suppress`, `rules`,
@@ -31,7 +31,7 @@ from .storage import StateLock, StateLockError, Storage
 
 
 _INIT_TEMPLATE = """\
-# lacuna configuration. Run `lacuna check` from this directory.
+# absentia configuration. Run `absentia check` from this directory.
 # Every section is optional; defaults are sensible.
 
 [scan]
@@ -66,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
 
-    # Shorthand: `lacuna <path>` — if the first arg isn't a known
+    # Shorthand: `absentia <path>` — if the first arg isn't a known
     # subcommand or a flag, and it points at an existing directory,
     # treat it as "open the TUI in that path." This is purely a UX
     # convenience; everything still works via the explicit subcommands.
@@ -78,28 +78,28 @@ def main(argv: list[str] | None = None) -> int:
             argv = []  # fall through to the no-subcommand branch below
 
     parser = argparse.ArgumentParser(
-        prog="lacuna",
+        prog="absentia",
         description="Find the holes your code already drew.",
         epilog=(
             "Quick reference:\n"
-            "  lacuna                          open the TUI in the current directory\n"
-            "  lacuna PATH                     open the TUI in PATH (e.g. lacuna ~/myrepo)\n"
-            "  lacuna init                     bootstrap a project here\n"
-            "  lacuna check                    batch scan, print gaps, exit non-zero on failure\n"
-            "  lacuna check --jobs N           override worker count (default: half of cores)\n"
-            "  lacuna check --max-gaps N       tolerate up to N gaps before failing (CI flag)\n"
-            "  lacuna est                      headline total + per-jobs check breakdown\n"
-            "  lacuna est --history            show recent `lacuna check` runs feeding the model\n"
-            "  lacuna est --recalibrate        re-run calibration (also recalibrates on PATH)\n"
-            "  lacuna est --use-synthetic      calibrate against bundled corpus (empty cwd OK)\n"
-            "  lacuna suppress GAP_ID          mark a gap as intentional\n"
-            "  lacuna suppress --list          list current suppressions\n"
-            "  lacuna --jobs-default N         pin default worker count (0 = auto cpu/2)\n"
-            "  lacuna --purge [PATH]           delete .lacuna/ from PATH (default: cwd)\n"
-            "  lacuna --purge-all              delete every .lacuna/ under $HOME + machine cache\n"
+            "  absentia                          open the TUI in the current directory\n"
+            "  absentia PATH                     open the TUI in PATH (e.g. absentia ~/myrepo)\n"
+            "  absentia init                     bootstrap a project here\n"
+            "  absentia check                    batch scan, print gaps, exit non-zero on failure\n"
+            "  absentia check --jobs N           override worker count (default: half of cores)\n"
+            "  absentia check --max-gaps N       tolerate up to N gaps before failing (CI flag)\n"
+            "  absentia est                      headline total + per-jobs check breakdown\n"
+            "  absentia est --history            show recent `absentia check` runs feeding the model\n"
+            "  absentia est --recalibrate        re-run calibration (also recalibrates on PATH)\n"
+            "  absentia est --use-synthetic      calibrate against bundled corpus (empty cwd OK)\n"
+            "  absentia suppress GAP_ID          mark a gap as intentional\n"
+            "  absentia suppress --list          list current suppressions\n"
+            "  absentia --jobs-default N         pin default worker count (0 = auto cpu/2)\n"
+            "  absentia --purge [PATH]           delete .absentia/ from PATH (default: cwd)\n"
+            "  absentia --purge-all              delete every .absentia/ under $HOME + machine cache\n"
             "\n"
             "Each subcommand has its own --help with the full flag list:\n"
-            "  lacuna check --help · lacuna est --help · lacuna suppress --help\n"
+            "  absentia check --help · absentia est --help · absentia suppress --help\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -109,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     # §A1's last cosmetic gap (CLI banner).
     parser.add_argument(
         "--version", action="version",
-        version=f"lacuna {__version__} — find what you forgot to write",
+        version=f"absentia {__version__} — find what you forgot to write",
     )
     parser.add_argument(
         "--purge",
@@ -117,13 +117,13 @@ def main(argv: list[str] | None = None) -> int:
         const=".",
         default=None,
         metavar="PATH",
-        help="Remove lacuna state (.lacuna/) from PATH (default: cwd). "
-             "Lacuna config files (lacuna.toml) are left in place.",
+        help="Remove absentia state (.absentia/) from PATH (default: cwd). "
+             "Absentia config files (absentia.toml) are left in place.",
     )
     parser.add_argument(
         "--purge-all",
         action="store_true",
-        help="Remove every lacuna state directory under your home + the "
+        help="Remove every absentia state directory under your home + the "
              "machine-wide calibration cache. Confirms before deleting.",
     )
     parser.add_argument(
@@ -137,9 +137,9 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=None,
         metavar="N",
-        help="Pin the default worker count for `lacuna check` so future "
+        help="Pin the default worker count for `absentia check` so future "
              "scans use N workers without needing `--jobs N` each time. "
-             "Saved to ~/.lacuna/settings.json. Pass 0 to revert to auto "
+             "Saved to ~/.absentia/settings.json. Pass 0 to revert to auto "
              "(half of cpu cores). If N exceeds your detected core count "
              "you'll be re-prompted, since over-subscribing usually slows "
              "the scan.",
@@ -162,19 +162,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     sub = parser.add_subparsers(dest="cmd")
 
-    init = sub.add_parser("init", help="Create lacuna.toml + .lacuna/ in the current dir.")
+    init = sub.add_parser("init", help="Create absentia.toml + .absentia/ in the current dir.")
     init.add_argument("path", nargs="?", default=".", help="Where to init (default: cwd)")
     init.add_argument("--force", action="store_true",
-                      help="Overwrite an existing lacuna.toml")
+                      help="Overwrite an existing absentia.toml")
     init.add_argument("--quiet", "-q", action="store_true",
-                      help="Suppress the 'Initialized lacuna in PATH' message "
+                      help="Suppress the 'Initialized absentia in PATH' message "
                            "and the first-scan estimate footer. Useful for "
                            "scripts that init then immediately run check.")
 
     check = sub.add_parser("check", help="Scan a project and print gaps.")
     check.add_argument("path", nargs="?", default=".", help="Project root (default: cwd)")
     check.add_argument("--config", type=Path, default=None,
-                       help="Path to lacuna.toml (default: search root upward)")
+                       help="Path to absentia.toml (default: search root upward)")
     check.add_argument("--min-confidence", type=float, default=None,
                        help="Override mining.min_confidence")
     check.add_argument("--min-group-size", type=int, default=None,
@@ -193,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
                             "gap count exceeds N. --max-gaps 0 fails on "
                             "any gap (the default behavior); --max-gaps 5 "
                             "lets up to 5 gaps slide. Useful for adopting "
-                            "lacuna on an existing codebase without "
+                            "absentia on an existing codebase without "
                             "blocking the build the first day.")
     check.add_argument("--cold", nargs="?", const="", default=None,
                        metavar="PATH",
@@ -208,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument("--language", "--languages", default=None,
                        metavar="LANG[,LANG]",
                        help="Restrict scan to specific languages (comma-"
-                            "separated). Overrides the lacuna.toml "
+                            "separated). Overrides the absentia.toml "
                             "[scan.languages] list. Useful for quick "
                             "single-language re-runs ('I just edited "
                             "Python; only re-scan Python this run'). "
@@ -217,26 +217,26 @@ def main(argv: list[str] | None = None) -> int:
                        metavar="PATTERN",
                        help="Skip files / directories matching PATTERN "
                             "(glob, e.g. '**/vendor/**'). May be passed "
-                            "multiple times. Appends to lacuna.toml "
+                            "multiple times. Appends to absentia.toml "
                             "[scan.exclude]; doesn't override.")
 
     est = sub.add_parser(
         "est",
         aliases=["estimate"],
         help=(
-            "Predict total `lacuna check` time without scanning. "
+            "Predict total `absentia check` time without scanning. "
             "Shows a headline total ± confidence band and a per-jobs "
             "breakdown (parse + mine_tail = check). Estimates auto-"
-            "improve as you run more `lacuna check` invocations — "
-            "every check appends to ~/.lacuna/runs.jsonl and "
+            "improve as you run more `absentia check` invocations — "
+            "every check appends to ~/.absentia/runs.jsonl and "
             "future est calls aggregate from it."
         ),
     )
     est.add_argument("path", nargs="?", default=".",
                      help="Project root (default: cwd)")
     est.add_argument("--config", type=Path, default=None,
-                     help="Path to lacuna.toml (default: search root upward). "
-                          "Mirrors `lacuna check --config`.")
+                     help="Path to absentia.toml (default: search root upward). "
+                          "Mirrors `absentia check --config`.")
     est.add_argument("--jobs", "-j", type=int, default=None, metavar="N",
                      help="Headline-estimate worker count. Overrides the "
                           "default (half of CPU cores). The full per-jobs "
@@ -260,10 +260,10 @@ def main(argv: list[str] | None = None) -> int:
                           "directory is empty or too small for reliable "
                           "calibration.")
     est.add_argument("--history", action="store_true",
-                     help="Print the recent `lacuna check` runs that "
+                     help="Print the recent `absentia check` runs that "
                           "feed the estimator and exit. Useful for "
                           "auditing what data the prediction is based "
-                          "on (~/.lacuna/runs.jsonl).")
+                          "on (~/.absentia/runs.jsonl).")
     est.add_argument("--cold", nargs="?", const="", default=None,
                      metavar="PATH",
                      help="Predict the cold-scan time for PATH (default: "
@@ -275,15 +275,15 @@ def main(argv: list[str] | None = None) -> int:
     est.add_argument("--language", "--languages", default=None,
                      metavar="LANG[,LANG]",
                      help="Scope the prediction to specific languages "
-                          "(comma-separated). Mirrors `lacuna check "
-                          "--language`. Overrides lacuna.toml "
+                          "(comma-separated). Mirrors `absentia check "
+                          "--language`. Overrides absentia.toml "
                           "[scan.languages].")
     est.add_argument("--exclude", action="append", default=None,
                      metavar="PATTERN",
                      help="Skip files / directories matching PATTERN "
                           "from the corpus walk used for the prediction. "
                           "May be passed multiple times. Appends to "
-                          "lacuna.toml [scan.exclude].")
+                          "absentia.toml [scan.exclude].")
 
     suppress = sub.add_parser(
         "suppress",
@@ -291,7 +291,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     suppress.add_argument("gap_id", nargs="?", default=None,
                           help="Short ('g-7c91234') or full gap id from "
-                               "`lacuna check` output")
+                               "`absentia check` output")
     suppress.add_argument("--reason", default=None,
                           help="Required unless --list/--remove. Describes why "
                                "this gap is intentional.")
@@ -328,9 +328,9 @@ def main(argv: list[str] | None = None) -> int:
     # they explicitly consult this. Keeps blast radius tiny.
     if getattr(args, "debug", False):
         import os as _os
-        _os.environ["LACUNA_DEBUG"] = "1"
+        _os.environ["ABSENTIA_DEBUG"] = "1"
         # Surface immediately so the user sees we got the flag.
-        print("[lacuna debug] verbose mode on", file=sys.stderr)
+        print("[absentia debug] verbose mode on", file=sys.stderr)
 
     # Top-level purge / settings flags run before subcommand dispatch.
     if args.purge_all:
@@ -347,7 +347,7 @@ def main(argv: list[str] | None = None) -> int:
         # No subcommand: launch the TUI when run from a TTY, otherwise
         # fall through to printing help (so piped usage stays sane).
         # ``tui_path`` was populated above when the user passed
-        # ``lacuna <path>`` — otherwise default to cwd.
+        # ``absentia <path>`` — otherwise default to cwd.
         if sys.stdin.isatty() and sys.stdout.isatty():
             from .tui import run_tui
             root = tui_path if tui_path is not None else Path(".").resolve()
@@ -414,8 +414,8 @@ def main(argv: list[str] | None = None) -> int:
         # legacy --path is used.
         if args.project_path_flag is not None and args.project_path is None:
             stderr_console.print(
-                "[dim]lacuna: `suppress --path` is deprecated; use the "
-                "positional path argument (`lacuna suppress <gap_id> PATH`).[/]"
+                "[dim]absentia: `suppress --path` is deprecated; use the "
+                "positional path argument (`absentia suppress <gap_id> PATH`).[/]"
             )
         suppress_root = (
             args.project_path
@@ -489,15 +489,15 @@ def _apply_scope_overrides(
 
 def cmd_init(*, root: Path, force: bool, quiet: bool = False) -> int:
     if not root.is_dir():
-        stderr_console.print(f"[red]lacuna:[/] not a directory: [cyan]{root}[/]")
+        stderr_console.print(f"[red]absentia:[/] not a directory: [cyan]{root}[/]")
         return 2
 
-    config_path = root / "lacuna.toml"
-    state_dir = root / ".lacuna"
+    config_path = root / "absentia.toml"
+    state_dir = root / ".absentia"
 
     if config_path.exists() and not force:
         stderr_console.print(
-            f"[red]lacuna:[/] [cyan]{config_path}[/] already exists. "
+            f"[red]absentia:[/] [cyan]{config_path}[/] already exists. "
             f"Use [bold]--force[/] to overwrite."
         )
         return 1
@@ -511,20 +511,20 @@ def cmd_init(*, root: Path, force: bool, quiet: bool = False) -> int:
     gitignore = root / ".gitignore"
     if gitignore.exists():
         existing_lines = gitignore.read_text().splitlines()
-        if ".lacuna/" not in existing_lines and ".lacuna" not in existing_lines:
+        if ".absentia/" not in existing_lines and ".absentia" not in existing_lines:
             with gitignore.open("a") as fh:
                 if existing_lines and existing_lines[-1] != "":
                     fh.write("\n")
-                fh.write(".lacuna/\n")
+                fh.write(".absentia/\n")
 
     if quiet:
         return 0
 
     stdout_console.print(
-        f"[bright_green]✓[/] Initialized lacuna in [cyan]{root}[/]"
+        f"[bright_green]✓[/] Initialized absentia in [cyan]{root}[/]"
     )
-    stdout_console.print("  - Wrote [cyan]lacuna.toml[/]")
-    stdout_console.print("  - Created [cyan].lacuna/[/] [dim](gitignored)[/]")
+    stdout_console.print("  - Wrote [cyan]absentia.toml[/]")
+    stdout_console.print("  - Created [cyan].absentia/[/] [dim](gitignored)[/]")
     stdout_console.print()
 
     # First-scan estimate footer. Uses the calibrated model when
@@ -537,18 +537,18 @@ def cmd_init(*, root: Path, force: bool, quiet: bool = False) -> int:
         print(line)
         print()
 
-    stdout_console.print("Run [bold cyan]`lacuna check`[/] to start exploring.")
+    stdout_console.print("Run [bold cyan]`absentia check`[/] to start exploring.")
     return 0
 
 
 def _debug(msg: str) -> None:
-    """Emit a diagnostic line to stderr when LACUNA_DEBUG is set
+    """Emit a diagnostic line to stderr when ABSENTIA_DEBUG is set
     (via --debug / -vv on the CLI). Cheap no-op otherwise — used
     sparingly at decision points where users investigating odd
     behavior would want to know what was chosen."""
     import os as _os
-    if _os.environ.get("LACUNA_DEBUG"):
-        print(f"[lacuna debug] {msg}", file=sys.stderr)
+    if _os.environ.get("ABSENTIA_DEBUG"):
+        print(f"[absentia debug] {msg}", file=sys.stderr)
 
 
 def _resolve_cold_arg(cold_arg: str | None, fallback_root: Path) -> Path | None:
@@ -580,13 +580,13 @@ def cmd_check(
         if as_json:
             print(json.dumps({"error": f"not a directory: {root}"}))
         else:
-            stderr_console.print(f"[red]lacuna:[/] not a directory: [cyan]{root}[/]")
+            stderr_console.print(f"[red]absentia:[/] not a directory: [cyan]{root}[/]")
         return 2
 
     from datetime import datetime, timezone
     started = time.perf_counter()
     started_iso = datetime.now(timezone.utc).isoformat()
-    state_dir = root / ".lacuna"
+    state_dir = root / ".absentia"
 
     try:
         lock_ctx = StateLock(state_dir / "lockfile").__enter__()
@@ -594,7 +594,7 @@ def cmd_check(
         if as_json:
             print(json.dumps({"error": str(exc)}))
         else:
-            stderr_console.print(f"[red]lacuna:[/] {exc}")
+            stderr_console.print(f"[red]absentia:[/] {exc}")
         return 2
 
     try:
@@ -635,13 +635,13 @@ def _run_check(
         if as_json:
             print(json.dumps({"error": msg}))
         else:
-            stderr_console.print(f"[red]lacuna:[/] {msg}")
+            stderr_console.print(f"[red]absentia:[/] {msg}")
         return 2
 
     # One-line estimate preamble for interactive text mode.
     # Suppressed in JSON, quiet, and non-TTY contexts to keep
     # CI logs and machine-readable output clean. Gated on stderr
-    # (where the line lands) — that way `lacuna check | grep ...`
+    # (where the line lands) — that way `absentia check | grep ...`
     # still surfaces the preamble for the human watching the terminal.
     interactive_text_mode = (
         not as_json and not quiet and sys.stderr.isatty()
@@ -758,7 +758,7 @@ def scan_corpus(
     ext_to_extractor = extension_dispatch(extractors)
 
     # Per-stage wall times — populated whether or not we're rendering
-    # spinners. Persisted into last_run.json so `lacuna est` can show a
+    # spinners. Persisted into last_run.json so `absentia est` can show a
     # real breakdown (parse N s + mine M s + finalize K s = total) and
     # predict full check time, not just the parse stage.
     stage_durations: dict[str, float] = {
@@ -1000,7 +1000,7 @@ def scan_corpus(
         # task is *interleaved* serial time, not pure-CPU time — but
         # the relative ordering still identifies the long pole, which
         # is what we use this for (target picker for algorithmic
-        # tuning + visible in `lacuna est --history`).
+        # tuning + visible in `absentia est --history`).
         mine_strategy_durations: dict[str, float] = {}
 
         # Active-strategy registry for the multi-worker spinner view.
@@ -1283,10 +1283,10 @@ def scan_corpus(
 
 
 def cmd_purge(root: Path, *, confirm: bool = True) -> int:
-    """Remove lacuna state from a single project root.
+    """Remove absentia state from a single project root.
 
-    Only removes ``.lacuna/`` (the gitignored state directory).
-    Leaves ``lacuna.toml`` in place — that's a versioned config the
+    Only removes ``.absentia/`` (the gitignored state directory).
+    Leaves ``absentia.toml`` in place — that's a versioned config the
     user might want to keep for re-running scans later.
 
     When ``confirm`` is True (the default), prompts ``[y/N]`` with a
@@ -1297,31 +1297,31 @@ def cmd_purge(root: Path, *, confirm: bool = True) -> int:
     import shutil
 
     if not root.is_dir():
-        stderr_console.print(f"[red]lacuna:[/] not a directory: [cyan]{root}[/]")
+        stderr_console.print(f"[red]absentia:[/] not a directory: [cyan]{root}[/]")
         return 2
 
-    target = root / ".lacuna"
+    target = root / ".absentia"
     if not target.exists():
         stdout_console.print(
-            f"[dim]lacuna: no .lacuna/ directory at [cyan]{root}[/]; "
+            f"[dim]absentia: no .absentia/ directory at [cyan]{root}[/]; "
             f"nothing to purge.[/]"
         )
         return 0
     if not target.is_dir():
         stderr_console.print(
-            f"[red]lacuna:[/] [cyan]{target}[/] exists but isn't a directory; "
+            f"[red]absentia:[/] [cyan]{target}[/] exists but isn't a directory; "
             f"refusing to remove."
         )
         return 1
 
-    # Sanity check: verify it looks like a lacuna state dir before deleting.
-    # A real lacuna .lacuna/ has at least a `version` file and `state.db`.
-    looks_lacuna = (
+    # Sanity check: verify it looks like a absentia state dir before deleting.
+    # A real  absentia .absentia/ has at least a `version` file and `state.db`.
+    looks_absentia = (
         (target / "version").exists() or (target / "state.db").exists()
     )
-    if not looks_lacuna:
+    if not looks_absentia:
         stderr_console.print(
-            f"[red]lacuna:[/] [cyan]{target}[/] doesn't look like a lacuna "
+            f"[red]absentia:[/] [cyan]{target}[/] doesn't look like an absentia "
             f"state directory (no version or state.db). Refusing to remove. "
             f"Delete manually if you're sure."
         )
@@ -1333,15 +1333,15 @@ def cmd_purge(root: Path, *, confirm: bool = True) -> int:
         print()
         print("This is the per-project state directory. It contains:")
         print("  - state.db   — entity cache + feature index + scan history")
-        print("  - suppressions you've added with `lacuna suppress`")
+        print("  - suppressions you've added with `absentia suppress`")
         print("  - last_run.json — timing/stats from the previous scan")
         print()
-        print("Your source code and lacuna.toml are NOT touched. The next")
+        print("Your source code and absentia.toml are NOT touched. The next")
         print("scan will be a full cold scan instead of incremental.")
         print()
         if not sys.stdin.isatty():
             print(
-                "lacuna --purge: refusing to delete in non-interactive "
+                "absentia --purge: refusing to delete in non-interactive "
                 "context. Re-run from a terminal, or pass --yes to skip "
                 "this prompt.",
                 file=sys.stderr,
@@ -1358,16 +1358,16 @@ def cmd_purge(root: Path, *, confirm: bool = True) -> int:
 
     shutil.rmtree(target)
     stdout_console.print(f"[bright_green]✓[/] Removed [cyan]{target}[/]")
-    if (root / "lacuna.toml").exists():
+    if (root / "absentia.toml").exists():
         print(
-            f"  (lacuna.toml at {root} kept; "
+            f"  (absentia.toml at {root} kept; "
             f"delete manually if you also want to remove config)"
         )
     return 0
 
 
 def cmd_purge_all(*, confirm: bool = True) -> int:
-    """Remove every lacuna state dir under $HOME + the machine-wide cache.
+    """Remove every absentia state dir under $HOME + the machine-wide cache.
 
     Confirms before deleting; prints what will be removed first so the
     user can sanity-check. ``confirm=False`` (set by ``--yes``/``-y``)
@@ -1377,7 +1377,7 @@ def cmd_purge_all(*, confirm: bool = True) -> int:
 
     home = Path.home()
 
-    # Skip dirs that almost certainly aren't going to host a lacuna state
+    # Skip dirs that almost certainly aren't going to host a absentia state
     # and would otherwise slow the walk dramatically.
     SKIP_DIR_NAMES = {
         ".git", "node_modules", ".venv", "venv", "__pycache__",
@@ -1390,15 +1390,15 @@ def cmd_purge_all(*, confirm: bool = True) -> int:
         return any(part in SKIP_DIR_NAMES for part in path.parts)
 
     project_state_dirs: list[Path] = []
-    machine_cache = home / ".lacuna"
+    machine_cache = home / ".absentia"
 
     # rglob over $HOME can be 10–60 s on a packed home dir; use a
     # spinner so the user sees the tool is alive.
     from .progress import Spinner, spinning
-    spinner = Spinner(label=f"Scanning {home} for lacuna state")
+    spinner = Spinner(label=f"Scanning {home} for absentia state")
     try:
         with spinning(spinner):
-            for path in home.rglob(".lacuna"):
+            for path in home.rglob(".absentia"):
                 # Show paths as the rglob visits them, even ones we skip,
                 # so the user sees the walk progressing.
                 spinner.set_current_item(str(path))
@@ -1413,7 +1413,7 @@ def cmd_purge_all(*, confirm: bool = True) -> int:
                     project_state_dirs.append(path)
     except OSError as e:
         spinner.finish()
-        stderr_console.print(f"[red]lacuna:[/] scan failed: {e}")
+        stderr_console.print(f"[red]absentia:[/] scan failed: {e}")
         return 2
     spinner.finish(end_message=f"Scan complete ({len(project_state_dirs)} project state dirs found)")
 
@@ -1424,7 +1424,7 @@ def cmd_purge_all(*, confirm: bool = True) -> int:
     )
 
     if not project_state_dirs and not machine_cache_present:
-        stdout_console.print("[dim]No lacuna state found.[/]")
+        stdout_console.print("[dim]No absentia state found.[/]")
         return 0
 
     print()
@@ -1441,16 +1441,16 @@ def cmd_purge_all(*, confirm: bool = True) -> int:
     print("  - Wipe per-project entity caches, feature indexes, and")
     print("    suppressions across every project listed above.")
     print("  - Wipe the machine-wide calibration cache, so the next")
-    print("    `lacuna est` will re-prompt for first-run calibration.")
+    print("    `absentia est` will re-prompt for first-run calibration.")
     print()
-    print("Source code, lacuna.toml configs, and the lacuna binary itself")
+    print("Source code, absentia.toml configs, and the  absentia binary itself")
     print("are NOT touched.")
     print()
 
     if confirm:
         if not sys.stdin.isatty():
             print(
-                "lacuna --purge-all: refusing to delete in non-interactive "
+                "absentia --purge-all: refusing to delete in non-interactive "
                 "context. Re-run from a terminal, or pass --yes to skip "
                 "this prompt.",
                 file=sys.stderr,
@@ -1499,7 +1499,7 @@ def cmd_purge_all(*, confirm: bool = True) -> int:
 
 
 def cmd_jobs_default(n: int, *, confirm: bool = True) -> int:
-    """Pin the default worker count to ``~/.lacuna/settings.json``.
+    """Pin the default worker count to ``~/.absentia/settings.json``.
 
     ``n == 0`` resets to auto (cpu_count // 2). ``n < 0`` is an error.
     ``n > detected_cores`` triggers a re-prompt — over-subscribing the
@@ -1512,7 +1512,7 @@ def cmd_jobs_default(n: int, *, confirm: bool = True) -> int:
 
     if n < 0:
         stderr_console.print(
-            f"[red]lacuna:[/] --jobs-default must be ≥ 0, got [bold]{n}[/]."
+            f"[red]absentia:[/] --jobs-default must be ≥ 0, got [bold]{n}[/]."
         )
         return 2
 
@@ -1541,7 +1541,7 @@ def cmd_jobs_default(n: int, *, confirm: bool = True) -> int:
         if confirm:
             if not sys.stdin.isatty():
                 stderr_console.print(
-                    f"[red]lacuna:[/] non-interactive context; refusing to "
+                    f"[red]absentia:[/] non-interactive context; refusing to "
                     f"set [bold]{chosen}[/] over [bold]{cores}[/] without "
                     f"confirmation. Pass [bold]--yes[/] to override, or "
                     f"re-run from a terminal."
@@ -1563,14 +1563,14 @@ def cmd_jobs_default(n: int, *, confirm: bool = True) -> int:
                 # over-subscribed value the user already typed".
                 if response.lower() not in ("y", "yes"):
                     stderr_console.print(
-                        f"[red]lacuna:[/] not a number: {response!r}"
+                        f"[red]absentia:[/] not a number: {response!r}"
                     )
                     return 2
             else:
                 alt = int(response)
                 if alt < 1:
                     stderr_console.print(
-                        f"[red]lacuna:[/] jobs must be ≥ 1, got {alt}."
+                        f"[red]absentia:[/] jobs must be ≥ 1, got {alt}."
                     )
                     return 2
                 chosen = alt
@@ -1595,9 +1595,9 @@ def cmd_jobs_default(n: int, *, confirm: bool = True) -> int:
 
 
 def cmd_est_history() -> int:
-    """Print the recent ``lacuna check`` runs that feed the estimator.
+    """Print the recent ``absentia check`` runs that feed the estimator.
 
-    Sourced from ``~/.lacuna/runs.jsonl``. Useful for seeing what data
+    Sourced from ``~/.absentia/runs.jsonl``. Useful for seeing what data
     the predictions are based on — e.g. "I keep getting 'low
     confidence' on a Rust corpus" → check whether prior runs covered
     Rust at all.
@@ -1612,7 +1612,7 @@ def cmd_est_history() -> int:
     if not runs:
         stdout_console.print(
             f"[dim]No prior runs at [cyan]{log_path}[/]. Run "
-            f"[bold cyan]`lacuna check`[/] in any project to start "
+            f"[bold cyan]`absentia check`[/] in any project to start "
             f"populating the log.[/]"
         )
         return 0
@@ -1687,7 +1687,7 @@ def cmd_est(
     M-series baseline otherwise), prints the jobs-vs-time table.
 
     First-run flow: if no calibration cache exists at
-    ``~/.lacuna/calibration.json`` and we're attached to a TTY, prompt
+    ``~/.absentia/calibration.json`` and we're attached to a TTY, prompt
     the user once to run calibration. Result is cached forever (until
     invalidated by version/core-count change or ``--recalibrate``).
 
@@ -1720,7 +1720,7 @@ def cmd_est(
         if as_json:
             print(json.dumps({"error": f"not a directory: {root}"}))
         else:
-            stderr_console.print(f"[red]lacuna:[/] not a directory: [cyan]{root}[/]")
+            stderr_console.print(f"[red]absentia:[/] not a directory: [cyan]{root}[/]")
         return 2
 
     config = _load_config(root, config_path)
@@ -1730,7 +1730,7 @@ def cmd_est(
         msg = (
             f"no extractors available for languages={list(config.scan.languages)}"
         )
-        print(f"lacuna: {msg}", file=sys.stderr)
+        print(f"absentia: {msg}", file=sys.stderr)
         return 2
 
     ext_to_extractor = extension_dispatch(extractors)
@@ -1753,7 +1753,7 @@ def cmd_est(
     # An empty root just means "no estimate report at the end."
     if shape.files == 0 and not use_synthetic:
         print(
-            f"lacuna: found no source files under {root} for "
+            f"absentia: found no source files under {root} for "
             f"languages={list(config.scan.languages)}.",
             file=sys.stderr,
         )
@@ -1800,14 +1800,14 @@ def cmd_est(
         # uncalibrated output with a note.
         stderr_console.print(
             "[dim](running uncalibrated — pipe to a terminal or run "
-            "`lacuna est` interactively to calibrate)[/]\n"
+            "`absentia est` interactively to calibrate)[/]\n"
         )
 
     # ── Reality check from prior scan ───────────────────────────────
     observed_cold_scan_s: float | None = None
     observed_stage_durations: dict[str, float] | None = None
     observed_jobs: int | None = None
-    last_run_path = root / ".lacuna" / "last_run.json"
+    last_run_path = root / ".absentia" / "last_run.json"
     if last_run_path.exists():
         try:
             last = json.loads(last_run_path.read_text())
@@ -1837,7 +1837,7 @@ def cmd_est(
 
     # Calibrated mining-tail estimate for this corpus (used when no
     # observed last_run.json data exists). Source priority:
-    #   1. Aggregated runs (~/.lacuna/runs.jsonl) — if ≥3 fresh runs
+    #   1. Aggregated runs (~/.absentia/runs.jsonl) — if ≥3 fresh runs
     #      with this machine's cores+version exist, derive
     #      mining_seconds_per_byte from them. Beats one-shot
     #      calibration because it averages real-world variance.
@@ -1877,7 +1877,7 @@ def cmd_est(
     if shape.files == 0:
         print(
             f"\nNo source files in {root} to estimate against. "
-            f"Calibration is cached for future `lacuna est` runs."
+            f"Calibration is cached for future `absentia est` runs."
         )
         return 0
 
@@ -1996,7 +1996,7 @@ def _interactive_calibrate(
             "[bold cyan]First time on this machine[/] — run a one-time "
             "calibration?\nThis measures your CPU's scanning throughput "
             "so estimates\nmatch your hardware. Result is cached at\n"
-            "[cyan]~/.lacuna/calibration.json[/] (only runs once)."
+            "[cyan]~/.absentia/calibration.json[/] (only runs once)."
         )
         if not _prompt_yn("Calibrate now?", default=True):
             stdout_console.print(
@@ -2006,7 +2006,7 @@ def _interactive_calibrate(
 
     # Synthetic-corpus shortcut: skip the path-prompt loop entirely.
     if use_synthetic:
-        with tempfile.TemporaryDirectory(prefix="lacuna-synth-") as tmpd:
+        with tempfile.TemporaryDirectory(prefix="absentia-synth-") as tmpd:
             synth_root = make_synthetic_corpus(Path(tmpd) / "corpus")
             stdout_console.print(
                 f"\nCalibrating against bundled synthetic corpus "
@@ -2032,7 +2032,7 @@ def _interactive_calibrate(
             return None
         if not target.is_dir():
             stderr_console.print(
-                f"[red]lacuna:[/] not a directory: [cyan]{target}[/]"
+                f"[red]absentia:[/] not a directory: [cyan]{target}[/]"
             )
             target = _prompt_path("Enter a calibration corpus path: ")
             if target is None:
@@ -2123,11 +2123,11 @@ def cmd_suppress(
     remove: bool,
     as_list: bool,
 ) -> int:
-    state_dir = root / ".lacuna"
+    state_dir = root / ".absentia"
     if not state_dir.is_dir():
         stderr_console.print(
-            f"[red]lacuna:[/] no [cyan].lacuna/[/] in [cyan]{root}[/]. "
-            f"Run [bold cyan]`lacuna check`[/] first."
+            f"[red]absentia:[/] no [cyan].absentia/[/] in [cyan]{root}[/]. "
+            f"Run [bold cyan]`absentia check`[/] first."
         )
         return 2
 
@@ -2152,7 +2152,7 @@ def cmd_suppress(
 
         if not gap_id:
             stderr_console.print(
-                "[red]lacuna:[/] gap_id required "
+                "[red]absentia:[/] gap_id required "
                 "(or [bold]--list[/] to show existing)."
             )
             return 2
@@ -2172,7 +2172,7 @@ def cmd_suppress(
 
         if not reason:
             stderr_console.print(
-                "[red]lacuna:[/] [bold]--reason[/] required "
+                "[red]absentia:[/] [bold]--reason[/] required "
                 "when adding a suppression."
             )
             return 2
@@ -2216,7 +2216,7 @@ def _scan_incremental(
     Returns ``(files_seen, files_unchanged, by_language_bytes)`` for
     the run summary. The ``by_language_bytes`` map covers every file
     visited (cached + changed); it feeds the machine-wide runs log
-    so `lacuna est` can refine predictions across past scans.
+    so `absentia est` can refine predictions across past scans.
 
     When ``jobs > 1`` and a chunk has enough changed files to amortize
     process startup, parse + extract runs across a worker pool. Storage
@@ -2297,7 +2297,7 @@ def _scan_incremental(
         if not chunk:
             return
         # Parsing phase: update displayed item per file as we work
-        # through the chunk. The user sees the path lacuna is
+        # through the chunk. The user sees the path  absentia is
         # currently chewing on — if a slow parse hangs, the display
         # sticks on that file (the actual stuck one), not a stale
         # path from before the chunk started.
@@ -2434,14 +2434,14 @@ def _write_last_run(
         json.dumps(summary, indent=2) + "\n"
     )
 
-    # Append to the machine-wide runs log so `lacuna est` can refine
+    # Append to the machine-wide runs log so `absentia est` can refine
     # its predictions across every project we've scanned. Best-effort:
     # log-append failures don't break a successful scan.
     _append_run_to_global_log(scan_stats, gaps_found)
 
 
 def _append_run_to_global_log(scan_stats: dict, gaps_found: int) -> None:
-    """Append a row to ~/.lacuna/runs.jsonl. Best-effort; isolates any
+    """Append a row to ~/.absentia/runs.jsonl. Best-effort; isolates any
     aggregation/IO concerns from the scan path."""
     try:
         from .calibration import detect_cores

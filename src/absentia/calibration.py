@@ -6,14 +6,14 @@ user's hardware, then derives a ``machine_speed_factor`` that
 scales the placeholder M-series baseline BPS table to match
 reality.
 
-Cache: ``~/.lacuna/calibration.json``. Per-machine, per-user — not
+Cache: ``~/.absentia/calibration.json``. Per-machine, per-user — not
 per-project; the same hardware-throughput result applies to every
 project the user scans.
 
 Stale-detection re-prompts (or silently re-runs) when:
 
   - the cache file is missing (first run);
-  - lacuna's version changed since calibration (extractors may have
+  - absentia's version changed since calibration (extractors may have
     shifted; throughput baseline drifts);
   - core count changed (laptop swap, container CPU limits changed);
   - the user passes ``--recalibrate``.
@@ -64,7 +64,7 @@ MIN_BYTES_PER_LANGUAGE = 500_000  # 500 KB
 class CalibrationData:
     """Cache record. JSON-serializable."""
     calibrated_at: str           # ISO 8601 UTC
-    lacuna_version: str
+    absentia_version: str
     core_count: int
     machine_speed_factor: float  # multiplied onto baseline BPS
     calibration_corpus_path: str
@@ -83,8 +83,8 @@ class CalibrationData:
     # fall back to the scaled baseline.
     per_language_bps: dict[str, int] = field(default_factory=dict)
     # Mining-tail throughput (mine + finalize stages combined),
-    # measured during the calibration scan at jobs=1. Lets `lacuna
-    # est` predict full check time without requiring a prior `lacuna
+    # measured during the calibration scan at jobs=1. Lets `absentia
+    # est` predict full check time without requiring a prior `absentia
     # check` to populate last_run.json. Older calibration files
     # without this field default to 0.0 (estimator falls back to a
     # parse-only table). Linear extrapolation: mining_estimate_s ≈
@@ -102,8 +102,8 @@ class CalibrationData:
 
 
 def calibration_path() -> Path:
-    """Default cache location: ``~/.lacuna/calibration.json``."""
-    return Path.home() / ".lacuna" / CALIBRATION_FILENAME
+    """Default cache location: ``~/.absentia/calibration.json``."""
+    return Path.home() / ".absentia" / CALIBRATION_FILENAME
 
 
 def load_calibration(path: Path | None = None) -> CalibrationData | None:
@@ -147,10 +147,10 @@ def is_stale(
     testing; in production they default to the live values.
     """
     cv = current_version if current_version is not None else __version__
-    if data.lacuna_version != cv:
+    if data.absentia_version != cv:
         return True, (
-            f"lacuna upgraded since calibration "
-            f"({data.lacuna_version} → {cv})"
+            f"absentia upgraded since calibration "
+            f"({data.absentia_version} → {cv})"
         )
     cc = current_cores if current_cores is not None else detect_cores()
     if data.core_count != cc:
@@ -202,7 +202,7 @@ def run_calibration(
     """Scan ``corpus_root`` at jobs=1, derive a ``machine_speed_factor``,
     and (optionally) fit Amdahl's ``p`` from a multi-jobs curve.
 
-    Uses a temporary state directory so the user's ``.lacuna/`` cache
+    Uses a temporary state directory so the user's ``.absentia/`` cache
     isn't polluted by calibration runs (every scan is therefore cold).
 
     When ``fit_amdahl`` is True (the default), additional scans run at
@@ -274,7 +274,7 @@ def run_calibration(
     for n_jobs in jobs_to_measure:
         _step(indicator, f"scanning at jobs={n_jobs}")
 
-        with tempfile.TemporaryDirectory(prefix="lacuna-cal-") as tmpd:
+        with tempfile.TemporaryDirectory(prefix="absentia-cal-") as tmpd:
             tmp_state = Path(tmpd) / "state"
             tmp_state.mkdir()
             (tmp_state / "version").write_text(f"{SCHEMA_VERSION}\n")
@@ -345,7 +345,7 @@ def run_calibration(
 
     # Mining-tail throughput as seconds-per-byte. Linear scaling is
     # approximate but good enough for ±20% predictions; the user gets
-    # a refined figure once they run a real `lacuna check`.
+    # a refined figure once they run a real `absentia check`.
     mining_spb = (
         primary_mining_tail_s / shape.bytes
         if shape.bytes > 0 and primary_mining_tail_s > 0 else 0.0
@@ -353,7 +353,7 @@ def run_calibration(
 
     return CalibrationData(
         calibrated_at=datetime.now(timezone.utc).isoformat(),
-        lacuna_version=__version__,
+        absentia_version=__version__,
         core_count=cores,
         machine_speed_factor=factor,
         calibration_corpus_path=str(corpus_root),
@@ -416,7 +416,7 @@ def calibrate_per_language(
         if not sub_extractors:
             continue
 
-        with tempfile.TemporaryDirectory(prefix="lacuna-cal-lang-") as tmpd:
+        with tempfile.TemporaryDirectory(prefix="absentia-cal-lang-") as tmpd:
             tmp_state = Path(tmpd) / "state"
             tmp_state.mkdir()
             (tmp_state / "version").write_text(f"{SCHEMA_VERSION}\n")
@@ -526,7 +526,7 @@ def _ticker_if_indicator(indicator: Any, ticking_fn: Any) -> Iterator[None]:
 def _measure_pipeline_overhead(config: Any, extractors: dict) -> float:
     """Run scan_corpus on an empty directory, return elapsed seconds.
 
-    The result is the fixed per-scan cost of lacuna's pipeline
+    The result is the fixed per-scan cost of absentia's pipeline
     independent of input size: storage init, mining boilerplate
     over empty inputs, symmetry/series/dedup passes, SQLite commit.
     Subtracting it from the calibration scan time gives a
@@ -542,7 +542,7 @@ def _measure_pipeline_overhead(config: Any, extractors: dict) -> float:
     and uses raw elapsed); never raises.
     """
     try:
-        with tempfile.TemporaryDirectory(prefix="lacuna-overhead-") as tmpd:
+        with tempfile.TemporaryDirectory(prefix="absentia-overhead-") as tmpd:
             empty_root = Path(tmpd) / "empty"
             empty_root.mkdir()
             tmp_state = Path(tmpd) / "state"
@@ -640,7 +640,7 @@ def make_synthetic_corpus(
     target_dir.mkdir(parents=True, exist_ok=True)
 
     template = (
-        '"""Synthetic file {i} for lacuna calibration."""\n'
+        '"""Synthetic file {i} for  absentia calibration."""\n'
         'from __future__ import annotations\n'
         '\n'
         'from typing import Any\n'

@@ -1,11 +1,11 @@
-"""Tests for src/lacuna/runs_log.py."""
+"""Tests for src/absentia/runs_log.py."""
 from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from lacuna.runs_log import (
+from absentia.runs_log import (
     MIN_RUNS_FOR_AGGREGATION,
     RUNS_LOG_FILENAME,
     aggregate,
@@ -58,7 +58,7 @@ def _make_run(
 def test_runs_log_path_is_under_home() -> None:
     p = runs_log_path()
     assert p.name == RUNS_LOG_FILENAME
-    assert p.parent.name == ".lacuna"
+    assert p.parent.name == ".absentia"
     assert str(p).startswith(str(Path.home()))
 
 

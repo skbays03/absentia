@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from lacuna.entities import Entity, FeatureSet
-from lacuna.storage import (
+from absentia.entities import Entity, FeatureSet
+from absentia.storage import (
     SCHEMA_VERSION,
     StateLock,
     StateLockError,
@@ -23,7 +23,7 @@ def _e(name: str, file_path: str = "x.py", line: int = 1) -> Entity:
 
 
 def test_storage_initializes_state_dir_and_version_file(tmp_path):
-    state = tmp_path / ".lacuna"
+    state = tmp_path / ".absentia"
     with Storage(state):
         pass
     assert state.is_dir()
@@ -32,7 +32,7 @@ def test_storage_initializes_state_dir_and_version_file(tmp_path):
 
 
 def test_storage_rejects_incompatible_version(tmp_path):
-    state = tmp_path / ".lacuna"
+    state = tmp_path / ".absentia"
     state.mkdir()
     (state / "version").write_text("999\n")
     with pytest.raises(StorageVersionError):
@@ -40,7 +40,7 @@ def test_storage_rejects_incompatible_version(tmp_path):
 
 
 def test_file_hash_round_trip(tmp_path):
-    with Storage(tmp_path / ".lacuna") as storage:
+    with Storage(tmp_path / ".absentia") as storage:
         run_id = storage.begin_run()
         assert storage.file_hash("x.py") is None
         storage.upsert_file("x.py", "abc123", run_id)
@@ -54,7 +54,7 @@ def test_file_hash_round_trip(tmp_path):
 
 
 def test_save_and_load_entities_and_features(tmp_path):
-    with Storage(tmp_path / ".lacuna") as storage:
+    with Storage(tmp_path / ".absentia") as storage:
         run_id = storage.begin_run()
         storage.upsert_file("x.py", "abc", run_id)
         e1 = _e("foo")
@@ -71,7 +71,7 @@ def test_save_and_load_entities_and_features(tmp_path):
         storage.commit()
 
     # Reopen and read back
-    with Storage(tmp_path / ".lacuna") as storage:
+    with Storage(tmp_path / ".absentia") as storage:
         loaded_entities, loaded_features = storage.load_all()
         assert loaded_entities == entities
         assert loaded_features[e1.id].get_set("decorator") == frozenset(
@@ -82,7 +82,7 @@ def test_save_and_load_entities_and_features(tmp_path):
 
 
 def test_delete_entities_for_file_removes_features_too(tmp_path):
-    with Storage(tmp_path / ".lacuna") as storage:
+    with Storage(tmp_path / ".absentia") as storage:
         run_id = storage.begin_run()
         storage.upsert_file("a.py", "h1", run_id)
         e = _e("foo", file_path="a.py")
@@ -103,7 +103,7 @@ def test_delete_entities_for_file_removes_features_too(tmp_path):
 
 
 def test_delete_file_clears_records(tmp_path):
-    with Storage(tmp_path / ".lacuna") as storage:
+    with Storage(tmp_path / ".absentia") as storage:
         run_id = storage.begin_run()
         storage.upsert_file("a.py", "h1", run_id)
         e = _e("foo", file_path="a.py")
@@ -120,7 +120,7 @@ def test_delete_file_clears_records(tmp_path):
 
 
 def test_runs_table_records_lifecycle(tmp_path):
-    with Storage(tmp_path / ".lacuna") as storage:
+    with Storage(tmp_path / ".absentia") as storage:
         run_id = storage.begin_run()
         assert run_id == 1
         storage.end_run(run_id, duration_ms=42.0, entities_scanned=10,
@@ -134,7 +134,7 @@ def test_runs_table_records_lifecycle(tmp_path):
 
 
 def test_all_file_hashes_returns_dict(tmp_path):
-    with Storage(tmp_path / ".lacuna") as storage:
+    with Storage(tmp_path / ".absentia") as storage:
         run_id = storage.begin_run()
         storage.upsert_file("a.py", "h1", run_id)
         storage.upsert_file("b.py", "h2", run_id)
@@ -146,7 +146,7 @@ def test_all_file_hashes_returns_dict(tmp_path):
 
 
 def test_state_lock_acquires_and_releases(tmp_path):
-    lockfile = tmp_path / ".lacuna" / "lockfile"
+    lockfile = tmp_path / ".absentia" / "lockfile"
     with StateLock(lockfile):
         assert lockfile.exists()
     # After release, can acquire again
@@ -155,7 +155,7 @@ def test_state_lock_acquires_and_releases(tmp_path):
 
 
 def test_state_lock_rejects_concurrent_acquire(tmp_path):
-    lockfile = tmp_path / ".lacuna" / "lockfile"
+    lockfile = tmp_path / ".absentia" / "lockfile"
     outer = StateLock(lockfile)
     outer.__enter__()
     try:
@@ -167,7 +167,7 @@ def test_state_lock_rejects_concurrent_acquire(tmp_path):
 
 
 def test_state_lock_can_be_reacquired_after_release(tmp_path):
-    lockfile = tmp_path / ".lacuna" / "lockfile"
+    lockfile = tmp_path / ".absentia" / "lockfile"
     with StateLock(lockfile):
         pass
     with StateLock(lockfile):

@@ -1,4 +1,4 @@
-"""Allow `python -m lacuna` invocation."""
+"""Allow `python -m absentia` invocation."""
 import sys
 
 from .cli import main

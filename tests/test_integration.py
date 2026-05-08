@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lacuna.cli import cmd_check, cmd_init
-from lacuna.config import Config
+from absentia.cli import cmd_check, cmd_init
+from absentia.config import Config
 
 
 def _write_corpus(root: Path) -> None:
@@ -67,7 +67,7 @@ def test_suppress_then_check_silences_the_gap(tmp_path, capsys):
     """End-to-end: scan a synthetic corpus, suppress the gap, re-scan and
     confirm it's gone."""
     import json as json_module
-    from lacuna.cli import cmd_suppress
+    from absentia.cli import cmd_suppress
 
     _write_corpus(tmp_path)
     cmd_check(root=tmp_path, config=Config(), quiet=True, as_json=True)
@@ -89,7 +89,7 @@ def test_suppress_then_check_silences_the_gap(tmp_path, capsys):
 
 
 def test_suppress_list_shows_existing_suppressions(tmp_path, capsys):
-    from lacuna.cli import cmd_suppress
+    from absentia.cli import cmd_suppress
     _write_corpus(tmp_path)
     # Run check once to populate state.db
     cmd_check(root=tmp_path, config=Config(), quiet=True)
@@ -128,21 +128,21 @@ def test_json_output_is_parseable_with_expected_shape(tmp_path, capsys):
 
 
 def test_init_creates_config_and_state_dir(tmp_path, capsys):
-    from lacuna.storage import SCHEMA_VERSION
+    from absentia.storage import SCHEMA_VERSION
     code = cmd_init(root=tmp_path, force=False)
     assert code == 0
-    assert (tmp_path / "lacuna.toml").is_file()
-    assert (tmp_path / ".lacuna").is_dir()
-    assert (tmp_path / ".lacuna" / ".gitignore").read_text() == "*\n"
-    assert (tmp_path / ".lacuna" / "version").read_text() == f"{SCHEMA_VERSION}\n"
-    assert "Initialized lacuna" in capsys.readouterr().out
+    assert (tmp_path / "absentia.toml").is_file()
+    assert (tmp_path / ".absentia").is_dir()
+    assert (tmp_path / ".absentia" / ".gitignore").read_text() == "*\n"
+    assert (tmp_path / ".absentia" / "version").read_text() == f"{SCHEMA_VERSION}\n"
+    assert "Initialized absentia" in capsys.readouterr().out
 
 
 def test_init_refuses_to_overwrite_without_force(tmp_path, capsys):
-    (tmp_path / "lacuna.toml").write_text("# pre-existing\n")
+    (tmp_path / "absentia.toml").write_text("# pre-existing\n")
     code = cmd_init(root=tmp_path, force=False)
     assert code == 1
-    assert (tmp_path / "lacuna.toml").read_text() == "# pre-existing\n"
+    assert (tmp_path / "absentia.toml").read_text() == "# pre-existing\n"
 
 
 def test_init_then_check_works_end_to_end(tmp_path, capsys):
@@ -150,26 +150,26 @@ def test_init_then_check_works_end_to_end(tmp_path, capsys):
     cmd_init(root=tmp_path, force=False)
     capsys.readouterr()  # clear init output
 
-    config = Config.from_file(tmp_path / "lacuna.toml")
+    config = Config.from_file(tmp_path / "absentia.toml")
     code = cmd_check(root=tmp_path, config=config, quiet=False)
     assert code == 1
     assert "delete_user" in capsys.readouterr().out
 
 
-def test_init_appends_lacuna_to_existing_gitignore(tmp_path):
+def test_init_appends_absentia_to_existing_gitignore(tmp_path):
     (tmp_path / ".gitignore").write_text("*.pyc\n.venv/\n")
     cmd_init(root=tmp_path, force=False)
     contents = (tmp_path / ".gitignore").read_text()
-    assert ".lacuna/" in contents.splitlines()
+    assert ".absentia/" in contents.splitlines()
     # Doesn't duplicate prior entries
     assert contents.count("*.pyc") == 1
 
 
-def test_init_does_not_duplicate_lacuna_in_gitignore(tmp_path):
-    (tmp_path / ".gitignore").write_text(".lacuna/\n")
+def test_init_does_not_duplicate_absentia_in_gitignore(tmp_path):
+    (tmp_path / ".gitignore").write_text(".absentia/\n")
     cmd_init(root=tmp_path, force=False)
     contents = (tmp_path / ".gitignore").read_text()
-    assert contents.count(".lacuna/") == 1
+    assert contents.count(".absentia/") == 1
 
 
 # ── --max-gaps tolerance ─────────────────────────────────────────────

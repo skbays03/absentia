@@ -2,7 +2,7 @@
 from tree_sitter import Language, Parser
 import tree_sitter_rust
 
-from lacuna.extractors.rust import extract_rust_entities
+from absentia.extractors.rust import extract_rust_entities
 
 RS = Language(tree_sitter_rust.language())
 

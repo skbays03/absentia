@@ -2,7 +2,7 @@
 from tree_sitter import Language, Parser
 import tree_sitter_scala
 
-from lacuna.extractors.scala import extract_scala_entities
+from absentia.extractors.scala import extract_scala_entities
 
 SC = Language(tree_sitter_scala.language())
 

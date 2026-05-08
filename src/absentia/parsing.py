@@ -14,7 +14,7 @@ _NOISE_DIR_NAMES = frozenset({
     ".git", "__pycache__", ".venv", "venv", "env",
     "node_modules", ".mypy_cache", ".pytest_cache", ".ruff_cache",
     "build", "dist", ".tox", ".eggs", "site",
-    ".lacuna",
+    ".absentia",
     # Common compiled/output dirs across languages
     "target",       # Rust / Java
     ".gradle",      # Java

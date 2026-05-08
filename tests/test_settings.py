@@ -1,10 +1,10 @@
-"""Tests for src/lacuna/settings.py."""
+"""Tests for src/absentia/settings.py."""
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from lacuna.settings import (
+from absentia.settings import (
     SETTINGS_FILENAME,
     Settings,
     load_settings,
@@ -16,7 +16,7 @@ from lacuna.settings import (
 def test_settings_path_is_under_home() -> None:
     p = settings_path()
     assert p.name == SETTINGS_FILENAME
-    assert p.parent.name == ".lacuna"
+    assert p.parent.name == ".absentia"
     assert str(p).startswith(str(Path.home()))
 
 

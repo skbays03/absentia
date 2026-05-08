@@ -2,7 +2,7 @@
 from tree_sitter import Language, Parser
 import tree_sitter_c_sharp
 
-from lacuna.extractors.csharp import extract_csharp_entities
+from absentia.extractors.csharp import extract_csharp_entities
 
 CS = Language(tree_sitter_c_sharp.language())
 

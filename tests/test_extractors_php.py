@@ -2,7 +2,7 @@
 from tree_sitter import Language, Parser
 import tree_sitter_php
 
-from lacuna.extractors.php import extract_php_entities
+from absentia.extractors.php import extract_php_entities
 
 PHP = Language(tree_sitter_php.language_php())
 

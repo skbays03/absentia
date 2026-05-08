@@ -1,11 +1,11 @@
-"""Tests for src/lacuna/parallel.py."""
+"""Tests for src/absentia/parallel.py."""
 from __future__ import annotations
 
 import os
 import sys
 from unittest.mock import patch
 
-from lacuna.parallel import (
+from absentia.parallel import (
     default_jobs,
     is_free_threaded,
     mining_worker_cap,
@@ -59,7 +59,7 @@ def test_is_free_threaded_matches_sys_flags():
 
 def test_mining_worker_cap_with_gil():
     """Regular CPython caps at 4 (Amdahl's `p` plateau under GIL)."""
-    with patch("lacuna.parallel.is_free_threaded", return_value=False):
+    with patch("absentia.parallel.is_free_threaded", return_value=False):
         assert mining_worker_cap(jobs=1) == 1
         assert mining_worker_cap(jobs=4) == 4
         assert mining_worker_cap(jobs=16) == 4  # capped
@@ -67,7 +67,7 @@ def test_mining_worker_cap_with_gil():
 
 def test_mining_worker_cap_free_threaded():
     """No-GIL build caps at 7 (one per mining strategy)."""
-    with patch("lacuna.parallel.is_free_threaded", return_value=True):
+    with patch("absentia.parallel.is_free_threaded", return_value=True):
         assert mining_worker_cap(jobs=1) == 1
         assert mining_worker_cap(jobs=4) == 4
         assert mining_worker_cap(jobs=7) == 7
@@ -76,9 +76,9 @@ def test_mining_worker_cap_free_threaded():
 
 def test_mining_worker_cap_minimum_one():
     """Even with jobs=0, never less than 1 worker."""
-    with patch("lacuna.parallel.is_free_threaded", return_value=False):
+    with patch("absentia.parallel.is_free_threaded", return_value=False):
         assert mining_worker_cap(jobs=0) == 1
-    with patch("lacuna.parallel.is_free_threaded", return_value=True):
+    with patch("absentia.parallel.is_free_threaded", return_value=True):
         assert mining_worker_cap(jobs=0) == 1
 
 

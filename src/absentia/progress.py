@@ -215,7 +215,7 @@ class ProgressBar:
         self._prev_total_lines = 0
 
     def set_current_item(self, item: str) -> None:
-        """Sub-line shown beneath the bar — typically the file lacuna
+        """Sub-line shown beneath the bar — typically the file absentia
         is currently looking at. Lets the user see real-time progress
         without flooding stdout. Ignored when ``set_workers`` has
         installed a multi-worker view."""

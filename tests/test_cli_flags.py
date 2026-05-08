@@ -11,15 +11,15 @@ from __future__ import annotations
 import os
 from unittest.mock import patch
 
-from lacuna.cli import (
+from absentia.cli import (
     _apply_scope_overrides,
     _debug,
     _resolve_cold_arg,
     cmd_check,
     cmd_init,
 )
-from lacuna.config import Config
-from lacuna.parsing import _matches_any_glob, find_source_files
+from absentia.config import Config
+from absentia.parsing import _matches_any_glob, find_source_files
 
 
 # ── _resolve_cold_arg ─────────────────────────────────────────────
@@ -152,21 +152,21 @@ def test_find_source_files_excludes_filter_files(tmp_path):
 
 
 def test_debug_silent_when_env_unset(capsys):
-    """Without LACUNA_DEBUG=1 in the environment, _debug emits nothing."""
+    """Without ABSENTIA_DEBUG=1 in the environment, _debug emits nothing."""
     with patch.dict(os.environ, {}, clear=False):
-        os.environ.pop("LACUNA_DEBUG", None)
+        os.environ.pop("ABSENTIA_DEBUG", None)
         _debug("should not appear")
     err = capsys.readouterr().err
     assert "should not appear" not in err
 
 
 def test_debug_emits_when_env_set(capsys):
-    """With LACUNA_DEBUG=1, _debug writes to stderr with the
-    [lacuna debug] prefix."""
-    with patch.dict(os.environ, {"LACUNA_DEBUG": "1"}):
+    """With ABSENTIA_DEBUG=1, _debug writes to stderr with the
+    [absentia debug] prefix."""
+    with patch.dict(os.environ, {"ABSENTIA_DEBUG": "1"}):
         _debug("hello world")
     err = capsys.readouterr().err
-    assert "[lacuna debug] hello world" in err
+    assert "[absentia debug] hello world" in err
 
 
 # ── cmd_init --quiet ───────────────────────────────────────────────
@@ -177,9 +177,9 @@ def test_init_quiet_suppresses_init_output(tmp_path, capsys):
     code = cmd_init(root=tmp_path, force=False, quiet=True)
     assert code == 0
     captured = capsys.readouterr()
-    assert "Initialized lacuna" not in captured.out
-    assert (tmp_path / "lacuna.toml").exists()
-    assert (tmp_path / ".lacuna").is_dir()
+    assert "Initialized absentia" not in captured.out
+    assert (tmp_path / "absentia.toml").exists()
+    assert (tmp_path / ".absentia").is_dir()
 
 
 def test_init_default_emits_friendly_message(tmp_path, capsys):
@@ -187,7 +187,7 @@ def test_init_default_emits_friendly_message(tmp_path, capsys):
     code = cmd_init(root=tmp_path, force=False, quiet=False)
     assert code == 0
     captured = capsys.readouterr()
-    assert "Initialized lacuna" in captured.out
+    assert "Initialized absentia" in captured.out
 
 
 # ── --language end-to-end via cmd_check ────────────────────────────
@@ -197,8 +197,8 @@ def test_language_filter_restricts_scan(tmp_path, capsys):
     """--language keeps only matching extensions in the scan."""
     from dataclasses import replace
 
-    from lacuna.cli import cmd_check
-    from lacuna.config import ScanConfig
+    from absentia.cli import cmd_check
+    from absentia.config import ScanConfig
 
     (tmp_path / "a.py").write_text("def foo(): pass\n")
     (tmp_path / "b.js").write_text("function bar() {}\n")
@@ -227,8 +227,8 @@ def test_exclude_filter_drops_matching_paths(tmp_path):
     """--exclude PATTERN drops matching files from the scan."""
     from dataclasses import replace
 
-    from lacuna.cli import cmd_check
-    from lacuna.config import ScanConfig
+    from absentia.cli import cmd_check
+    from absentia.config import ScanConfig
 
     (tmp_path / "keep.py").write_text("def foo(): pass\n")
     (tmp_path / "vendor").mkdir()
@@ -263,15 +263,15 @@ def test_fingerprint_bump_invalidates_cache(tmp_path):
     scenario — without this guarantee the new detectors would be
     invisible until the user manually --cold or --purge.
     """
-    from lacuna import extractors as ex_mod
-    from lacuna.storage import Storage
+    from absentia import extractors as ex_mod
+    from absentia.storage import Storage
 
     # Write a tiny corpus and scan once to populate the cache.
     (tmp_path / "x.py").write_text("def foo():\n    pass\n")
     cmd_check(root=tmp_path, config=Config(), quiet=True)
 
     # Cache row count before bump.
-    state_dir = tmp_path / ".lacuna"
+    state_dir = tmp_path / ".absentia"
     with Storage(state_dir) as s:
         cached_before = dict(s.all_file_hashes())
     assert "x.py" in cached_before
@@ -296,12 +296,12 @@ def test_fingerprint_bump_invalidates_cache(tmp_path):
 
 
 def test_est_json_shape_is_stable(tmp_path):
-    """`lacuna est --json` produces the documented stable keys."""
+    """`absentia est --json` produces the documented stable keys."""
     import json
     import sys
     from io import StringIO
 
-    from lacuna.cli import cmd_est
+    from absentia.cli import cmd_est
 
     # Drop a single-file corpus into tmp_path so est has something to walk.
     (tmp_path / "x.py").write_text("def foo(): pass\n")

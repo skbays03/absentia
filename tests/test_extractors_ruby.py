@@ -2,7 +2,7 @@
 from tree_sitter import Language, Parser
 import tree_sitter_ruby
 
-from lacuna.extractors.ruby import extract_ruby_entities
+from absentia.extractors.ruby import extract_ruby_entities
 
 RUBY = Language(tree_sitter_ruby.language())
 

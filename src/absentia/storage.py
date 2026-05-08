@@ -1,6 +1,6 @@
-"""SQLite persistence for lacuna's per-repo state.
+"""SQLite persistence for absentia's per-repo state.
 
-The Storage class manages everything in ``.lacuna/state.db``: file
+The Storage class manages everything in ``.absentia/state.db``: file
 content hashes (the basis for incremental mining), entities, features,
 and run history. Rules and gaps are *not* persisted — mining is fast
 enough to recompute every run. That keeps the schema small.
@@ -13,7 +13,7 @@ The state directory also contains:
 - ``version`` — schema version (plain text, redundant with PRAGMA
   user_version inside state.db)
 - ``last_run.json`` — quick-read summary of the most recent run
-- ``lockfile`` — fcntl-locked while a lacuna instance is active
+- ``lockfile`` — fcntl-locked while a absentia instance is active
 """
 from __future__ import annotations
 
@@ -119,9 +119,9 @@ class Storage:
             return
         if on_disk > SCHEMA_VERSION:
             raise StorageVersionError(
-                f"State at {self.state_dir} was written by a newer lacuna "
+                f"State at {self.state_dir} was written by a newer absentia "
                 f"(schema v{on_disk}); this binary expects v{SCHEMA_VERSION}. "
-                f"Upgrade lacuna or delete the .lacuna/ directory."
+                f"Upgrade absentia or delete the .absentia/ directory."
             )
         # Forward migration: on_disk < SCHEMA_VERSION.
         # Currently every schema bump only adds tables (with IF NOT EXISTS),
@@ -308,7 +308,7 @@ class StateLockError(Exception):
 class StateLock:
     """Cross-process exclusion via ``fcntl.flock`` on a sentinel file.
 
-    Use as a context manager. Non-blocking acquire — if another lacuna
+    Use as a context manager. Non-blocking acquire — if another absentia
     instance is already holding the lock, raises ``StateLockError``
     immediately rather than waiting.
 
@@ -329,7 +329,7 @@ class StateLock:
             os.close(self._fd)
             self._fd = None
             raise StateLockError(
-                f"another lacuna instance is running on this repo "
+                f"another absentia instance is running on this repo "
                 f"(lockfile: {self.lockfile_path})"
             ) from exc
         return self

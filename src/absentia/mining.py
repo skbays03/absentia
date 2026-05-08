@@ -96,7 +96,7 @@ def mine(
     # that appears in ≥1 entity could in principle. The real win is
     # at the next tier: values appearing in fewer than 2 entities
     # corpus-wide can't reach 80% confidence in any group of size ≥2,
-    # which is where lacuna's selectors actually emit groups (the
+    # which is where absentia's selectors actually emit groups (the
     # min_group_size config knob enforces ≥3 by default). So we drop
     # any value with global count < ceil(min_confidence * 2). This
     # cuts the per-group counter-building loop's work proportionally

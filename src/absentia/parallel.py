@@ -1,6 +1,6 @@
 """Parallel parsing helpers.
 
-Lacuna's hot loop is parse + extract, which is per-file independent.
+Absentia's hot loop is parse + extract, which is per-file independent.
 Running that stage across a pool of worker processes cuts wall-clock
 substantially on large corpora (Linux kernel: ~96s → ~30s on an
 8-core M-series at default jobs). Storage writes stay on the main
@@ -59,7 +59,7 @@ def default_jobs() -> int:
     """User-set override (``settings.json :: jobs_default``) if present;
     otherwise half of detected cores, rounded down, minimum 1.
 
-    The user can pin a default via ``lacuna --jobs-default N``; that
+    The user can pin a default via ``absentia --jobs-default N``; that
     value wins over the auto half-cores heuristic. Per-invocation
     ``check --jobs N`` always overrides both.
     """

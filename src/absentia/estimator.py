@@ -1,6 +1,6 @@
 """Cold-scan time estimator.
 
-Predicts ``lacuna check`` wall-clock from the corpus shape (bytes
+Predicts ``absentia check`` wall-clock from the corpus shape (bytes
 per language) and a parallelism level. Two pieces:
 
 1. **Per-language throughput** — bytes/sec at jobs=1, derived from
@@ -14,8 +14,8 @@ per language) and a parallelism level. Two pieces:
    you throw at it.
 
 The constants below are M-series MacBook baselines. They get
-overwritten by ``~/.lacuna/calibration.json`` once the user runs
-``lacuna est`` interactively for the first time. Until then every
+overwritten by ``~/.absentia/calibration.json`` once the user runs
+``absentia est`` interactively for the first time. Until then every
 estimate is labeled "uncalibrated" in the output.
 """
 from __future__ import annotations
@@ -53,7 +53,7 @@ M_SERIES_BPS: dict[str, int] = {
 # Catch-all for languages not yet in the baseline table.
 DEFAULT_BPS: int = 15_000_000
 
-# Parallelizable fraction. Empirically ~0.80 for lacuna's pipeline.
+# Parallelizable fraction. Empirically ~0.80 for absentia's pipeline.
 PARALLEL_FRACTION: float = 0.80
 
 # Per-worker startup cost: process spawn + tree-sitter grammar load.
@@ -73,7 +73,7 @@ class Estimate:
 
 @dataclass(frozen=True)
 class CorpusShape:
-    """What ``lacuna est`` walks the tree to learn."""
+    """What ``absentia est`` walks the tree to learn."""
     files: int
     bytes: int
     by_language_bytes: dict[str, int]
@@ -115,10 +115,10 @@ def estimate(
 ) -> Estimate:
     """Compute a single estimate at the requested parallelism level.
 
-    Parallel time is clamped to ``≤ serial`` because lacuna has a
+    Parallel time is clamped to ``≤ serial`` because  absentia has a
     serial-fallback escape hatch (``should_parallelize`` in
     ``parallel.py``). When the work itself is shorter than the
-    worker-spawn overhead, real lacuna stays single-process — the
+    worker-spawn overhead, real  absentia stays single-process — the
     estimator must match that behavior or it overstates cost on
     small corpora.
     """
@@ -234,7 +234,7 @@ def quick_estimate_line(
     parallel_fraction: float = PARALLEL_FRACTION,
     shape: "CorpusShape | None" = None,
 ) -> str | None:
-    """Compact one-line preamble used by ``lacuna check`` / ``lacuna init`` /
+    """Compact one-line preamble used by ``absentia check`` / ``absentia init`` /
     the TUI before a scan starts. Walks the corpus, applies the calibrated
     model when available, and returns a string like::
 
@@ -369,7 +369,7 @@ def _estimate_confidence(
 
     if not calibrated:
         # Aggregated runs are themselves a calibration substitute —
-        # if the user has run `lacuna check` enough times we have
+        # if the user has run `absentia check` enough times we have
         # real timing data for mining throughput regardless of
         # whether they ever ran `est --recalibrate`.
         if runs_used >= 5:
@@ -385,7 +385,7 @@ def _estimate_confidence(
         return (
             "low", 0.50,
             "uncalibrated — using M-series baseline; run "
-            "`lacuna est --recalibrate` or `lacuna check` a few times for accuracy"
+            "`absentia est --recalibrate` or `absentia check` a few times for accuracy"
         )
 
     # Age penalty
@@ -484,7 +484,7 @@ def format_estimate_report(
     bps_table: dict[str, int] | None = None,
     parallel_fraction: float = PARALLEL_FRACTION,
 ) -> str:
-    """Human-readable ASCII report — the body of ``lacuna est`` output.
+    """Human-readable ASCII report — the body of ``absentia est`` output.
 
     The jobs-vs-time table goes up to ``cpu_count``; the user's
     default workers row is marked. A trailing footer notes whether
@@ -516,7 +516,7 @@ def format_estimate_report(
     # so color codes are emitted only when stdout would render them.
     with _capturing_console() as (console, buf):
         p = console.print
-        p(f"[bold]lacuna est[/] — cold-scan estimate for [cyan]{root}[/]")
+        p(f"[bold]absentia est[/] — cold-scan estimate for [cyan]{root}[/]")
         p("")
         p(
             f"Files          [bold]{shape.files:>8,d}[/]   "
@@ -619,7 +619,7 @@ def format_estimate_report(
             p(
                 f"Last actual cold scan     "
                 f"[green]{_format_seconds(observed_cold_scan_s)}[/]   "
-                f"[dim](from .lacuna/last_run.json — ground truth"
+                f"[dim](from .absentia/last_run.json — ground truth"
                 f"{jobs_note})[/]"
             )
 
@@ -715,7 +715,7 @@ def format_estimate_report(
                     "±20% on typical corpora).[/]"
                 )
                 p(
-                    "    [dim]Run [bold cyan]`lacuna check`[/] to replace "
+                    "    [dim]Run [bold cyan]`absentia check`[/] to replace "
                     "the estimate with measured timings.[/]"
                 )
         else:
@@ -731,8 +731,8 @@ def format_estimate_report(
                 )
             p("")
             p(
-                "    [dim]Run [bold cyan]`lacuna check`[/] once to populate "
-                "the mining-tail column, or [bold cyan]`lacuna est "
+                "    [dim]Run [bold cyan]`absentia check`[/] once to populate "
+                "the mining-tail column, or [bold cyan]`absentia est "
                 "--recalibrate`[/] for an estimate.[/]"
             )
         p("")
@@ -745,7 +745,7 @@ def format_estimate_report(
         if parallel_never_helps and len(curve) > 1:
             p("[yellow]Note:[/] this corpus is too small for parallelism to pay off.")
             p("      Worker spawn cost (~0.15 s each) exceeds the work")
-            p("      itself, so lacuna will stay single-process here even")
+            p("      itself, so  absentia will stay single-process here even")
             p("      at higher --jobs values. Speedup column reads 1.00×")
             p("      across the board because that's the truth, not a bug.")
             p("")
@@ -778,7 +778,7 @@ def format_estimate_report(
                 f"([yellow]uncalibrated; expect ±2-4× error[/])."
             )
             p(
-                "               Run [bold cyan]`lacuna est --recalibrate`[/] "
+                "               Run [bold cyan]`absentia est --recalibrate`[/] "
                 "for machine-specific accuracy."
             )
     p("[dim]Methodology:   docs/explanation/estimator.md[/]")

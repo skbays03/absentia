@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>architecture</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.6;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 40px 36px 80px;
+  font-size: 15px;
+}
+h1 { font-size: 32px; border-bottom: 3px solid var(--accent); padding-bottom: 12px; margin-top: 0; }
+h2 { font-size: 24px; margin-top: 48px; padding: 10px 14px;
+     background: var(--h2-bg); border-left: 5px solid var(--accent); }
+h3 { font-size: 18px; margin-top: 32px;
+     border-bottom: 1px dashed var(--border-dash); padding-bottom: 4px; }
+h4 { font-size: 15px; margin-top: 20px; }
+p { margin: 12px 0; }
+ul, ol { margin: 12px 0; padding-left: 28px; }
+li { margin: 4px 0; }
+hr { border: none; border-top: 2px dashed var(--border-dash); margin: 40px 0; }
+code {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+pre {
+  padding: 16px 20px;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+pre code { background: transparent; padding: 0; }
+blockquote { border-left: 4px solid var(--border-dash);
+             margin: 16px 0; padding: 8px 16px; }
+table {
+  border-collapse: collapse; width: 100%; margin: 16px 0;
+  font-size: 13.5px; border-radius: 6px; overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+th { text-align: left; padding: 10px 14px; font-weight: 600;
+     background: var(--accent); color: var(--accent-fg); }
+td { padding: 8px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+tr:nth-child(even) td { background: var(--row-alt); }
+tr:last-child td { border-bottom: none; }
+a { color: var(--link); }
+img { max-width: 100%; height: auto; }
+
+/* GFM task lists */
+ul.task-list, li.task-list-item { list-style: none; }
+li.task-list-item { margin-left: -20px; }
+li.task-list-item input[type="checkbox"] {
+  margin-right: 8px; transform: translateY(1px);
+}
+
+/* TOC */
+.toc {
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 16px 24px; margin: 24px 0;
+}
+.toc h2 { margin-top: 0; background: none; padding: 0; border: none; font-size: 18px; }
+.toc ul { list-style: none; padding-left: 0; }
+.toc li { padding: 3px 0; }
+.toc a { text-decoration: none; color: var(--accent); }
+.toc a:hover { text-decoration: underline; }
+
+/* Mermaid — container styling while the script renders */
+.mermaid {
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 16px; margin: 16px 0; text-align: center;
+}
+
+/* Footer */
+footer {
+  margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border-dash);
+  font-size: 12px; color: var(--muted); text-align: center;
+}
+
+/* Print */
+@media print {
+  body { padding: 20px 24px; font-size: 11px; max-width: none; }
+  h1 { font-size: 22px; }
+  h2 { font-size: 16px; margin-top: 20px; page-break-after: avoid; }
+  h3 { font-size: 13px; margin-top: 14px; page-break-after: avoid; }
+  table, pre, .mermaid { page-break-inside: avoid; font-size: 10px; }
+  a { color: inherit; text-decoration: none; }
+  .toc { page-break-after: always; }
+}
+
+:root {
+  --bg: #fafaf7; --fg: #1a1a1a; --accent: #2a4a6e; --accent-fg: white;
+  --h2-bg: linear-gradient(90deg, #e8eef7 0%, transparent 100%);
+  --card-bg: white; --row-alt: #f5f7fa; --border: #e4e9f0;
+  --border-dash: #c0cbd7; --link: #2a4a6e; --muted: #6a7e94;
+  --code-bg: #eef1f6; --code-fg: #b0365a; --pre-bg: #1e2a38; --pre-fg: #dce3ed;
+}
+body { color: var(--fg); background: var(--bg); }
+code { background: var(--code-bg); color: var(--code-fg); }
+pre { background: var(--pre-bg); color: var(--pre-fg); }
+pre code { color: inherit; }
+strong { color: var(--accent); }
+blockquote { background: #f0f3f8; color: #3e4a5b; }
+
+pre code.hljs { padding: 16px 20px; border-radius: 8px; font-size: 12.5px; }
+:not(pre) > code.hljs { padding: 2px 6px; border-radius: 4px; }
+</style>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
+<!-- parser: markdown pip lib -->
+</head>
+<body>
+<nav class="toc"><h2>Table of contents</h2><ul><li><a href="#the-pipeline">The pipeline</a></li><li><a href="#the-pieces-top-to-bottom">The pieces, top to bottom</a></li><li><a href="#performance-benchmarks">Performance benchmarks</a></li><li><a href="#what-this-architecture-buys">What this architecture buys</a></li><li><a href="#what-it-doesn-t-try-to-be">What it doesn't try to be</a></li><li><a href="#reproducing-the-benchmarks">Reproducing the benchmarks</a></li></ul></nav>
+<h1 id="architecture-and-performance">Architecture and performance</h1>
+<p>Lacuna is a single-process Python program. It parses code with
+tree-sitter, mines patterns with classical frequent-itemset
+techniques, and persists state in SQLite. There's no daemon, no
+network, no model. This doc describes how the pieces fit together
+and how the engine performs on real codebases.</p>
+<h2 id="the-pipeline">The pipeline</h2>
+<p>A scan is four sequential stages, each one a small, focused module:</p>
+<pre><code>       sources              entities             groups            rules + gaps
+  ┌──────────────┐    ┌─────────────────┐  ┌──────────────┐  ┌─────────────────┐
+  │  *.py *.rs   │    │  Entity +       │  │  per-       │  │  per-rule:      │
+  │  *.go *.kt   │ →  │  FeatureSet     │→ │  selector   │→ │  members with   │
+  │  *.cpp *.c   │    │  (kind, name,   │  │  cohorts    │  │  vs. without    │
+  │  ...         │    │   features)     │  │             │  │  the value      │
+  └──────────────┘    └─────────────────┘  └──────────────┘  └─────────────────┘
+       parse              extractors           selectors            mining
+</code></pre>
+<p>Each stage is testable in isolation and replaceable. The data
+between stages is plain Python dataclasses (frozen, hashable) — a
+new selector or feature-kind plugs in without touching the others.</p>
+<h2 id="the-pieces-top-to-bottom">The pieces, top to bottom</h2>
+<h3 id="parsing-file-discovery"><code>parsing</code> — file discovery</h3>
+<p>Walks the project tree, skipping noise directories (<code>.git</code>, <code>node_modules</code>,
+<code>build</code>, <code>__pycache__</code>, etc.), and yields paths matching the configured
+languages' file extensions. Single function: <code>find_source_files</code>.</p>
+<h3 id="extractors-one-per-language"><code>extractors/</code> — one per language</h3>
+<p>Each extractor is a tree-sitter parser plus a per-language AST → entity
+mapping. They share a stable interface (<code>parse(bytes) → Node</code>,
+<code>extract(node, file_path) → Iterable[(Entity, FeatureSet)]</code>) and
+register themselves through Python entry points so third-party
+extractors can plug in via pip-installable packages. See
+<a href="../reference/selectors.md">reference/selectors.md</a> for the
+in-tree extractor list and the entry-point group name.</p>
+<h3 id="selectors-entities-groups"><code>selectors</code> — entities → groups</h3>
+<p>A selector is conceptually a function <code>entities → list[Group]</code>.
+Lacuna ships three: <code>directory</code> (group by parent dir), <code>decorator</code>
+(group by which decorator/annotation/attribute an entity carries),
+<code>parent_class</code> (group by inheritance / protocol conformance / trait
+impl). Adding a fourth is ~30 lines.</p>
+<h3 id="mining-groups-rules-gaps"><code>mining</code> — groups → rules + gaps</h3>
+<p>For each group, count how often each feature value appears among
+its members. Values appearing in <code>≥ min_confidence</code> of members
+become rules; members lacking the value become gaps. The whole
+mining loop is one function (see
+<a href="how-mining-works.md">how mining works</a> for the math).</p>
+<h3 id="storage-sqlite-backed-persistence"><code>storage</code> — SQLite-backed persistence</h3>
+<p>A small SQLite schema holds files (with content hashes), entities,
+features, runs, and suppressions. Every scan is incremental:
+unchanged files (matching content hash) keep their cached entities
+and features; only changed files are re-parsed. Result: a warm
+re-scan of any project completes in milliseconds even when the cold
+scan took minutes.</p>
+<h3 id="cli-and-tui-two-front-ends"><code>cli</code> and <code>tui/</code> — two front-ends</h3>
+<p>Both consume the same <code>scan_corpus</code> function. The CLI prints text
+or JSON for CI/scripting; the TUI is an interactive Textual app for
+exploration. Anything either does is also available to embedders
+that import lacuna as a library.</p>
+<h2 id="performance-benchmarks">Performance benchmarks</h2>
+<p>The following are scan times on a single MacBook (M-series, no
+multi-core fan-out — a single process per scan), each on a
+shallow-cloned (<code>--depth 1</code>) public repo. Times include
+parse + extract + group + mine. Storage was cold for each run
+(no incremental cache).</p>
+<table>
+<thead>
+<tr>
+<th>Language</th>
+<th>Repo</th>
+<th style="text-align: right;">Entities</th>
+<th style="text-align: right;">Groups</th>
+<th style="text-align: right;">Rules</th>
+<th style="text-align: right;">Cold scan</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Python</td>
+<td><a href="https://github.com/python/cpython">python/cpython</a></td>
+<td style="text-align: right;">70,092</td>
+<td style="text-align: right;">867</td>
+<td style="text-align: right;">475</td>
+<td style="text-align: right;">4.6s</td>
+</tr>
+<tr>
+<td>JavaScript</td>
+<td><a href="https://github.com/nodejs/node">nodejs/node</a></td>
+<td style="text-align: right;">29,124</td>
+<td style="text-align: right;">439</td>
+<td style="text-align: right;">89</td>
+<td style="text-align: right;">6.3s</td>
+</tr>
+<tr>
+<td>TypeScript</td>
+<td><a href="https://github.com/microsoft/vscode">microsoft/vscode</a></td>
+<td style="text-align: right;">109,189</td>
+<td style="text-align: right;">2,043</td>
+<td style="text-align: right;">806</td>
+<td style="text-align: right;">10.2s</td>
+</tr>
+<tr>
+<td>Rust</td>
+<td><a href="https://github.com/rust-lang/rust">rust-lang/rust</a></td>
+<td style="text-align: right;">199,594</td>
+<td style="text-align: right;">2,480</td>
+<td style="text-align: right;">722</td>
+<td style="text-align: right;">13.2s</td>
+</tr>
+<tr>
+<td>Go</td>
+<td><a href="https://github.com/kubernetes/kubernetes">kubernetes/kubernetes</a></td>
+<td style="text-align: right;">120,130</td>
+<td style="text-align: right;">2,159</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;">12.4s</td>
+</tr>
+<tr>
+<td>Java</td>
+<td><a href="https://github.com/apache/kafka">apache/kafka</a></td>
+<td style="text-align: right;">60,279</td>
+<td style="text-align: right;">646</td>
+<td style="text-align: right;">144</td>
+<td style="text-align: right;">5.7s</td>
+</tr>
+<tr>
+<td>Ruby</td>
+<td><a href="https://github.com/rails/rails">rails/rails</a></td>
+<td style="text-align: right;">20,490</td>
+<td style="text-align: right;">196</td>
+<td style="text-align: right;">127</td>
+<td style="text-align: right;">1.6s</td>
+</tr>
+<tr>
+<td>C#</td>
+<td><a href="https://github.com/dotnet/runtime">dotnet/runtime</a></td>
+<td style="text-align: right;">348,023</td>
+<td style="text-align: right;">4,210</td>
+<td style="text-align: right;">1,388</td>
+<td style="text-align: right;">56.4s</td>
+</tr>
+<tr>
+<td>Swift</td>
+<td><a href="https://github.com/apple/swift">apple/swift</a></td>
+<td style="text-align: right;">112,273</td>
+<td style="text-align: right;">1,464</td>
+<td style="text-align: right;">222</td>
+<td style="text-align: right;">7.5s</td>
+</tr>
+<tr>
+<td><strong>C</strong></td>
+<td><strong><a href="https://github.com/torvalds/linux">torvalds/linux</a></strong></td>
+<td style="text-align: right;"><strong>666,574</strong></td>
+<td style="text-align: right;"><strong>3,210</strong></td>
+<td style="text-align: right;"><strong>113</strong></td>
+<td style="text-align: right;"><strong>96.7s</strong></td>
+</tr>
+<tr>
+<td>C++</td>
+<td><a href="https://github.com/llvm/llvm-project">llvm/llvm-project</a></td>
+<td style="text-align: right;">341,050</td>
+<td style="text-align: right;">4,161</td>
+<td style="text-align: right;">1,212</td>
+<td style="text-align: right;">47.0s</td>
+</tr>
+<tr>
+<td>PHP</td>
+<td><a href="https://github.com/laravel/framework">laravel/framework</a></td>
+<td style="text-align: right;">32,380</td>
+<td style="text-align: right;">363</td>
+<td style="text-align: right;">107</td>
+<td style="text-align: right;">2.3s</td>
+</tr>
+<tr>
+<td>Kotlin</td>
+<td><a href="https://github.com/JetBrains/kotlin">JetBrains/kotlin</a></td>
+<td style="text-align: right;">254,670</td>
+<td style="text-align: right;">7,687</td>
+<td style="text-align: right;">2,945</td>
+<td style="text-align: right;">23.1s</td>
+</tr>
+<tr>
+<td>Scala</td>
+<td><a href="https://github.com/apache/spark">apache/spark</a></td>
+<td style="text-align: right;">61,670</td>
+<td style="text-align: right;">1,135</td>
+<td style="text-align: right;">421</td>
+<td style="text-align: right;">7.8s</td>
+</tr>
+<tr>
+<td>Lua</td>
+<td><a href="https://github.com/nvim-lua/plenary.nvim">nvim-lua/plenary.nvim</a></td>
+<td style="text-align: right;">372</td>
+<td style="text-align: right;">11</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.05s</td>
+</tr>
+<tr>
+<td>Bash</td>
+<td><a href="https://github.com/Bash-it/bash-it">Bash-it/bash-it</a></td>
+<td style="text-align: right;">861</td>
+<td style="text-align: right;">41</td>
+<td style="text-align: right;">10</td>
+<td style="text-align: right;">0.08s</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Headline number: lacuna scans the entire Linux kernel — 666,574
+entities across ~30 million lines of C — in 96.7 seconds.</strong> A warm
+re-scan of any of these completes in milliseconds (incremental cache
+covers unchanged files, which is most of them on any normal
+commit).</p>
+<h3 id="throughput">Throughput</h3>
+<p>Across all 16 corpora, lacuna sustains <strong>5,000–15,000 entities per
+second</strong> on a single Python process, with the variance driven mostly
+by per-language extractor cost (deeper AST = more nodes to walk).
+There's no quadratic term: the largest input (Linux) and the
+smallest (plenary.nvim) sit on the same line.</p>
+<pre><code>Cold scan time vs. corpus size (entity count)
+
+100s ┤                                                     ● linux
+     │
+ 50s ┤                                       ● dotnet/runtime
+     │                              ● llvm
+     │
+ 25s ┤                       ● kotlin
+     │                ● rust ● k8s
+     │           ● vscode
+ 10s ┤        ● cpp
+     │      ● swift, kafka, scala
+     │  ● python, node, ruby, php
+  1s ┤● lua, bash
+     └────────────────────────────────────────────────────────────────
+     0           100k             300k            500k            700k
+                              entities scanned
+</code></pre>
+<p>(Roughly linear in entity count with a small per-language coefficient.)</p>
+<h3 id="memory">Memory</h3>
+<p>Lacuna's working set is bounded: it holds the entity store and the
+mining tables in RAM, ~200–400 MB peak even on the Linux kernel. It
+doesn't load every file's source into memory simultaneously —
+parses are streamed, ASTs released after extraction.</p>
+<h3 id="incremental-scans">Incremental scans</h3>
+<p>The first scan of a project is the cold case in the table. Every
+subsequent scan in the same project is incremental: a file's
+content hash determines whether it needs re-parsing. On a typical
+"edit one file, re-run" loop, the warm scan completes in well under
+a second regardless of the project's total size.</p>
+<h2 id="what-this-architecture-buys">What this architecture buys</h2>
+<ul>
+<li><strong>Single-machine first.</strong> The largest target we publicly benchmark
+  (Linux kernel) fits in 100 seconds on a laptop. Most projects fit
+  in seconds. There's no engineering pressure for distributed scans
+  at the audiences lacuna targets.</li>
+<li><strong>Plain Python</strong>, no native code beyond the tree-sitter
+  bindings. Easy to install (<code>pip install lacuna</code>), trivial to
+  inspect, debug, or extend.</li>
+<li><strong>Deterministic.</strong> Same input, same output; the engine is just
+  counting. See <a href="why-no-llm.md">why no LLM</a>.</li>
+<li><strong>Incremental.</strong> Caching is content-hash-based, so every commit
+  benefits from work the previous run did.</li>
+<li><strong>Plug-in friendly.</strong> New languages slot in via the
+  <code>lacuna.extractors</code> entry-point group; new selectors slot in via
+  the same selector interface; new feature kinds slot in via the
+  per-extractor feature emission. None of these require modifying
+  the core engine.</li>
+</ul>
+<h2 id="what-it-doesn-t-try-to-be">What it doesn't try to be</h2>
+<ul>
+<li>Not distributed. We don't need it at this scale; if we ever do,
+  the seam is at the storage layer (replace SQLite with a shared
+  store).</li>
+<li>Not GPU-accelerated. Counting doesn't benefit; tree-sitter is
+  already the bottleneck and it's CPU-bound C.</li>
+<li>Not a long-running service. Each scan is a process that starts,
+  reads its <code>.lacuna/</code> cache, scans, writes back, exits. The TUI is
+  the same scan loop wrapped in an interactive front-end.</li>
+</ul>
+<h2 id="reproducing-the-benchmarks">Reproducing the benchmarks</h2>
+<pre><code class="language-bash">python scripts/scan_remote.py --language python   # interactive, picks corpus
+python scripts/scan_remote.py URL                  # scan an arbitrary repo
+</code></pre>
+<p>The <code>KNOWN_CORPORA</code> table at the top of <code>scripts/scan_remote.py</code>
+lists curated targets per language. The benchmark numbers above
+were generated with shallow clones (<code>--depth 1</code> is the script's
+default) and a cold <code>.lacuna/</code> directory each run. Hardware:
+M-series MacBook, single process, no multi-core parallelism —
+those are aspirations for the enterprise tier, not assumptions of
+the v1 engine.</p>
+<footer>Generated by baselines/tools/md_preview.py · 2026-05-04 22:24</footer>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      /* Surfaces — keep diagrams readable on our near-white page */
+      background: '#ffffff',
+      mainBkg: '#2a4a6e',
+      secondaryColor: '#4a6e92',
+      tertiaryColor: '#e8eef7',
+
+      /* Text — force dark everywhere; mermaid defaults to white in some shapes */
+      primaryColor: '#2a4a6e',
+      primaryTextColor: '#ffffff',
+      primaryBorderColor: '#1a2f4a',
+      lineColor: '#2a4a6e',
+      textColor: '#1a1a1a',
+
+      /* Gantt-specific — this is what fixed the washed-out screenshot */
+      sectionBkgColor: '#e8eef7',
+      altSectionBkgColor: '#f5f7fa',
+      gridColor: '#c0cbd7',
+      titleColor: '#1a2f4a',
+      taskBkgColor: '#2a4a6e',
+      taskTextColor: '#ffffff',
+      taskTextLightColor: '#ffffff',
+      taskTextDarkColor: '#1a1a1a',
+      taskTextOutsideColor: '#1a1a1a',
+      taskTextClickableColor: '#ffffff',
+      activeTaskBkgColor: '#4a6e92',
+      activeTaskBorderColor: '#1a2f4a',
+      doneTaskBkgColor: '#b8c5d5',
+      doneTaskBorderColor: '#2a4a6e',
+      critBkgColor: '#c0392b',
+      critBorderColor: '#7a1f13',
+      todayLineColor: '#c0392b'
+    }
+  });
+</script>
+
+
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+<script>
+  if (typeof hljs !== 'undefined') {
+    hljs.highlightAll();
+  }
+</script>
+
+
+</body>
+</html>

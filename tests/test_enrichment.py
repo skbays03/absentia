@@ -1,8 +1,8 @@
-"""Tests for src/lacuna/enrichment.py."""
+"""Tests for src/absentia/enrichment.py."""
 from __future__ import annotations
 
-from lacuna.entities import Entity, FeatureSet
-from lacuna.enrichment import (
+from absentia.entities import Entity, FeatureSet
+from absentia.enrichment import (
     build_test_method_index,
     candidate_test_entity_ids,
     enrich_sibling_tests,

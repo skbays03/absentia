@@ -2,7 +2,7 @@
 from tree_sitter import Language, Parser
 import tree_sitter_typescript
 
-from lacuna.extractors.typescript import extract_typescript_entities
+from absentia.extractors.typescript import extract_typescript_entities
 
 TS = Language(tree_sitter_typescript.language_typescript())
 

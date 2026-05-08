@@ -2,7 +2,7 @@
 from tree_sitter import Language, Parser
 import tree_sitter_lua
 
-from lacuna.extractors.lua import extract_lua_entities
+from absentia.extractors.lua import extract_lua_entities
 
 LUA = Language(tree_sitter_lua.language())
 

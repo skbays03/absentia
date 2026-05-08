@@ -259,7 +259,7 @@ def find_call_pair_gaps(
     no off-the-shelf linter knows about.
 
     Doesn't try control-flow analysis. The check is "this function
-    calls A but not B"; if you call B in the wrong place, lacuna
+    calls A but not B"; if you call B in the wrong place, absentia
     won't catch that — that's linter / type-system territory.
 
     The default ``min_confidence=0.9`` and ``min_support=5`` are

@@ -1,5 +1,5 @@
-from lacuna.entities import Entity, FeatureSet
-from lacuna.selectors import decorator_groups, directory_groups, parent_class_groups
+from absentia.entities import Entity, FeatureSet
+from absentia.selectors import decorator_groups, directory_groups, parent_class_groups
 
 
 def _entity(path: str, name: str) -> Entity:

@@ -1,5 +1,5 @@
 [project]
-name = "lacuna"
+name = "absentia"
 version = "0.0.1"
 description = "Find the holes your code already drew."
 readme = "README.md"
@@ -53,29 +53,29 @@ docs = [
 ]
 
 [project.scripts]
-lacuna = "lacuna.cli:main"
+absentia = "absentia.cli:main"
 
-[project.entry-points."lacuna.extractors"]
-python     = "lacuna.extractors.python:PythonExtractor"
-javascript = "lacuna.extractors.javascript:JavaScriptExtractor"
-typescript = "lacuna.extractors.typescript:TypeScriptExtractor"
-tsx        = "lacuna.extractors.typescript:TSXExtractor"
-rust       = "lacuna.extractors.rust:RustExtractor"
-go         = "lacuna.extractors.go:GoExtractor"
-java       = "lacuna.extractors.java:JavaExtractor"
-ruby       = "lacuna.extractors.ruby:RubyExtractor"
-csharp     = "lacuna.extractors.csharp:CSharpExtractor"
-c          = "lacuna.extractors.c:CExtractor"
-cpp        = "lacuna.extractors.cpp:CPlusPlusExtractor"
-php        = "lacuna.extractors.php:PhpExtractor"
-kotlin     = "lacuna.extractors.kotlin:KotlinExtractor"
-scala      = "lacuna.extractors.scala:ScalaExtractor"
-lua        = "lacuna.extractors.lua:LuaExtractor"
-bash       = "lacuna.extractors.bash:BashExtractor"
-swift      = "lacuna.extractors.swift:SwiftExtractor"
+[project.entry-points."absentia.extractors"]
+python     = "absentia.extractors.python:PythonExtractor"
+javascript = "absentia.extractors.javascript:JavaScriptExtractor"
+typescript = "absentia.extractors.typescript:TypeScriptExtractor"
+tsx        = "absentia.extractors.typescript:TSXExtractor"
+rust       = "absentia.extractors.rust:RustExtractor"
+go         = "absentia.extractors.go:GoExtractor"
+java       = "absentia.extractors.java:JavaExtractor"
+ruby       = "absentia.extractors.ruby:RubyExtractor"
+csharp     = "absentia.extractors.csharp:CSharpExtractor"
+c          = "absentia.extractors.c:CExtractor"
+cpp        = "absentia.extractors.cpp:CPlusPlusExtractor"
+php        = "absentia.extractors.php:PhpExtractor"
+kotlin     = "absentia.extractors.kotlin:KotlinExtractor"
+scala      = "absentia.extractors.scala:ScalaExtractor"
+lua        = "absentia.extractors.lua:LuaExtractor"
+bash       = "absentia.extractors.bash:BashExtractor"
+swift      = "absentia.extractors.swift:SwiftExtractor"
 
 [project.urls]
-# Homepage   = "https://lacuna.dev"      # Deferred — see DEFERRALS.md
+# Homepage   = "https://absentia.dev"    # Deferred — see DEFERRALS.md
 # Repository = "https://github.com/..."  # Deferred — see DEFERRALS.md
 
 [build-system]
@@ -83,7 +83,7 @@ requires = ["hatchling", "hatch-mypyc"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/lacuna"]
+packages = ["src/absentia"]
 
 # mypyc compiles the two CPU-bound mining hot paths to native C
 # extensions. On the Linux-kernel benchmark this trims another 2-5×
@@ -94,8 +94,8 @@ packages = ["src/lacuna"]
 [tool.hatch.build.targets.wheel.hooks.mypyc]
 dependencies = ["hatch-mypyc"]
 include = [
-    "src/lacuna/mining.py",
-    "src/lacuna/symmetry.py",
+    "src/absentia/mining.py",
+    "src/absentia/symmetry.py",
 ]
 
 [tool.pytest.ini_options]
@@ -108,15 +108,15 @@ asyncio_mode = "auto"
 # decision point must be exercised both ways. Line coverage alone
 # misses entire categories of bugs (the "elif missed" classic).
 branch = true
-source = ["lacuna"]
+source = ["absentia"]
 # mining.py and symmetry.py are mypyc-compiled to native .so files;
 # coverage can't trace into compiled extensions. Tests against them
 # still run (and assert correctness via test_corpus_regression +
 # test_extractor_fuzz + the existing unit tests) — they're just not
 # visible to coverage's instrumentation.
 omit = [
-    "*/lacuna/mining.py",
-    "*/lacuna/symmetry.py",
+    "*/absentia/mining.py",
+    "*/absentia/symmetry.py",
 ]
 
 [tool.coverage.report]
@@ -151,5 +151,5 @@ ignore_missing_imports = true
 # Per-module overrides — extractors lean on tree-sitter's loosely-typed
 # Node API; treating their child fields as bytes|None forces noisy guards.
 [[tool.mypy.overrides]]
-module = "lacuna.extractors.*"
+module = "absentia.extractors.*"
 disable_error_code = ["union-attr"]

@@ -26,8 +26,8 @@ from __future__ import annotations
 import pytest
 from hypothesis import HealthCheck, given, settings, strategies as st
 
-from lacuna.entities import Entity, FeatureSet
-from lacuna.extractors import discover_extractor_classes
+from absentia.entities import Entity, FeatureSet
+from absentia.extractors import discover_extractor_classes
 
 
 _EXTRACTOR_CLASSES = sorted(

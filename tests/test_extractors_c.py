@@ -2,7 +2,7 @@
 from tree_sitter import Language, Parser
 import tree_sitter_c
 
-from lacuna.extractors.c import extract_c_entities
+from absentia.extractors.c import extract_c_entities
 
 C = Language(tree_sitter_c.language())
 

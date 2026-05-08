@@ -2,7 +2,7 @@
 from tree_sitter import Language, Parser
 import tree_sitter_javascript
 
-from lacuna.extractors.javascript import extract_javascript_entities
+from absentia.extractors.javascript import extract_javascript_entities
 
 JS = Language(tree_sitter_javascript.language())
 

@@ -1,15 +1,15 @@
 """The Extractor protocol — one per language.
 
 An Extractor owns the language's parser and the AST → Entity/FeatureSet
-translation. Lacuna's engine is otherwise language-agnostic: selectors,
+translation. Absentia's engine is otherwise language-agnostic: selectors,
 mining, and storage all operate on Entity + FeatureSet without caring
 which language produced them.
 
 To add a language, implement this ABC and register it via the
-``lacuna.extractors`` entry-point group:
+``absentia.extractors`` entry-point group:
 
-    [project.entry-points."lacuna.extractors"]
-    clojure = "lacuna_clojure:ClojureExtractor"
+    [project.entry-points."absentia.extractors"]
+    clojure = "absentia_clojure:ClojureExtractor"
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ class Extractor(ABC):
     """Abstract base for per-language extractors.
 
     Subclasses must set the two class variables and implement ``parse``
-    and ``extract``. The ABC keeps the contract explicit; lacuna's
+    and ``extract``. The ABC keeps the contract explicit; absentia's
     discovery code handles the rest.
     """
 

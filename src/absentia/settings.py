@@ -1,11 +1,11 @@
 """Machine-wide user settings.
 
-A small JSON file at ``~/.lacuna/settings.json`` holding preferences
+A small JSON file at ``~/.absentia/settings.json`` holding preferences
 that apply across every project on this machine. Currently just
 ``jobs_default`` — the override for :func:`parallel.default_jobs`,
 which would otherwise pick half of detected cores.
 
-Kept separate from per-project ``lacuna.toml`` (a versioned,
+Kept separate from per-project ``absentia.toml`` (a versioned,
 checked-in config) and from ``calibration.json`` (machine
 benchmark data — written by the calibration flow, not the user).
 """
@@ -21,7 +21,7 @@ SETTINGS_FILENAME = "settings.json"
 
 @dataclass(frozen=True)
 class Settings:
-    """User preferences that survive across ``lacuna`` invocations.
+    """User preferences that survive across ``absentia`` invocations.
 
     ``jobs_default`` of ``None`` means "auto" — fall back to
     ``cpu_count // 2``. A positive integer pins the default; a
@@ -31,8 +31,8 @@ class Settings:
 
 
 def settings_path() -> Path:
-    """Default location: ``~/.lacuna/settings.json``."""
-    return Path.home() / ".lacuna" / SETTINGS_FILENAME
+    """Default location: ``~/.absentia/settings.json``."""
+    return Path.home() / ".absentia" / SETTINGS_FILENAME
 
 
 def load_settings(path: Path | None = None) -> Settings:

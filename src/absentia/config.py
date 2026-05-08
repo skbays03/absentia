@@ -1,4 +1,4 @@
-"""lacuna.toml configuration loading.
+"""absentia.toml configuration loading.
 
 Frozen dataclasses model the config so it's easy to construct in tests
 and pass around as a single object. Defaults match the values that were
@@ -135,10 +135,10 @@ class Config:
 
 
 def find_config(start: Path) -> Path | None:
-    """Search ``start`` and its parents for ``lacuna.toml``. Returns the
+    """Search ``start`` and its parents for ``absentia.toml``. Returns the
     first match or None."""
     for parent in [start, *start.parents]:
-        candidate = parent / "lacuna.toml"
+        candidate = parent / "absentia.toml"
         if candidate.is_file():
             return candidate
     return None

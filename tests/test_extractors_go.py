@@ -2,7 +2,7 @@
 from tree_sitter import Language, Parser
 import tree_sitter_go
 
-from lacuna.extractors.go import extract_go_entities
+from absentia.extractors.go import extract_go_entities
 
 GO = Language(tree_sitter_go.language())
 

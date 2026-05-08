@@ -2,7 +2,7 @@
 from tree_sitter import Language, Parser
 import tree_sitter_java
 
-from lacuna.extractors.java import extract_java_entities
+from absentia.extractors.java import extract_java_entities
 
 JAVA = Language(tree_sitter_java.language())
 

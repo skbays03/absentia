@@ -1,11 +1,11 @@
-"""Tests for src/lacuna/calibration.py."""
+"""Tests for src/absentia/calibration.py."""
 from __future__ import annotations
 
 import json
 
 import pytest
 
-from lacuna.calibration import (
+from absentia.calibration import (
     CALIBRATION_FILENAME,
     CalibrationData,
     calibrated_bps_table,
@@ -19,7 +19,7 @@ from lacuna.calibration import (
 def _sample_data(**overrides) -> CalibrationData:
     base = {
         "calibrated_at": "2026-05-05T12:00:00+00:00",
-        "lacuna_version": "0.1.0",
+        "absentia_version": "0.1.0",
         "core_count": 8,
         "machine_speed_factor": 1.04,
         "calibration_corpus_path": "/tmp/example",
@@ -34,7 +34,7 @@ def _sample_data(**overrides) -> CalibrationData:
 def test_calibration_path_default():
     p = calibration_path()
     assert p.name == CALIBRATION_FILENAME
-    assert p.parent.name == ".lacuna"
+    assert p.parent.name == ".absentia"
 
 
 def test_load_returns_none_when_missing(tmp_path):
@@ -73,10 +73,10 @@ def test_load_missing_field_returns_none(tmp_path):
 
 
 def test_is_stale_version_change():
-    data = _sample_data(lacuna_version="0.0.5")
+    data = _sample_data(absentia_version="0.0.5")
     stale, reason = is_stale(data, current_version="0.1.0", current_cores=8)
     assert stale is True
-    assert "lacuna upgraded" in reason
+    assert "absentia upgraded" in reason
 
 
 def test_is_stale_core_count_change():
@@ -97,7 +97,7 @@ def test_is_stale_age_threshold():
     """A calibration older than max_age_days is flagged stale."""
     from datetime import datetime, timedelta, timezone
 
-    from lacuna.calibration import CALIBRATION_MAX_AGE_DAYS
+    from absentia.calibration import CALIBRATION_MAX_AGE_DAYS
 
     old_ts = (
         datetime.now(timezone.utc) - timedelta(days=CALIBRATION_MAX_AGE_DAYS + 1)
@@ -129,7 +129,7 @@ def test_is_stale_unparseable_timestamp_does_not_crash():
 
 def test_calibrated_bps_table_scales_baseline():
     """factor < 1 produces slower BPS; factor > 1 produces faster."""
-    from lacuna.estimator import M_SERIES_BPS
+    from absentia.estimator import M_SERIES_BPS
 
     slow = calibrated_bps_table(0.5)
     fast = calibrated_bps_table(2.0)
@@ -158,18 +158,18 @@ def test_calibrated_bps_table_per_language_overrides():
     # python uses the override, not 0.5 × baseline
     assert table["python"] == 9_999_999
     # other languages still get the global factor
-    from lacuna.estimator import M_SERIES_BPS
+    from absentia.estimator import M_SERIES_BPS
     assert table["c"] == int(M_SERIES_BPS["c"] * 0.5)
 
 
 def test_calibrate_per_language_skips_under_represented(tmp_path):
     """Languages below MIN_BYTES_PER_LANGUAGE are excluded from
     per-language calibration."""
-    from lacuna.calibration import (
+    from absentia.calibration import (
         MIN_BYTES_PER_LANGUAGE,
         calibrate_per_language,
     )
-    from lacuna.config import Config
+    from absentia.config import Config
 
     # Make Python comfortably above the 500 KB threshold and JS well
     # below it. Calibration should produce a python BPS only.
@@ -191,8 +191,8 @@ def test_calibrate_per_language_skips_under_represented(tmp_path):
 
 def test_run_calibration_rejects_too_few_files(tmp_path):
     """A corpus below the file-count threshold should error cleanly."""
-    from lacuna.calibration import run_calibration
-    from lacuna.config import Config
+    from absentia.calibration import run_calibration
+    from absentia.config import Config
 
     (tmp_path / "x.py").write_text("def f(): pass\n")
     with pytest.raises(ValueError, match="at least"):
@@ -201,8 +201,8 @@ def test_run_calibration_rejects_too_few_files(tmp_path):
 
 def test_fit_amdahl_p_recovers_known_value():
     """Synthesize observations from a known p, confirm we recover it."""
-    from lacuna.calibration import fit_amdahl_p
-    from lacuna.estimator import amdahl_speedup
+    from absentia.calibration import fit_amdahl_p
+    from absentia.estimator import amdahl_speedup
 
     true_p = 0.85
     baseline = 10.0
@@ -216,8 +216,8 @@ def test_fit_amdahl_p_recovers_known_value():
 
 def test_fit_amdahl_p_falls_back_without_baseline():
     """No jobs=1 point → return PARALLEL_FRACTION default."""
-    from lacuna.calibration import fit_amdahl_p
-    from lacuna.estimator import PARALLEL_FRACTION
+    from absentia.calibration import fit_amdahl_p
+    from absentia.estimator import PARALLEL_FRACTION
 
     obs = [(2, 5.0), (4, 3.0)]
     assert fit_amdahl_p(obs) == PARALLEL_FRACTION
@@ -225,15 +225,15 @@ def test_fit_amdahl_p_falls_back_without_baseline():
 
 def test_fit_amdahl_p_falls_back_with_only_baseline():
     """Only jobs=1 point → can't compute speedups → fall back."""
-    from lacuna.calibration import fit_amdahl_p
-    from lacuna.estimator import PARALLEL_FRACTION
+    from absentia.calibration import fit_amdahl_p
+    from absentia.estimator import PARALLEL_FRACTION
 
     assert fit_amdahl_p([(1, 5.0)]) == PARALLEL_FRACTION
 
 
 def test_select_amdahl_points_capped_at_four():
     """Even on a 64-core machine we measure at most 4 jobs counts."""
-    from lacuna.calibration import _select_amdahl_points
+    from absentia.calibration import _select_amdahl_points
 
     points = _select_amdahl_points(64)
     assert len(points) == 4
@@ -243,14 +243,14 @@ def test_select_amdahl_points_capped_at_four():
 
 def test_select_amdahl_points_includes_all_low_cores():
     """1, 2, 4, 8 covers an 8-core machine entirely."""
-    from lacuna.calibration import _select_amdahl_points
+    from absentia.calibration import _select_amdahl_points
 
     assert _select_amdahl_points(8) == [1, 2, 4, 8]
 
 
 def test_make_synthetic_corpus_meets_minimums(tmp_path):
     """The bundled synthetic corpus should always satisfy calibration thresholds."""
-    from lacuna.calibration import (
+    from absentia.calibration import (
         MIN_CALIBRATION_BYTES,
         MIN_CALIBRATION_FILES,
         make_synthetic_corpus,
@@ -266,7 +266,7 @@ def test_make_synthetic_corpus_meets_minimums(tmp_path):
 
 def test_make_synthetic_corpus_is_idempotent(tmp_path):
     """Calling twice into the same dir doesn't blow up or duplicate."""
-    from lacuna.calibration import make_synthetic_corpus
+    from absentia.calibration import make_synthetic_corpus
 
     target = tmp_path / "synth"
     make_synthetic_corpus(target)
@@ -278,9 +278,9 @@ def test_make_synthetic_corpus_is_idempotent(tmp_path):
 
 def test_synthetic_corpus_extracts_real_entities(tmp_path):
     """Sanity check: the synthetic files actually parse and yield entities."""
-    from lacuna.calibration import make_synthetic_corpus
-    from lacuna.estimator import walk_corpus
-    from lacuna.extractors import discover_extractors, extension_dispatch
+    from absentia.calibration import make_synthetic_corpus
+    from absentia.estimator import walk_corpus
+    from absentia.extractors import discover_extractors, extension_dispatch
 
     corpus = make_synthetic_corpus(tmp_path / "synth", num_files=10)
     extractors = discover_extractors(["python"])
@@ -292,11 +292,11 @@ def test_synthetic_corpus_extracts_real_entities(tmp_path):
 
 def test_run_calibration_succeeds_on_sufficient_corpus(tmp_path):
     """End-to-end: scan a synthetic corpus, derive a speed factor."""
-    from lacuna.calibration import (
+    from absentia.calibration import (
         MIN_CALIBRATION_FILES,
         run_calibration,
     )
-    from lacuna.config import Config
+    from absentia.config import Config
 
     # Generate a corpus that meets BOTH minimums (files and bytes).
     # ~4 KB per file × 35 files = ~140 KB total, comfortably above
@@ -316,5 +316,5 @@ def test_run_calibration_succeeds_on_sufficient_corpus(tmp_path):
     assert data.calibration_files >= MIN_CALIBRATION_FILES
     assert data.calibration_duration_s > 0
     assert data.machine_speed_factor > 0
-    assert data.lacuna_version
+    assert data.absentia_version
     assert data.core_count >= 1

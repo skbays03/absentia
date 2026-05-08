@@ -76,7 +76,7 @@ def format_gaps(
     accumulated for further composition.
     """
     if not gaps:
-        return "No gaps. (lacuna found nothing wrong.)\n"
+        return "No gaps. (absentia found nothing wrong.)\n"
 
     # Build a local Console that writes into a buffer. Color decisions
     # mirror the real stdout's TTY status — TTY → ANSI codes; pipe →

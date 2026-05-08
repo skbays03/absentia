@@ -1,4 +1,4 @@
-# Example lacuna.toml — copy to your project root and customize.
+# Example absentia.toml — copy to your project root and customize.
 # Every section below is optional; defaults are sensible.
 
 [scan]
@@ -60,7 +60,7 @@ default = "interactive"                   # "interactive" | "compact" | "json"
 
 # ── Project-wide suppressions ──────────────────────────────────────────────
 # These are committed to version control and reviewable. Personal/ad-hoc
-# suppressions live in .lacuna/state.db (gitignored) instead.
+# suppressions live in .absentia/state.db (gitignored) instead.
 #
 # [[suppress]]
 # rule    = "r-a3f2"

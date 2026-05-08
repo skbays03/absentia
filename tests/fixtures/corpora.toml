@@ -1,6 +1,6 @@
 # Corpus regression baselines.
 #
-# Each entry pins the gap + rule + entity counts that a `lacuna check`
+# Each entry pins the gap + rule + entity counts that a `absentia check`
 # is expected to produce against a known corpus. tests/test_corpus_regression.py
 # loads this file, scans each corpus, and fails if any count drifts.
 #
@@ -9,11 +9,11 @@
 # the question "did I mean to change this?"
 #
 # Corpora marked `optional = true` are skipped when their `path` doesn't
-# exist (so CI on a fresh GitHub runner only checks lacuna-self; power users
+# exist (so CI on a fresh GitHub runner only checks absentia-self; power users
 # / pre-merge runs locally include the rest).
 
 [[corpus]]
-name = "lacuna-self"
+name = "absentia-self"
 path = "."           # always present (relative to repo root)
 language = "python"
 expected_gaps = 133       # 135 → 133 alongside scripts/profile_scan.py

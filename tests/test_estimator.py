@@ -1,7 +1,7 @@
-"""Tests for src/lacuna/estimator.py."""
+"""Tests for src/absentia/estimator.py."""
 from __future__ import annotations
 
-from lacuna.estimator import (
+from absentia.estimator import (
     DEFAULT_BPS,
     M_SERIES_BPS,
     PARALLEL_FRACTION,
@@ -13,7 +13,7 @@ from lacuna.estimator import (
     serial_time_for,
     walk_corpus,
 )
-from lacuna.estimator import CorpusShape
+from absentia.estimator import CorpusShape
 
 
 def test_amdahl_jobs_one_is_unity():
@@ -70,7 +70,7 @@ def test_estimate_includes_worker_startup_overhead():
 
 
 def test_estimate_clamps_to_serial_on_tiny_corpus():
-    """Real lacuna won't spawn workers when overhead exceeds work — the
+    """Real  absentia won't spawn workers when overhead exceeds work — the
     estimator must match: parallel time can never exceed serial time.
     """
     # 0.01s of actual work; jobs=10 would naively add 1.35s of overhead.
@@ -119,7 +119,7 @@ def test_walk_corpus_tallies_per_language(tmp_path):
     sub.mkdir()
     (sub / "c.js").write_text("function baz() { return 1; }\n")
 
-    from lacuna.extractors import discover_extractors, extension_dispatch
+    from absentia.extractors import discover_extractors, extension_dispatch
     extractors = discover_extractors(["python", "javascript"])
     ext_to = extension_dispatch(extractors)
     shape = walk_corpus(tmp_path, ext_to)
@@ -137,7 +137,7 @@ def test_walk_corpus_skips_unknown_extensions(tmp_path):
     (tmp_path / "ignore.txt").write_text("not source\n")
     (tmp_path / "data.json").write_text("{}\n")
 
-    from lacuna.extractors import discover_extractors, extension_dispatch
+    from absentia.extractors import discover_extractors, extension_dispatch
     extractors = discover_extractors(["python"])
     ext_to = extension_dispatch(extractors)
     shape = walk_corpus(tmp_path, ext_to)

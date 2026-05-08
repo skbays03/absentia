@@ -1,10 +1,10 @@
 """Extractor registry — discovers built-in and plugin extractors.
 
 In-tree extractors live in this package (``python.py``, etc.). Third-party
-extractors register via the ``lacuna.extractors`` entry-point group::
+extractors register via the ``absentia.extractors`` entry-point group::
 
-    [project.entry-points."lacuna.extractors"]
-    clojure = "lacuna_clojure:ClojureExtractor"
+    [project.entry-points."absentia.extractors"]
+    clojure = "absentia_clojure:ClojureExtractor"
 
 Discovery merges both sources with plugins overriding builtins by name,
 so a community extractor for an existing language can replace ours.
@@ -86,11 +86,11 @@ def discover_extractor_classes() -> dict[str, type[Extractor]]:
         cls.language_name: cls for cls in _BUILTIN_EXTRACTORS
     }
     try:
-        for ep in entry_points(group="lacuna.extractors"):
+        for ep in entry_points(group="absentia.extractors"):
             try:
                 cls = ep.load()
             except Exception:
-                continue  # broken plugin shouldn't break lacuna
+                continue  # broken plugin shouldn't break absentia
             if isinstance(cls, type) and issubclass(cls, Extractor):
                 available[cls.language_name] = cls
     except Exception:
