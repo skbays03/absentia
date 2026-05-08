@@ -172,16 +172,20 @@ Run lacuna twice on the same code and you get the same output. See
 ## Performance
 
 lacuna scans the entire Linux kernel — 65,004 files / 686,923 entities
-across ~30 million lines of C — in **~18 seconds** on an M-series
-MacBook with default parallelism (parse: 7 s, mine: 11 s, finalize +
-overhead: a couple more). Most projects scan in well under a second
-of mining. Warm re-scans (incremental cache) complete in milliseconds.
+across ~30 million lines of C — in **~28 seconds warm / ~50 seconds
+cold** at default jobs on a 10-core M-series MacBook. Warm breakdown:
+parse ~8 s (cache hits) + mine ~14 s + store ~3 s. Cold breakdown:
+parse ~27 s + mine ~14 s + store ~2 s. Single-process baseline ~95 s
+cold. Most projects on this scale rarely apply — typical real-world
+codebases scan in seconds (and warm-rescan a small edited subset in
+fractions).
 
-The mining stage is the headline number: a name-indexed
+The mining stage is the headline optimization story: a name-indexed
 ``find_symmetry_gaps`` (no more O(P×N) per-pair-per-entity scan) plus
 mypyc-compiled ``mining.py`` and ``symmetry.py`` together cut
-mining-stage wall-clock on the kernel from ~5 minutes to ~11 seconds
-— a **~30× speedup**, gap counts byte-identical.
+mining-stage wall-clock on the kernel from ~5 minutes to ~14 seconds
+— a **~23× speedup**, gap counts byte-identical to the pre-
+optimization baseline.
 
 If you're running on a free-threaded Python (3.13t / 3.14t), the
 ThreadPool worker cap rises automatically from 4 to 7 (one per

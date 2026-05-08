@@ -98,22 +98,39 @@ below.
 | Lua | [nvim-lua/plenary.nvim](https://github.com/nvim-lua/plenary.nvim) | 372 | 11 | 1 | 0.05s |
 | Bash | [Bash-it/bash-it](https://github.com/Bash-it/bash-it) | 861 | 41 | 10 | 0.08s |
 
-**Headline number: lacuna scans the entire Linux kernel — 65,004
-files / 686,923 entities across ~30 million lines of C — in ~18
-seconds end-to-end on an M-series MacBook with default
-parallelism.** Mining alone is ~11 seconds; parse is ~7 seconds.
-A warm re-scan completes in milliseconds (incremental cache covers
-unchanged files, which is most of them on any normal commit).
+**Headline numbers** (lacuna against the Linux kernel — 65,004 files
+/ 686,923 entities across ~30 million lines of C, on a 10-core
+M-series MacBook):
+
+| Mode | End-to-end at default jobs (5) | Single-process (--jobs 1) |
+|---|---:|---:|
+| **Warm** (cache primed, 0 files changed) | ~28 s | ~26 s |
+| **Cold** (cache empty, full re-parse) | ~50 s | ~95 s |
+
+Warm-scan stage breakdown: parse ~8 s (cache hits) + mine ~14 s +
+store ~3 s + finalize ~0 s.
+Cold-scan stage breakdown: parse ~27 s + mine ~14 s + store ~2 s
++ finalize ~0 s.
+
+A warm rescan with a small edited subset (typical edit-test loop)
+runs in fractions of a second — only changed files re-parse. The
+"warm" numbers above are the worst-case warm scan: every file unchanged
+(no parse work) but mining + storage still touch every cached entity.
 
 The mining stage was the long pole at one point — ~5 minutes on the
 kernel — because ``find_symmetry_gaps`` was scanning every entity
 once per pair (O(P×N) per-pair-per-entity work). Replacing that
 with a per-scope ``{name → [entities]}`` index, plus mypyc
 compilation of ``mining.py`` and ``symmetry.py`` to native C
-extensions, cut mining wall-clock to ~11 seconds on the same
-corpus — a ~30× speedup, gap counts byte-identical. See the
-*Mining stage* subsection below for the architecture seam this
-exploits.
+extensions, cut mining wall-clock to ~14 seconds on the same
+corpus — a ~23× speedup, gap counts byte-identical to the pre-
+optimization baseline. See the *Mining stage* subsection below for
+the architecture seam this exploits.
+
+> *Numbers above measured 2026-05-07 on commit `a48c4c7` against
+> a clean Linux kernel checkout. To know what your hardware does,
+> run* `lacuna est` *— it walks the corpus, applies a calibrated
+> cost model, and prints a per-jobs estimate before you scan.*
 
 Numbers above are M-series specific. To know what your hardware
 does, run `lacuna est` from any project directory — it walks the
