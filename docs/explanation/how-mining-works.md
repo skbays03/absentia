@@ -354,8 +354,8 @@ just not a useful one — the right answer is suppress.
 
 The current engine mines one feature value at a time:
 *"members have `@audit`."* The next iteration will mine
-**combinations** via [FP-growth](https://en.wikipedia.org/wiki/FP-growth_algorithm)
-or similar:
+**combinations** via [FP-growth and related frequent-itemset mining
+techniques](https://en.wikipedia.org/wiki/Association_rule_learning):
 *"members have BOTH `@audit` AND `@app.route`."*
 
 This is gated by `mining.max_predicate_size` in `absentia.toml`
