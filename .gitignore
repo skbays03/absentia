@@ -36,11 +36,23 @@ Thumbs.db
 htmlcov/
 .tox/
 
-# Lacuna's own runtime state (in any project that uses lacuna)
+# Absentia's own runtime state (in any project that uses absentia)
+.absentia/
+# Pre-rename name (kept so legacy state dirs aren't accidentally tracked)
 .lacuna/
+
+# Per-project user config (only the .example file is in-repo)
+absentia.toml
+lacuna.toml
 
 # Mkdocs build output
 site/
+
+# Mkdocs preview snapshots (developer-local; not part of the repo)
+docs/preview/
+
+# Claude Code scheduled-task state (developer-local)
+.claude/
 
 # cProfile output from scripts/profile_scan.py
 *.prof
