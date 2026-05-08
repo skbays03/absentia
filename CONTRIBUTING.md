@@ -169,7 +169,43 @@ if callback is not None:
 
 The work is the contract; the UI is decoration.
 
-## 8. Stable IDs across runs
+## 8. Bump `EXTRACTOR_FINGERPRINT` when extractor output changes
+
+The per-file content hash that drives lacuna's incremental cache is
+salted with `extractors.EXTRACTOR_FINGERPRINT` (a string constant
+in `src/lacuna/extractors/__init__.py`). Bumping the constant
+invalidates every cached entry on the next scan, so users
+automatically pick up new feature_kinds / entity kinds /
+extractor-logic-fixes without having to know to `--cold` or
+`--purge`.
+
+Bump it whenever extractor *output* changes. Examples that DO need
+a bump:
+- new `feature_kind` in any extractor's FeatureSet
+- new entity kind emitted by any extractor
+- bug fix in extractor logic that changes the entity / feature shape
+- new built-in extractor language
+
+Examples that DON'T need a bump:
+- comment / docstring changes inside extractor source
+- pure refactor (e.g. extracting a helper) with no output change
+- typo fixes
+- changes to `src/lacuna/mining.py`, `selectors.py`, `series.py`,
+  or anything *not* under `src/lacuna/extractors/` (mining runs
+  from scratch every scan and doesn't read the cache)
+
+CI gate: `scripts/check_fingerprint_bump.sh` runs in CI and fails
+when any file under `src/lacuna/extractors/` changed in a PR but
+`EXTRACTOR_FINGERPRINT` didn't. The gate has a refactor escape
+hatch — include the literal `[no-fingerprint-bump]` in any commit
+message in the diff range and the check skips, recording the
+exemption in git history.
+
+The bump-history docstring on the constant itself is the authoritative
+log of what each version absorbed. Keep the bump in the same commit
+as the extractor change; reviewers can see both at once.
+
+## 9. Stable IDs across runs
 
 Suppressions, follow-links, watchers, and external integrations
 all depend on stable IDs.

@@ -56,6 +56,28 @@ jobs:
       - name: Run ruff
         run: ruff check .
 
+  fingerprint-bump:
+    name: Fingerprint bump check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need history to diff against the base ref. fetch-depth=0
+          # gets the full history; fetch-depth=2 would suffice for
+          # push-on-main but PRs need the merge-base.
+          fetch-depth: 0
+      - name: Verify EXTRACTOR_FINGERPRINT bumped when extractors changed
+        run: |
+          # On PRs, diff against the PR base. On push-to-main, diff
+          # against HEAD~1 (the immediately preceding commit).
+          if [ -n "${{ github.base_ref }}" ]; then
+            BASE="origin/${{ github.base_ref }}"
+            git fetch origin "${{ github.base_ref }}" --depth=50 2>/dev/null || true
+          else
+            BASE="HEAD~1"
+          fi
+          bash scripts/check_fingerprint_bump.sh "$BASE"
+
   typecheck:
     name: Type check (mypy)
     runs-on: ubuntu-latest
