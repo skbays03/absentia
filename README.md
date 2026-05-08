@@ -1,3 +1,7 @@
+<!-- The hero block + tagline below are intentionally duplicated in
+     docs/index.md. KEEP IN SYNC: any wording change here should land
+     in docs/index.md too. -->
+
 # absentia
 
 > **Find what you forgot to write.**
@@ -32,6 +36,10 @@ DETAIL: g-7c91
   exhibits   create_user  update_user  list_users  get_user  …
   violator   ✗ delete_user
 ```
+
+> *Real gap and rule IDs are seven characters after the prefix
+> (`g-7c91234`, `r-a3f2bc7`); the 4-char forms above are shortened
+> for readability.*
 
 ## Why this exists
 
@@ -109,6 +117,11 @@ Symmetric flags: `absentia est` accepts the same `--config`, `--jobs`,
 `--json`, `--quiet`, `--language`, `--exclude`, `--cold` as `check`,
 so muscle memory transfers between the two.
 
+The full flag list (including `--config`, `--min-confidence`, est's
+`--recalibrate` / `--use-synthetic` / `--history`, top-level
+`--purge` / `--jobs-default`, and others) lives in the
+[CLI reference](docs/reference/cli.md).
+
 ## What absentia finds
 
 Examples of typical gaps:
@@ -155,7 +168,7 @@ tests/test_users.py::should_validate_email
 
 ## How it works
 
-Four deterministic stages:
+Four deterministic conceptual stages:
 
 1. **Parse** — tree-sitter walks your code and extracts entities (functions,
    classes, files, imports, decorators).
@@ -166,8 +179,12 @@ Four deterministic stages:
 4. **Compare** — entities in a rule's group that don't satisfy its predicate
    become **gaps**.
 
-Run absentia twice on the same code and you get the same output. See
-[how mining works](docs/explanation/how-mining-works.md) for the full picture.
+Run absentia twice on the same code and you get the same output. The runtime
+progress UI shows five stages — `walk → parse → store → mine → finalize` —
+adding I/O bookends around the conceptual core; see
+[architecture and performance](docs/explanation/architecture.md#the-pipeline)
+for the full pipeline view, and [how mining works](docs/explanation/how-mining-works.md)
+for the algorithm-deep walkthrough.
 
 ## Performance
 
@@ -189,13 +206,17 @@ optimization baseline.
 
 If you're running on a free-threaded Python (3.13t / 3.14t), the
 ThreadPool worker cap rises automatically from 4 to 7 (one per
-mining strategy), unlocking another ~30 % when the C-extension
-ecosystem catches up to the no-GIL ABI. No-op on regular CPython.
+mining strategy) — more headroom for mining-stage parallelism
+once the C-extension ecosystem catches up to the no-GIL ABI.
+No-op on regular CPython. (Speedup percentage isn't pinned: most
+tree-sitter wheels still ship GIL-only ABIs, so the path can't be
+benchmarked end-to-end as of early 2026.)
 
 Full benchmark table covering all 17 built-in extractors (16
 languages; TypeScript and TSX share a tree-sitter grammar but emit
-distinct extractors) and ~2.4 M entities in
-[architecture and performance](docs/explanation/architecture.md).
+distinct extractors) — small smoke-test corpora plus the Linux
+kernel as the big-corpus case study (687 k entities, ~30 M LOC of
+C) — in [architecture and performance](docs/explanation/architecture.md).
 
 Curious what your machine looks like? Run `absentia est` from any project
 directory for a hardware-calibrated cold-scan estimate — see
@@ -225,8 +246,8 @@ directory for a hardware-calibrated cold-scan estimate — see
 
 Bare `absentia` opens the **TUI** — the primary interface, built for exploration.
 Drill from a gap to its rule, from a rule to its other members, from there to
-*their* gaps. Filter live with `/`. Suppress with `s`. Watch mode (`w`) re-mines
-on file change.
+*their* gaps. Filter live with `/`. Suppress with `s`. Watch mode (`w`) auto-
+rescans every 2 seconds — incremental, so unchanged files hit the parse cache.
 
 `absentia check` is the **batch mode** for CI, scripting, and editor integrations.
 It honors `--json`, `--max-gaps`, `--quiet`, and exits with a meaningful status

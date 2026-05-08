@@ -1,6 +1,6 @@
 # How mining works
 
-Absentia's engine has four stages:
+Absentia's engine has four conceptual stages:
 
 1. **Parse** every source file into an AST.
 2. **Group** the extracted entities by selector (directory, decorator,
@@ -12,6 +12,16 @@ Absentia's engine has four stages:
 
 Each stage is a few hundred lines of Python. There is no model. There
 is no learned anything. The whole engine is counting and joining.
+
+> *At runtime the progress UI shows five stages —
+> `walk → parse → store → mine → finalize` — adding a file-discovery
+> preamble and a storage/output postamble around the conceptual core.
+> The conceptual* group *and* compare *steps fold into the* mine
+> *stage's progress line. See*
+> [architecture and performance](architecture.md#progress-ux) *for
+> the full pipeline view (and* [mypyc compilation]
+> (architecture.md#mypyc-compilation) *for the native-code build
+> path that makes mining fast on large corpora).*
 
 This doc walks each stage with concrete examples, explains the math,
 and shows what absentia's mining deliberately doesn't do.
@@ -65,6 +75,28 @@ that's just one:
 Mining `sibling_test` over the directory selector then surfaces
 gaps like "8 of 10 functions in `src/api/` have a sibling test;
 this one doesn't."
+
+### Built-in feature kinds
+
+Frequency mining iterates **seven** feature kinds — each runs as
+its own strategy in the mining loop, which is why
+`absentia check`'s mining stage can show seven sub-progress lines
+on a multi-worker run:
+
+| Feature kind | What it captures | Source |
+|---|---|---|
+| `decorator` | Which decorators / annotations / attributes an entity carries | extractor |
+| `calls` | Which functions an entity calls (used for call-pair detection too) | extractor |
+| `parent_class` | Class / protocol / trait an entity extends | extractor |
+| `sibling_test` | Whether a matching test entity exists elsewhere in the corpus | enrichment |
+| `has_docstring` | Whether the entity carries a docstring | extractor |
+| `has_return_type` | Whether the function/method declares a return type | extractor |
+| `has_param_types` | Whether the function/method's parameters carry type annotations | extractor |
+
+Each kind feeds the same arithmetic in *Stage 3: mine* below;
+they differ only in what gets counted. New kinds plug in via the
+extractor protocol and the mining-strategy list — no schema
+migrations.
 
 ## A second mining strategy: symmetry pairs
 
@@ -230,6 +262,21 @@ Both pass the 0.80 threshold and become rules.
 There's no pattern recognition, no clustering, no probabilistic
 matching. The arithmetic is one division.
 
+### Optimization: Apriori prune
+
+Before the per-group counter-building loop runs, mining sweeps
+the whole corpus once to build a global value-count for the
+feature kind being mined. Values that appear in fewer than
+`ceil(min_confidence × min_group_size)` entities corpus-wide
+can't reach `min_confidence` in *any* eligible group, so they're
+filtered out before the inner loop ever sees them. Apriori-
+correct: nothing that would have been emitted gets pruned. On
+real corpora the prune cuts the inner-loop work proportionally
+to how long-tailed the feature-value distribution is. See the
+implementation in `src/absentia/mining.py` (search for "Apriori
+prune"); the rule-emission contract is unchanged, only the
+performance path.
+
 ## Stage 4: compare
 
 For each rule, absentia walks the group's members again and emits a
@@ -357,5 +404,5 @@ because it does this one thing.
   selector, configurable in `absentia.toml`
 - The [`mining.py`
   source](https://github.com/skbays03/absentia/blob/main/src/absentia/mining.py)
-  is ~120 lines including comments. The whole engine fits on one
-  screen.
+  is under 200 lines including comments. The whole engine fits on
+  one screen.

@@ -112,7 +112,10 @@ Flags:
   parse + extract stage. Defaults to the value pinned by
   `--jobs-default`, otherwise half of detected CPU cores. Set
   `--jobs 1` for a strict single-process run (matches the
-  baseline numbers in [the architecture doc](../explanation/architecture.md)).
+  per-language baseline times in [the architecture
+  doc](../explanation/architecture.md#performance-benchmarks); see
+  [the estimator doc](../explanation/estimator.md) for the
+  per-jobs cost model).
 - `--max-gaps N` — CI tolerance flag. Exit non-zero only when the
   gap count exceeds N. `--max-gaps 0` fails on any gap (matches
   the default behavior); `--max-gaps 5` lets up to 5 gaps slide
@@ -186,13 +189,13 @@ Flags:
         "cpu_count":             10,
         "headline_jobs":         5,
         "calibrated":            true,
-        "calibrated_at":         "2026-04-30T12:34:56Z",
+        "calibrated_at":         "2026-04-30T12:34:56+00:00",
         "model_mining_tail_s":   12.3,
         "model_mining_source":   "aggregated from 47 prior runs",
         "observed_cold_scan_s":  18.4,
         "observed_jobs":         5,
         "runs_aggregated":       47,
-        "parallel_fraction":     0.85
+        "parallel_fraction":     0.55
       }
 
   Use case: a CI step that decides whether to skip a long scan
@@ -245,3 +248,20 @@ Flags:
 - `--path DIR` — *[deprecated]* project root. Use the positional
   argument instead. Kept for backward compatibility with existing
   scripts; emits a one-line deprecation hint when used.
+
+## Interactive output
+
+When `absentia check` runs in a TTY without `--json` or `--quiet`,
+it renders a five-stage live progress display:
+`walk → parse → store → mine → finalize`. Each stage finishes
+with a ✓ summary line + elapsed time and stays on screen as the
+next begins, so the eventual transcript reads as a clean record
+of where time went.
+
+When `--jobs N > 1`, the parse stage shows one sub-line per
+worker (each tagged with the language it's currently parsing),
+and the mining stage shows one sub-line per running strategy.
+The progress display auto-suppresses on non-TTY stdout, when
+`--json` is set, and when `--quiet` is set. See
+[architecture and performance](../explanation/architecture.md#progress-ux)
+for the full mechanism.

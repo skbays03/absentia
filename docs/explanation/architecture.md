@@ -155,35 +155,15 @@ estimate before you scan. Methodology in
 
 ### Throughput
 
-Across all 16 sample corpora (one per supported language; TS+TSX
-share the TypeScript corpus), absentia sustains
-**5,000–15,000 entities per second** on a single Python process,
-with the variance driven mostly by per-language extractor cost
-(deeper AST = more nodes to walk). There's no quadratic term: the
-largest input (Linux) and the smallest (plenary.nvim) sit on the
-same line.
-
-```
-Cold scan time vs. corpus size (entity count)
-
-100s ┤                                                     ● linux
-     │
- 50s ┤                                       ● dotnet/runtime
-     │                              ● llvm
-     │
- 25s ┤                       ● kotlin
-     │                ● rust ● k8s
-     │           ● vscode
- 10s ┤        ● cpp
-     │      ● swift, kafka, scala
-     │  ● python, node, ruby, php
-  1s ┤● lua, bash
-     └────────────────────────────────────────────────────────────────
-     0           100k             300k            500k            700k
-                              entities scanned
-```
-
-(Roughly linear in entity count with a small per-language coefficient.)
+Single-process throughput across the smoke-test corpora above runs
+roughly **400–11,000 entities/sec**, median ~5,000, with the
+spread driven by per-language extractor cost (deeper AST = more
+nodes to walk) and by per-corpus overhead (small corpora skew
+lower because cold-start fixed costs dominate). On the kernel
+case study at jobs=1: 686,923 entities ÷ 93.6 s = ~7,300 ent/s.
+The relationship is roughly linear in entity count — there's no
+quadratic term that would make a "10× larger corpus" cost
+asymptotically more.
 
 ### Memory
 
@@ -225,10 +205,12 @@ policy.
 calibration cache at `~/.absentia/calibration.json`. Every successful
 `absentia check` *also* appends a row to a machine-wide log at
 `~/.absentia/runs.jsonl`: timestamp, version, cores, jobs, root,
-file-count, language-byte shape, per-stage timings. Once at least
-three compatible runs accumulate, `absentia est` aggregates them into
-a refined `mining_seconds_per_byte` value that overrides the static
-calibration's seed. No telemetry — the log is local-only.
+file-count, language-byte shape, per-stage timings. Three
+compatible runs is the minimum threshold for aggregation; the
+actual window is wider — `absentia est` rolls in every compatible
+prior run (matching cores + version + jobs) when computing the
+refined `mining_seconds_per_byte` value, which overrides the
+static calibration's seed. No telemetry — the log is local-only.
 
 Practical effect: the first few `absentia est` runs are seeded by
 calibration; once you've actually run `absentia check` a handful of
@@ -278,7 +260,7 @@ The mining stage gets the same treatment, but with phase + counter
   symmetry pairs   8.2s  [evaluating pairs]   pair 247/2,103   subscribe → unsubscribe
   call-pair        1.1s  [enumerating pairs]  65k/65k
   frequency:calls  0.4s  [counting features]  group 8/30       directory:src/api
-4/7 done · 1,432 rules so far
+4/10 done · 1,432 rules so far
 ```
 
 Each strategy function (`mine`, `find_symmetry_gaps`,
@@ -332,11 +314,15 @@ isn't long enough to amortize the worker pool's startup cost; the
 single-process numbers in the table above are the right guide for
 anything under ~10 seconds.
 
-The mining stage runs its seven strategies in parallel via
-`ThreadPoolExecutor`. With the GIL the thread cap is 4 (Amdahl's
-parallel fraction plateaus there); on a free-threaded Python
-build (3.13t / 3.14t, PEP 703) `mining_worker_cap()` lifts the
-cap to 7 so each strategy can saturate its own core. Detection is
+The mining stage runs its strategies in parallel via
+`ThreadPoolExecutor` (frequency over each `feature_kind`, plus
+symmetry-pair, call-pair, and series-gap detectors — the live
+progress display shows the per-strategy breakdown). On regular
+CPython the thread cap is 4 — the GIL serializes mining threads,
+so adding workers past 4 saturates the inherent throughput. On a
+free-threaded Python build (3.13t / 3.14t, PEP 703)
+`mining_worker_cap()` lifts the cap to 7 so each running strategy
+can saturate its own core. Detection is
 a single `sys.flags.gil == 0` check — opportunistic and
 backward-compatible. (Caveat: most C-extension wheels, including
 tree-sitter, don't ship a no-GIL ABI as of early 2026, so this
@@ -368,13 +354,16 @@ the headline mining speedup is missing.
 
 ## What this architecture buys
 
-- **Single-machine first.** The largest target we publicly benchmark
-  (Linux kernel) fits in 100 seconds on a laptop. Most projects fit
-  in seconds. There's no engineering pressure for distributed scans
-  at the audiences absentia targets.
+- **Single-machine first.** The largest target we publicly
+  benchmark (Linux kernel) fits in ~50 s at default jobs / ~95 s
+  single-process on a 10-core M-series MacBook. Most projects fit
+  in seconds. There's no engineering pressure for distributed
+  scans at the audiences absentia targets.
 - **Plain Python**, no native code beyond the tree-sitter
-  bindings. Easy to install (`pip install absentia`), trivial to
-  inspect, debug, or extend.
+  bindings + the optional mypyc-compiled `mining.py` /
+  `symmetry.py` wheels. Easy to install (`pip install .` from the
+  repo today; `pip install absentia` once the v1.0 PyPI publish
+  lands), trivial to inspect, debug, or extend.
 - **Deterministic.** Same input, same output; the engine is just
   counting. See [why no LLM](why-no-llm.md).
 - **Incremental.** Caching is content-hash-based, so every commit
@@ -405,9 +394,13 @@ python scripts/scan_remote.py URL                  # scan an arbitrary repo
 ```
 
 The `KNOWN_CORPORA` table at the top of `scripts/scan_remote.py`
-lists curated targets per language. The benchmark numbers above
-were generated with shallow clones (`--depth 1` is the script's
-default), a cold `.absentia/` directory each run, and `--jobs 1` to
-isolate single-process performance. Hardware: M-series MacBook.
-Production runs (default `--jobs`) are faster on the long-running
-corpora; see *Parallel scans* above.
+lists curated targets per language — these are the smoke-test
+corpora measured at the top of *Performance benchmarks* above.
+Benchmark numbers were generated with shallow clones (`--depth 1`
+is the script's default), a cold `.absentia/` directory each run,
+and `--jobs 1` to isolate per-language single-process baselines.
+Hardware: 10-core M-series MacBook (commit `a48c4c7`, 2026-05-07).
+Per-language baseline + kernel cold/warm at default jobs are the
+two views that matter; small smoke-test corpora benefit
+negligibly from `--jobs > 1` (parse stage too short to amortize
+worker pool startup), the kernel benefits substantially.

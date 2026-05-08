@@ -15,8 +15,8 @@ The same reference is available in-app via `?`.
 
 | Key | Action |
 |---|---|
-| `j` / `↓` | Next row |
-| `k` / `↑` | Previous row |
+| `j` / `↓` | Next row (inherited from Textual's DataTable defaults) |
+| `k` / `↑` | Previous row (inherited from Textual's DataTable defaults) |
 | `Enter` | Open selected entity in `$EDITOR` |
 | `f` | Follow link to related view (gap → rule → group) |
 | `Esc` | Back (pops navigation stack) |

@@ -69,10 +69,13 @@ explanation is generated separately, you have two things to trust.
 
 ### Sub-100ms interactions
 
-Absentia's TUI scans the Linux kernel in seconds. Every keystroke in
-the UI — filtering, navigating, suppressing, switching views — is
-sub-100ms because the data is already in memory and the operations
-are integer counters. No model inference, no API call, no waiting.
+Absentia's TUI scans medium codebases in seconds and the Linux
+kernel in tens of seconds (~50 s cold, ~28 s warm at default
+jobs on a 10-core M-series MacBook). Once a scan finishes, every
+keystroke in the UI — filtering, navigating, suppressing,
+switching views — is sub-100ms because the data is already in
+memory and the operations are integer counters. No model
+inference, no API call, no waiting.
 
 LLM-augmented tools can't do this. Even a fast local model is tens of
 milliseconds per token, and any cloud-hosted one is hundreds. That's
@@ -85,8 +88,10 @@ Absentia runs on your laptop. It doesn't phone home. It doesn't bill
 you. There's no rate limit, no token budget, no "you've used 80% of
 your monthly allowance" email. Run it on every commit, in every CI
 job, on every developer's machine, on every repo you own — the cost
-is the disk space for `.absentia/` (single-digit megabytes for medium
-repos).
+is the disk space for `.absentia/`. State scales roughly linearly
+with entity count: single-digit megabytes for medium repos
+(1-50 MB on disk), low-hundreds-of-megabytes for kernel-scale
+(~700 k entities ≈ 370 MB).
 
 This is harder than it looks for the AI alternative. Even
 self-hosted local models impose a real fixed cost in compute and

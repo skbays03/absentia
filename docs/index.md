@@ -1,3 +1,7 @@
+<!-- The hero block + intro paragraph below are intentionally duplicated
+     in README.md (top of file). KEEP IN SYNC: any wording change here
+     should land in README.md too. -->
+
 # absentia
 
 > **Find what you forgot to write.**
@@ -23,3 +27,10 @@ Most code analyzers find what's wrong. **absentia finds what's missing.** Patter
 - **[CLI reference](reference/cli.md)** — every command and flag.
 - **[TUI keybindings](reference/tui-keys.md)** — every key, also surfaced via `?` in-app.
 - **[Selectors reference](reference/selectors.md)** — the built-in selector types and their config.
+
+## Project info
+
+- **[Changelog](https://github.com/skbays03/absentia/blob/main/CHANGELOG.md)** — per-release notes (Keep-a-Changelog format).
+- **[Contributing](https://github.com/skbays03/absentia/blob/main/CONTRIBUTING.md)** — conventions for code, commits, and docs.
+- **[Deferrals](https://github.com/skbays03/absentia/blob/main/DEFERRALS.md)** — known publication-blockers being tracked.
+- **[Source on GitHub](https://github.com/skbays03/absentia)** — Apache 2.0 licensed.

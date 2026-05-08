@@ -58,7 +58,7 @@ GAPS                                              confidence ≥ 0.80   1
 Now the conversation goes one of two ways:
 
 - **"Oh — that's a real oversight. We forgot to audit deletes."** → fix the code, re-run, the gap disappears.
-- **"That's intentional. `delete_user` *is* the audit endpoint itself; auditing it would recurse."** → `absentia suppress g-7c91 --reason "audit endpoint itself"`, the gap disappears with a recorded reason that future you (or your teammate) can read.
+- **"That's intentional. `delete_user` *is* the audit endpoint itself; auditing it would recurse."** → `absentia suppress g-7c91 --reason "audit endpoint itself"`, the gap disappears with a recorded reason that future you (or your teammate) can read. (Real gap IDs are seven characters — `g-7c91` is shortened here for readability.)
 
 Either way, the system has done its job: it surfaced the divergence so a human could decide. It doesn't know which way is right — that's not its job.
 
