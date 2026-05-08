@@ -41,3 +41,6 @@ htmlcov/
 
 # Mkdocs build output
 site/
+
+# cProfile output from scripts/profile_scan.py
+*.prof

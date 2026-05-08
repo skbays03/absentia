@@ -51,7 +51,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shrink ~44%; ``\033[F`` cursor recovery now lands correctly on
   panes < 120 cols.
 
+### Performance
+
+- **Enrichment-stage hot-path optimization** (opt #12 follow-up).
+  Profile-guided pickup (`scripts/profile_scan.py`) on a cold Linux
+  kernel scan surfaced `enrich_sibling_tests` consuming 7.8 s of
+  cProfile-cumulative time (~6% of profiled wall-clock) — about 4×
+  the back-of-envelope estimate that informed the pass on opt #8.
+  Three contained changes in `src/lacuna/enrichment.py`:
+  - Memoize `_candidate_test_files` per source-file path inside the
+    enrichment loop. ~640k entities across ~65k unique source files
+    on the kernel = ~10× redundant candidate-list computations
+    eliminated.
+  - Memoize `is_test_file` calls per source-file path in the same
+    loop (same hit-rate logic).
+  - Tighten `is_test_file` itself: `str.startswith(tuple)` and
+    `str.endswith(tuple)` use a single C call vs N Python iterations
+    of an `any(... for p in PREFIXES)` generator.
+  - Hoist the `frozenset()` default in the inner `dict.get` to a
+    module-level `_EMPTY_SET` sentinel so the fallback isn't
+    re-allocated on every of millions of lookups.
+  Validation (cold kernel scan, jobs=1):
+  - Function-call count: 313 M → 273 M (-12.9 %).
+  - `enrich_sibling_tests` cumulative under cProfile: 7.84 s →
+    2.44 s (-69 %).
+  - Real wall-clock: 95.6 s → 94.4 s on cold scan (-1.3 %); 26.9 s
+    → 26.1 s on warm scan (-3.0 %, where enrichment is a bigger
+    fraction of total). Smaller than the cProfile delta suggested
+    because cProfile inflates pure-Python overhead more than C-
+    extension calls — and this optimization eliminated only the
+    pure-Python work.
+  Gap counts unchanged across all corpora (semantically equivalent;
+  validated via `tests/test_corpus_regression.py`).
+
 ### Added
+
+- **`scripts/profile_scan.py` — repeatable cProfile harness.**
+  Optimization-plan #12 (profile-guided pickup) made repeatable.
+  `python scripts/profile_scan.py /tmp/linux --top 25` runs `lacuna
+  check` under cProfile and dumps top-N hotspots by cumulative time,
+  total time, and call count. Defaults to `--jobs 1` for clean
+  profile data; `--no-cold` skips the cache-blow-away for warm
+  rescan profiles. Mypyc-compiled hot paths (`mining.py`,
+  `symmetry.py`) appear as opaque native calls — that's intentional;
+  the script answers "what else is slow?" not "how fast is the part
+  we already optimized?".
 
 - **`scripts/release.sh` — interactive release CLI.** Bumps
   `pyproject.toml`, promotes CHANGELOG `[Unreleased]` to a

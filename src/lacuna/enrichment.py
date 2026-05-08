@@ -30,16 +30,28 @@ _TEST_FILENAME_SUFFIXES = ("_test.py", "_test.go", ".test.ts",
                            ".test.tsx", ".test.js", ".spec.ts",
                            ".spec.tsx", ".spec.js")
 
+# Sentinel "no test methods in this file" — shared across the millions
+# of dict.get(test_file, _EMPTY_SET) lookups inside enrich_sibling_tests
+# so we don't allocate a fresh empty set per call.
+_EMPTY_SET: frozenset[str] = frozenset()
+
 
 def is_test_file(file_path: str) -> bool:
     """True if ``file_path`` looks like a test file by convention."""
+    # Hot path on big corpora — called per-entity (>1M times on the
+    # Linux kernel). str.startswith and str.endswith both accept tuples
+    # natively in C; that's a single C call vs N Python iterations of
+    # an `any(... for p in PREFIXES)` generator. Same semantics, ~10×
+    # faster per call. _TEST_FILENAME_PREFIXES has only one entry today
+    # — kept as a tuple-of-one so adding a second prefix later doesn't
+    # need a code change here.
     parts = file_path.split("/")
     if any(p in _TEST_DIR_NAMES for p in parts):
         return True
     name = parts[-1] if parts else file_path
-    if any(name.startswith(p) for p in _TEST_FILENAME_PREFIXES):
+    if name.startswith(_TEST_FILENAME_PREFIXES):
         return True
-    if any(name.endswith(s) for s in _TEST_FILENAME_SUFFIXES):
+    if name.endswith(_TEST_FILENAME_SUFFIXES):
         return True
     return False
 
@@ -167,22 +179,41 @@ def enrich_sibling_tests(
     """
     test_methods_by_file = build_test_method_index(entities)
 
+    # Per-source-file memoization. Both `is_test_file` and
+    # `_candidate_test_files` are deterministic on file_path, but the
+    # outer loop calls them once per entity — and a single source file
+    # typically holds many entities. On the Linux kernel, ~640k
+    # entities are spread across ~65k unique source files (~10× hit
+    # rate). Materializing the candidate set as a tuple lets the
+    # any() inside the loop still short-circuit on re-iteration.
+    is_test_cache: dict[str, bool] = {}
+    candidates_cache: dict[str, tuple[str, ...]] = {}
+
     for entity_id, entity in entities.items():
         if entity.kind not in ("function", "method"):
             continue
-        if is_test_file(entity.file_path):
+        file_path = entity.file_path
+        is_test = is_test_cache.get(file_path)
+        if is_test is None:
+            is_test = is_test_file(file_path)
+            is_test_cache[file_path] = is_test
+        if is_test:
             continue
         short_name = entity.qualified_name.rsplit("::", 1)[-1]
         if short_name.startswith("_"):
             continue  # private; usually not separately tested
 
         target_test_name = f"test_{short_name}"
+        candidates = candidates_cache.get(file_path)
+        if candidates is None:
+            candidates = tuple(_candidate_test_files(file_path))
+            candidates_cache[file_path] = candidates
         # Match against any test file's set of test_* short names.
         # Captures both free-function tests and class-method tests
         # because the index keys on short name only.
         has_test = any(
-            target_test_name in test_methods_by_file.get(test_file, set())
-            for test_file in _candidate_test_files(entity.file_path)
+            target_test_name in test_methods_by_file.get(test_file, _EMPTY_SET)
+            for test_file in candidates
         )
 
         fs = feature_index.get(entity_id)
