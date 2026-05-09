@@ -309,19 +309,19 @@ fi
 # version entries elsewhere in the file). The constraint that
 # CURRENT_VERSION is uniquely the value of that line is enforced by
 # the parse step above.
-if ! sed -i.release-bak \
-        -E "0,/^version\s*=/s/^version\s*=\s*\"$CURRENT_VERSION\"/version = \"$NEW_VERSION\"/" \
-        "$PYPROJECT" 2>/dev/null; then
-    # macOS sed doesn't accept the 0,/.../ address form. Fall back to
-    # awk for cross-platform safety.
-    awk -v old="$CURRENT_VERSION" -v new="$NEW_VERSION" '
-        !done && /^version[[:space:]]*=/ {
-            sub("\"" old "\"", "\"" new "\"")
-            done = 1
-        }
-        { print }
-    ' "$PYPROJECT" > "${PYPROJECT}.release-bak" && mv "${PYPROJECT}.release-bak" "$PYPROJECT"
-fi
+#
+# awk is the portable path: BSD sed (macOS default) silently
+# accepts the GNU `0,/.../` address form but doesn't actually
+# perform the substitution, exiting 0 without modifying the file —
+# so an `if ! sed ...` guard wouldn't fall through to a fallback.
+# awk handles this consistently across BSD and GNU.
+awk -v old="$CURRENT_VERSION" -v new="$NEW_VERSION" '
+    !done && /^version[[:space:]]*=/ {
+        sub("\"" old "\"", "\"" new "\"")
+        done = 1
+    }
+    { print }
+' "$PYPROJECT" > "${PYPROJECT}.release-bak" && mv "${PYPROJECT}.release-bak" "$PYPROJECT"
 rm -f "${PYPROJECT}.release-bak"
 
 # Verify the bump landed.
