@@ -1,6 +1,6 @@
 [project]
 name = "absentia"
-version = "1.0.0"
+version = "1.0.1"
 description = "Find the holes your code already drew."
 readme = "README.md"
 requires-python = ">=3.13"
