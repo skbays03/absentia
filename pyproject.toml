@@ -5,7 +5,15 @@ description = "Find the holes your code already drew."
 readme = "README.md"
 requires-python = ">=3.13"
 authors = [{ name = "Shawn Bays", email = "shawnbays2003@gmail.com" }]
-license = "Apache-2.0"
+# license uses the pre-PEP 639 table form because the SPDX-string
+# form (`license = "Apache-2.0"`) requires Metadata 2.4 in the
+# emitted wheel/sdist, and the hatchling that cibuildwheel v2.21
+# resolves under its packaging==24.1 constraint emits Metadata 2.3.
+# Twine + PyPI's metadata validator rejects the mismatch with
+# "InvalidDistribution: license-expression introduced in metadata
+# version 2.4, not 2.3". The table form below works on any hatchling
+# version and is universally accepted.
+license = { text = "Apache-2.0" }
 # license-files is intentionally omitted: PEP 639 adoption is still
 # in flux across packaging tools — hatchling versions in the
 # cibuildwheel isolated build env reject the array form
