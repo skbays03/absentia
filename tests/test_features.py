@@ -138,3 +138,47 @@ def test_decorator_call_not_counted_as_function_body_call():
     # `app.route("/x")` is a call inside the decorator, NOT inside the
     # function body — only `bar` should appear.
     assert features.get_set("calls") == frozenset({"bar"})
+
+
+# ── has_post_init (Item A: config-validation gap) ───────────────────
+
+
+def test_class_with_post_init_marks_has_post_init():
+    src = (
+        "class Cfg:\n"
+        "    x: int\n"
+        "    def __post_init__(self):\n"
+        "        if self.x < 0:\n"
+        "            raise ValueError(self.x)\n"
+    )
+    root = _parse(src)
+    entities = list(extract_python_entities(root, "x.py"))
+    cls = next(features for entity, features in entities
+               if entity.kind == "class")
+    assert cls.get_set("has_post_init") == frozenset({"__post_init__"})
+
+
+def test_class_without_post_init_has_empty_marker():
+    src = "class Cfg:\n    x: int\n"
+    root = _parse(src)
+    entities = list(extract_python_entities(root, "x.py"))
+    cls = next(features for entity, features in entities
+               if entity.kind == "class")
+    assert cls.get_set("has_post_init") == frozenset()
+
+
+def test_decorated_post_init_is_still_recognized():
+    """A `@some_decorator` on `__post_init__` shouldn't hide it from
+    the marker — we walk into decorated_definition the same way the
+    rest of the class member dispatch does."""
+    src = (
+        "class Cfg:\n"
+        "    @staticmethod\n"
+        "    def __post_init__():\n"
+        "        pass\n"
+    )
+    root = _parse(src)
+    entities = list(extract_python_entities(root, "x.py"))
+    cls = next(features for entity, features in entities
+               if entity.kind == "class")
+    assert cls.get_set("has_post_init") == frozenset({"__post_init__"})

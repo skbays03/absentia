@@ -55,7 +55,9 @@ from .typescript import TSXExtractor, TypeScriptExtractor
 #   v1 — initial cache-key shape (content-only hash, pre-fingerprint)
 #   v2 — has_docstring + has_return_type + has_param_types detectors
 #        added to PythonExtractor (commits c73c60b + 3f9f11e)
-EXTRACTOR_FINGERPRINT = "v2"
+#   v3 — has_post_init detector added to PythonExtractor for the
+#        config-validation gap (Item A on the gap-detector roadmap).
+EXTRACTOR_FINGERPRINT = "v3"
 
 
 _BUILTIN_EXTRACTORS: tuple[type[Extractor], ...] = (

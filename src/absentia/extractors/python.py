@@ -126,6 +126,12 @@ def _emit_class(
             "decorator": frozenset(decorators),
             "parent_class": parents,
             "has_docstring": _docstring_marker(class_node),
+            # Always populated; value present iff the class defines a
+            # __post_init__ method. Renders as "missing __post_init__"
+            # when most siblings in the same group have one — typical
+            # signal for config dataclasses where validation is the
+            # convention.
+            "has_post_init": _post_init_marker(class_node),
         }),
     )
 
@@ -226,6 +232,33 @@ def _param_types_marker(fn_node: Node) -> frozenset[str]:
         # Non-parameter children: parens, commas, *args markers.
         # Skip silently.
     return frozenset({"param types"})
+
+
+def _post_init_marker(class_node: Node) -> frozenset[str]:
+    """Return ``frozenset({"__post_init__"})`` if the class defines a
+    ``__post_init__`` method, else ``frozenset()``. Mining reads this as
+    "X% of the group has __post_init__; this one doesn't" → emits the
+    "missing __post_init__" gap. Useful in directories where config
+    dataclasses validate themselves on construction by convention.
+    """
+    body = class_node.child_by_field_name("body")
+    if body is None:
+        return frozenset()
+    for member in body.children:
+        # Plain method definition.
+        if member.type == "function_definition":
+            if _name_of(member) == "__post_init__":
+                return frozenset({"__post_init__"})
+        # Decorated method (@staticmethod, @abstractmethod, etc.) —
+        # walk in to the inner function_definition.
+        elif member.type == "decorated_definition":
+            for child in member.children:
+                if (
+                    child.type == "function_definition"
+                    and _name_of(child) == "__post_init__"
+                ):
+                    return frozenset({"__post_init__"})
+    return frozenset()
 
 
 def _docstring_marker(definition_node: Node) -> frozenset[str]:

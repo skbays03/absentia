@@ -16,14 +16,16 @@
 name = "absentia-self"
 path = "."           # always present (relative to repo root)
 language = "python"
-expected_gaps = 77        # 75 → 77; +2 from `absentia report` +
-                          # crash-recovery additions in cli.py + tui.
-expected_rules = 39       # 38 → 39; one new rule tipped by the
-                          # cmd_report family of small helpers.
-expected_entities = 1078  # 1071 → 1078; +7 from cmd_report,
-                          # _read_tail, _detect_absentia_version, the
-                          # constants block, and the new debug-log /
-                          # crash-handler hooks in tui/app.py.
+expected_gaps = 79        # 77 → 79; +2 from feature-set drift
+                          # introduced by the has_post_init mining
+                          # task (Item A — config-validation gap).
+                          # Zero of the new gaps are themselves
+                          # __post_init__ misses; absentia's own
+                          # classes don't follow that convention.
+expected_rules = 41       # 39 → 41; +2 rules tipped by the new
+                          # has_post_init feature kind.
+expected_entities = 1083  # 1078 → 1083; +5 from _post_init_marker +
+                          # three feature tests + one integration test.
 optional = false
 
 [[corpus]]

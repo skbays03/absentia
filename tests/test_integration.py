@@ -279,6 +279,45 @@ def test_max_gaps_unset_fails_on_any_gap(tmp_path, capsys):
     assert code == 1
 
 
+def test_post_init_gap_fires_when_one_class_skips_validation(
+    tmp_path, capsys,
+):
+    """Item A — config-validation gap. 4-of-5 dataclass-style classes
+    in src/config/ have a __post_init__ validator; the 5th doesn't.
+    `absentia check` should flag the 5th with a "missing __post_init__"
+    gap. Rule count is intentionally not asserted (other has_* features
+    may legitimately fire 100%-confidence rules with zero gaps)."""
+    import json as json_module
+
+    cfg = tmp_path / "config"
+    cfg.mkdir()
+    # Four classes that validate.
+    for n, name in enumerate(("Db", "Cache", "Logging", "Tracing"), 1):
+        (cfg / f"{name.lower()}.py").write_text(
+            f"class {name}Cfg:\n"
+            f"    host: str\n"
+            f"    def __post_init__(self):\n"
+            f"        assert self.host\n"
+        )
+    # Fifth class — same shape, but no __post_init__.
+    (cfg / "metrics.py").write_text(
+        "class MetricsCfg:\n"
+        "    host: str\n"
+    )
+
+    cmd_check(root=tmp_path, config=Config(), quiet=True, as_json=True)
+    payload = json_module.loads(capsys.readouterr().out)
+    feature_values = {gap["rule"]["feature_value"] for gap in payload["gaps"]}
+    assert "__post_init__" in feature_values, (
+        f"expected a missing-__post_init__ gap; saw {feature_values}"
+    )
+    target = next(
+        gap for gap in payload["gaps"]
+        if gap["rule"]["feature_value"] == "__post_init__"
+    )
+    assert target["entity"]["qualified_name"].endswith("MetricsCfg")
+
+
 def test_max_gaps_with_no_gaps_exits_zero(tmp_path, capsys):
     """No gaps + any --max-gaps value → exit 0."""
     api = tmp_path / "api"
