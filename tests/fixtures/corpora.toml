@@ -22,11 +22,10 @@ expected_gaps = 80        # 79 → 80; +1 from the Ruby + Lua
                           # group-membership statistics enough to
                           # tip one rule.
 expected_rules = 43       # 42 → 43, same cause.
-expected_entities = 1244  # 1236 → 1244; +8 from new test
-                          # functions in test_extractors_ruby.py
-                          # and test_extractors_lua.py + the
-                          # _from_assignment helper in lua.py +
-                          # _emit_body_members in ruby.py.
+expected_entities = 1245  # 1244 → 1245; +1 from the new
+                          # test_all_export_gap_fires... integration
+                          # test (the one that would have caught the
+                          # missing-"module" kind_filter bug).
                           # (find_unused_class_gaps,
                           # _build_identifier_count,
                           # _bare_class_name, _normalize_reference,

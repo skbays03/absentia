@@ -283,8 +283,9 @@ See [the configuration reference](docs/reference/absentia-toml.md) for every opt
 
 ## Status
 
-**Alpha.** absentia is under active development. Public API and config format may
-change before 1.0. Pin to an exact version if you depend on the output format.
+**Stable.** v1.0 ships the public API + config format covered by
+SemVer; breaking changes go in major-version bumps. New gap detectors,
+extractor improvements, and TUI features land in minor versions.
 
 ## Documentation
 

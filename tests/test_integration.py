@@ -279,6 +279,51 @@ def test_max_gaps_unset_fails_on_any_gap(tmp_path, capsys):
     assert code == 1
 
 
+def test_all_export_gap_fires_when_one_module_omits_dunder_all(
+    tmp_path, capsys,
+):
+    """Item B — public-surface gap. Four .py modules in a directory
+    declare __all__ at module scope; the fifth doesn't. `absentia
+    check` should flag the fifth's module entity with a "missing
+    __all__" gap.
+
+    This test would have caught a real config-default bug where
+    DirectorySelectorConfig.kind_filter omitted "module" — under
+    that bug, module entities never form directory groups and
+    has_all_export mining silently has nothing to mine."""
+    import json as json_module
+
+    api = tmp_path / "api"
+    api.mkdir()
+    for name in ("users", "posts", "comments", "likes"):
+        (api / f"{name}.py").write_text(
+            f'__all__ = ["{name}_handler"]\n\n'
+            f'def {name}_handler():\n    pass\n'
+        )
+    # Fifth file — same shape, but no __all__.
+    (api / "metrics.py").write_text(
+        "def metrics_handler():\n    pass\n"
+    )
+
+    cmd_check(root=tmp_path, config=Config(), quiet=True, as_json=True)
+    payload = json_module.loads(capsys.readouterr().out)
+    feature_values = {
+        gap["rule"]["feature_value"] for gap in payload["gaps"]
+        if gap["rule"]["feature_kind"] == "has_all_export"
+    }
+    assert "__all__" in feature_values, (
+        "expected a missing-__all__ gap; saw "
+        f"{[g['rule']['feature_value'] for g in payload['gaps']]}"
+    )
+    target = next(
+        gap for gap in payload["gaps"]
+        if gap["rule"]["feature_kind"] == "has_all_export"
+    )
+    assert target["entity"]["qualified_name"].endswith(
+        "metrics.py::__module__"
+    )
+
+
 def test_post_init_gap_fires_when_one_class_skips_validation(
     tmp_path, capsys,
 ):

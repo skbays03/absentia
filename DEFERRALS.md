@@ -28,16 +28,27 @@ _None currently._
 
 
 ### Public domain + docs site
-- **Status:** README and `mkdocs.yml` reference `absentia.dev` as a placeholder.
-- **Why deferred:** Domain costs money; site needs deployment setup.
-- **Resolution:** Acquire a domain (or commit to GitHub Pages at `username.github.io/absentia/`), configure DNS, deploy mkdocs site. Update README + `mkdocs.yml` `site_url`.
-- **Latest by:** Before any public marketing push.
+- **Status:** Repo "About" section currently points at the GitHub
+  repo URL itself; `mkdocs.yml` `site_url` still references
+  `absentia.dev` as a placeholder. Decision deferred — github.io
+  for v1.0, real domain decided post-launch based on traction.
+- **Why deferred:** Real domain costs money + DNS setup; until
+  there's an audience to point at the site, github.io as the
+  homepage is fine.
+- **Resolution:** Either (a) configure GitHub Pages at
+  `skbays03.github.io/absentia/` with the mkdocs site, or
+  (b) buy a domain and CNAME it. Update `mkdocs.yml` `site_url`
+  + the repo's About → Website URL.
+- **Latest by:** Before announcing the project widely (HN, Reddit,
+  Lobsters). v1.0 PyPI publish doesn't depend on it.
 
-### GitHub repo visibility (public timing)
-- **Status:** Repo exists at <https://github.com/skbays03/absentia> as **private** since 2026-05-04.
-- **Why deferred:** Pre-alpha; not ready for public eyes.
-- **Resolution:** Flip to public when v0.1 is usable end-to-end and the marketing-leaning docs (what-is-negative-space, why-no-llm, how-mining-works) are written. Run `gh repo edit --visibility public --accept-visibility-change-consequences`.
-- **Latest by:** Before announcing the project anywhere.
+### ~~GitHub repo visibility (public timing)~~ → public 2026-05-09
+**Resolved 2026-05-09.** Flipped via
+`gh repo edit --visibility public --accept-visibility-change-consequences`
+once the marketing-leaning docs and the v0.99.0 publishing rehearsal
+were both green. Branch protection + first-time-contributor approval
+for fork PRs were configured the same day. See the [Resolved](#resolved)
+section for the full chain.
 
 ---
 
@@ -89,6 +100,26 @@ Source: `~/Desktop/lacuna_optimization_plan.txt`.
 ---
 
 ## Resolved
+
+### ~~GitHub repo visibility (public timing)~~ → public 2026-05-09
+**Resolved 2026-05-09.**
+
+Flipped to public via
+`gh repo edit --visibility public --accept-visibility-change-consequences`
+on the same day as:
+
+* The v0.99.0 cut rehearsal proved the publishing pipeline end-to-end
+  (release-checks + wheels matrix + OIDC TestPyPI publish + sdist
+  install + mypyc compile + smoke-test + TUI launch).
+* Branch protection rule live for `main` (require PR before merging,
+  required status checks: `Lint (ruff)` + `Fingerprint bump check`
+  + `sdist builds clean`, no force pushes, no deletions).
+* Fork-PR safety: `Settings → Actions → General → Approval for
+  running fork pull request workflows from contributors` set to
+  *Require approval for first-time contributors*.
+* Repo About section populated: tagline, homepage URL (github.io
+  placeholder), topics (`code-quality`, `static-analysis`,
+  `tree-sitter`, `python`, `tui`, `pattern-mining`).
 
 ### ~~CI pipeline~~ → `.github/workflows/ci.yml`
 **Resolved 2026-05-05.**

@@ -41,7 +41,13 @@ class MiningConfig:
 class DirectorySelectorConfig:
     enabled: bool = True
     min_members: int = 3
-    kind_filter: tuple[str, ...] = ("function", "class")
+    # "module" is included so Item B's per-file module entities
+    # (carrying has_all_export, etc.) can form directory groups.
+    # Mining over kinds the module entity doesn't emit (decorator,
+    # parent_class, calls) ignores it via the eligibility filter
+    # in mining.py, so its presence in the group is harmless to
+    # those rules.
+    kind_filter: tuple[str, ...] = ("function", "class", "module")
 
 
 @dataclass(frozen=True)

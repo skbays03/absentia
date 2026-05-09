@@ -56,7 +56,7 @@ for the full per-selector explanation; this section is the schema.
 |---|---|---|---|
 | `enabled` | bool | `true` | Toggle this selector. |
 | `min_members` | int | `3` | Skip directories with fewer entities. |
-| `kind_filter` | list of string | `["function", "class"]` | Only group entities of these kinds. |
+| `kind_filter` | list of string | `["function", "class", "module"]` | Only group entities of these kinds. The `module` kind is one-per-Python-file; it's included by default so module-level features like `has_all_export` can be mined alongside function/class conventions. |
 
 ### `[selectors.decorator]`
 
@@ -91,14 +91,46 @@ enabled     = true
 min_members = 3
 ```
 
+## Project-wide `[[suppress]]` blocks
+
+Mark gaps as known/intentional in the version-controlled config so
+the suppression sticks across teammates and CI runs (vs the local
+`absentia suppress <gap-id>` flow, which writes to the gitignored
+`.absentia/state.db`):
+
+```toml
+[[suppress]]
+entity  = "src/api/users.py::delete_user"
+rule    = "@audit"
+reason  = "delete_user IS the audit endpoint"
+created = "2026-05-08"
+
+[[suppress]]
+rule    = "@deprecated"
+scope   = "rule_global"
+reason  = "ignoring @deprecated conventions for now"
+```
+
+| Field | Required? | Meaning |
+|---|---|---|
+| `entity` | for `scope = "gap"` | Full qualified name (`<file>::<scope>`). Exact match. |
+| `rule` | for `scope = "rule_global"`, optional otherwise | Either the rule's feature value (e.g. `"@audit"` — what shows in gap output) or its full id (`<group>::<kind>=<value>`). |
+| `scope` | optional | `"gap"` (default) suppresses one (entity, rule) pair. `"rule_global"` suppresses every gap from this rule, anywhere. |
+| `reason` | recommended | Documentation. Surfaces in `absentia suppress --list`. |
+| `created` | optional | ISO-8601 date. Useful when auditing stale suppressions. |
+
+Malformed `[[suppress]]` blocks are silently dropped (advisory
+enforcement, not load-bearing for the scan). The TUI's view 5
+shows project-source suppressions as read-only — edit
+`absentia.toml` directly via `,` → `e` to remove or change them.
+
 ## Previewed in `absentia.toml.example` but not yet wired
 
 The example file previews several sections that are **not yet
 implemented in the engine**: the `name_pattern` and `cluster`
-selectors, `[[selectors.manual]]`, `[output]`, project-wide
-`[[suppress]]` records, and `max_predicate_size` under `[mining]`.
-Treat them as a roadmap; the sections above are what `absentia check`
-actually reads today.
+selectors, `[[selectors.manual]]`, `[output]`, and
+`max_predicate_size` under `[mining]`. Treat them as a roadmap;
+the sections above are what `absentia check` actually reads today.
 
 For ad-hoc / personal suppressions (the only kind currently
 supported), use `absentia suppress <gap-id> --reason "..."` or press

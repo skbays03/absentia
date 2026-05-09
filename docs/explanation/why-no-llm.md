@@ -67,15 +67,15 @@ When the mechanism produces the explanation as a byproduct, the
 explanation is exactly as trustworthy as the mechanism. When the
 explanation is generated separately, you have two things to trust.
 
-### Sub-100ms interactions
+### Instant interactions
 
 Absentia's TUI scans medium codebases in seconds and the Linux
 kernel in tens of seconds (~48 s cold, ~24 s warm at default
 jobs on a 10-core M-series MacBook). Once a scan finishes, every
 keystroke in the UI — filtering, navigating, suppressing,
-switching views — is sub-100ms because the data is already in
-memory and the operations are integer counters. No model
-inference, no API call, no waiting.
+switching views — runs against an in-memory dataset using set
+lookups and dict reads. No model inference, no API call, no
+network round-trip, no waiting.
 
 LLM-augmented tools can't do this. Even a fast local model is tens of
 milliseconds per token, and any cloud-hosted one is hundreds. That's
