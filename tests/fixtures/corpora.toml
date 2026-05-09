@@ -16,32 +16,32 @@
 name = "absentia-self"
 path = "."           # always present (relative to repo root)
 language = "python"
-expected_gaps = 78        # 78 → 78; Item D's enrichment + ABC
-                          # filter cancel out (the would-be hit
-                          # on the Extractor base class is
-                          # filtered).
-expected_rules = 41       # unchanged. The abstract-base ABC
-                          # filter prevents the would-be entry-
-                          # point rule from firing — every class
-                          # in the directory either is_registered
-                          # or is filtered out, so there's no
-                          # convention drift to discover.
-expected_entities = 1187  # 1181 → 1187; +6 from
-                          # enrich_entry_point_registration +
-                          # four enrichment tests + one
-                          # integration test + one helper.
+expected_gaps = 79        # 78 → 79; +1 from one of the three
+                          # new series detectors firing on
+                          # absentia's own source (probably the
+                          # ordinal CRUD-style alphabet on a
+                          # storage / repo class).
+expected_rules = 42       # 41 → 42 alongside the new gap.
+expected_entities = 1214  # 1187 → 1214; +27 from
+                          # find_letter_series_gaps,
+                          # _cluster_letters_by_proximity,
+                          # find_version_directory_gaps,
+                          # _first_entity_in_dir,
+                          # find_ordinal_series_gaps,
+                          # _candidate_prefixes,
+                          # _ORDINAL_ALPHABETS table, plus the
+                          # 14 new tests in test_series.py and
+                          # the _class_with_methods helper.
 optional = false
 
 [[corpus]]
 name = "redis"
 path = "/tmp/redis"
 language = "c"
-expected_gaps = 241       # bumped from 240 alongside the
-                          # EXTRACTOR_FINGERPRINT salt (cache was
-                          # rebuilt; the new extract picked up one
-                          # additional gap that pre-salt cached
-                          # entries had silently shadowed)
-expected_rules = 120
+expected_gaps = 242       # 241 → 242; +1 from one of the new
+                          # series detectors (E/F/G) firing on
+                          # redis's source layout.
+expected_rules = 121      # 120 → 121 alongside the new gap.
 expected_entities = 9240  # 9197 → 9240; +43 module entities from
                           # the Python files inside redis (build +
                           # test scripts).
@@ -51,8 +51,12 @@ optional = true
 name = "nestjs"
 path = "/tmp/nest"
 language = "typescript"
-expected_gaps = 121
-expected_rules = 93       # unique rules referenced by the gap list
+expected_gaps = 137       # 121 → 137; +16 from the new series
+                          # detectors (E/F/G), most likely
+                          # find_version_directory_gaps catching
+                          # incomplete API-version directories
+                          # in nestjs's sample corpus.
+expected_rules = 109      # 93 → 109 alongside the new gaps.
 expected_entities = 4066
 optional = true
 
