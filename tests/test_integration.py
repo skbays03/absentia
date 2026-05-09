@@ -318,6 +318,51 @@ def test_post_init_gap_fires_when_one_class_skips_validation(
     assert target["entity"]["qualified_name"].endswith("MetricsCfg")
 
 
+def test_entry_point_gap_fires_when_one_plugin_class_isnt_registered(
+    tmp_path, capsys,
+):
+    """Item D — entry-point registration gap. Five plugin-style
+    classes in src/plugins/; pyproject.toml registers four of them
+    in [project.entry-points]. The fifth is "added but forgotten."
+    `absentia check` should flag it with a "missing registered" gap.
+
+    This is the meta case: the engine catches the bug class
+    "I added a new extractor / plugin but forgot the pyproject
+    registration." Generalizes to any project using entry-points."""
+    import json as json_module
+
+    plugins = tmp_path / "src" / "myproj" / "plugins"
+    plugins.mkdir(parents=True)
+    for name in ("AlphaPlugin", "BetaPlugin", "GammaPlugin",
+                 "DeltaPlugin", "EpsilonPlugin"):
+        (plugins / f"{name.lower().replace('plugin', '')}.py").write_text(
+            f"class {name}:\n    pass\n"
+        )
+
+    # Register four of the five.
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "myproj"\nversion = "0.1.0"\n\n'
+        '[project.entry-points."myproj.plugins"]\n'
+        'alpha = "src.myproj.plugins.alpha:AlphaPlugin"\n'
+        'beta  = "src.myproj.plugins.beta:BetaPlugin"\n'
+        'gamma = "src.myproj.plugins.gamma:GammaPlugin"\n'
+        'delta = "src.myproj.plugins.delta:DeltaPlugin"\n'
+    )
+
+    cmd_check(root=tmp_path, config=Config(), quiet=True, as_json=True)
+    payload = json_module.loads(capsys.readouterr().out)
+    target = next(
+        (g for g in payload["gaps"]
+         if g["rule"]["feature_value"] == "registered"),
+        None,
+    )
+    assert target is not None, (
+        "expected an entry-point-registration gap; saw "
+        f"{[g['rule']['feature_value'] for g in payload['gaps']]}"
+    )
+    assert target["entity"]["qualified_name"].endswith("EpsilonPlugin")
+
+
 def test_call_kwargs_gap_fires_when_one_endpoint_skips_request_id(
     tmp_path, capsys,
 ):

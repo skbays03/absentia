@@ -13,6 +13,7 @@ scan because they depend on the corpus, not on individual files.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 
 from .entities import Entity, FeatureSet
 
@@ -228,9 +229,123 @@ def enrich_sibling_tests(
         )
 
 
+def enrich_entry_point_registration(
+    entities: dict[str, Entity],
+    feature_index: dict[str, FeatureSet],
+    root: Path,
+) -> None:
+    """Mark each class entity in a directory that contains at least
+    one entry-point-registered class as ``entry_point_registered``
+    (value ``"registered"`` if the class is itself in pyproject.toml's
+    ``[project.entry-points]``, ``frozenset()`` otherwise). Frequency
+    mining over the directory selector then surfaces the unregistered
+    one as a gap when the convention is established.
+
+    The narrative case: someone adds a new ``HaskellExtractor`` class
+    to ``src/absentia/extractors/haskell.py`` and forgets the
+    pyproject entry-point line. With every existing extractor class
+    registered, the new one stands out at confidence 16/17 ≈ 0.94 —
+    well above the 0.8 threshold.
+
+    Best-effort: a missing or malformed pyproject.toml just skips the
+    pass. The feature is omitted entirely if no entry-points exist,
+    so projects that don't use the plugin pattern pay nothing."""
+    pyproject = root / "pyproject.toml"
+    if not pyproject.exists():
+        return
+    try:
+        import tomllib  # py 3.11+, project requires 3.13+
+        with pyproject.open("rb") as fh:
+            data = tomllib.load(fh)
+    except (OSError, ValueError):
+        return
+
+    ep_section = data.get("project", {}).get("entry-points", {})
+    if not isinstance(ep_section, dict) or not ep_section:
+        return
+
+    # Collect the set of (file_path_suffix, class_name) targets that
+    # appear anywhere in entry-points. Convert dotted module paths
+    # ("absentia.extractors.python") to relative file paths
+    # ("absentia/extractors/python.py") since entity.file_path uses
+    # filesystem separators.
+    registered_targets: set[tuple[str, str]] = set()
+    for group in ep_section.values():
+        if not isinstance(group, dict):
+            continue
+        for target in group.values():
+            if not isinstance(target, str) or ":" not in target:
+                continue
+            module_path, class_name = target.split(":", 1)
+            file_suffix = module_path.replace(".", "/") + ".py"
+            registered_targets.add((file_suffix, class_name.strip()))
+
+    if not registered_targets:
+        return
+
+    # Find which directories contain any registered class. The feature
+    # is only emitted on classes living in those directories — outside
+    # such directories, the convention isn't established, and emitting
+    # the feature there would just clutter mining.
+    registered_dirs: set[str] = set()
+    registered_entity_ids: set[str] = set()
+    for entity in entities.values():
+        if entity.kind != "class":
+            continue
+        for suffix, class_name in registered_targets:
+            if (
+                entity.file_path.endswith(suffix)
+                and entity.qualified_name.endswith(f"::{class_name}")
+            ):
+                registered_entity_ids.add(entity.id)
+                # Parent directory of the file:
+                from posixpath import dirname
+                registered_dirs.add(dirname(entity.file_path))
+                break
+
+    if not registered_dirs:
+        return
+
+    # Abstract base classes shouldn't be flagged as missing
+    # registration — they're the protocol the registered classes
+    # implement, not entries themselves. Detect via direct
+    # inheritance from `ABC` / `abc.ABC` (covers the typical
+    # python idiom). Doesn't catch every abstract-by-convention
+    # case, but a project that uses some other pattern can drop
+    # a [[suppress]] block in absentia.toml for the false hit.
+    _ABC_PARENTS = {"ABC", "abc.ABC"}
+
+    for entity in entities.values():
+        if entity.kind != "class":
+            continue
+        from posixpath import dirname
+        if dirname(entity.file_path) not in registered_dirs:
+            continue
+        fs = feature_index.get(entity.id)
+        if fs is None:
+            fs = FeatureSet()
+            feature_index[entity.id] = fs
+        if fs.get_set("parent_class") & _ABC_PARENTS:
+            # ABC subclass: not a plugin instance, don't emit the
+            # feature. Skipping leaves it ineligible for mining
+            # rather than flagging it as unregistered.
+            continue
+        fs.by_kind["entry_point_registered"] = (
+            frozenset({"registered"})
+            if entity.id in registered_entity_ids
+            else frozenset()
+        )
+
+
 def enrich_all(
     entities: dict[str, Entity],
     feature_index: dict[str, FeatureSet],
+    root: Path | None = None,
 ) -> None:
-    """Run every enrichment pass. Single entry point for ``scan_corpus``."""
+    """Run every enrichment pass. Single entry point for ``scan_corpus``.
+
+    ``root`` is required for the entry-point-registration pass; passing
+    ``None`` skips it (useful in tests that don't care about pyproject)."""
     enrich_sibling_tests(entities, feature_index)
+    if root is not None:
+        enrich_entry_point_registration(entities, feature_index, root)

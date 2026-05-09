@@ -16,13 +16,20 @@
 name = "absentia-self"
 path = "."           # always present (relative to repo root)
 language = "python"
-expected_gaps = 78        # 77 → 78; +1 from Item C's call_kwargs
-                          # mining picking up a kwarg pattern in
-                          # absentia's own source.
-expected_rules = 41       # 40 → 41; +1 rule from call_kwargs.
-expected_entities = 1181  # 1176 → 1181; +5 from _walk_call_kwargs
-                          # + three new feature tests + one
-                          # integration test.
+expected_gaps = 78        # 78 → 78; Item D's enrichment + ABC
+                          # filter cancel out (the would-be hit
+                          # on the Extractor base class is
+                          # filtered).
+expected_rules = 41       # unchanged. The abstract-base ABC
+                          # filter prevents the would-be entry-
+                          # point rule from firing — every class
+                          # in the directory either is_registered
+                          # or is filtered out, so there's no
+                          # convention drift to discover.
+expected_entities = 1187  # 1181 → 1187; +6 from
+                          # enrich_entry_point_registration +
+                          # four enrichment tests + one
+                          # integration test + one helper.
 optional = false
 
 [[corpus]]

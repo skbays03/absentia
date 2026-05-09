@@ -5,6 +5,7 @@ from absentia.entities import Entity, FeatureSet
 from absentia.enrichment import (
     build_test_method_index,
     candidate_test_entity_ids,
+    enrich_entry_point_registration,
     enrich_sibling_tests,
     is_test_file,
 )
@@ -247,3 +248,72 @@ def test_build_test_method_index_collects_both_styles():
     assert "test_update" in methods
     assert "make_fixture" not in methods  # filtered: not test_*
     assert "src/api/users.py" not in index  # not a test file
+
+
+# ── entry-point registration (Item D) ────────────────────────────
+
+
+def _class(file_path: str, name: str) -> Entity:
+    return Entity(
+        kind="class",
+        qualified_name=f"{file_path}::{name}",
+        file_path=file_path,
+        line=1,
+    )
+
+
+def test_entry_point_marks_registered_and_unregistered_classes(tmp_path):
+    """Two plugin classes in src/plugins/; pyproject.toml registers
+    one. Both should get the feature emitted (their directory has
+    at least one registration), with values reflecting their
+    individual registration status."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "ex"\nversion = "0.1.0"\n\n'
+        '[project.entry-points."ex.plugins"]\n'
+        'a = "src.plugins.a:Alpha"\n'
+    )
+    entities = {
+        "alpha-id": _class("src/plugins/a.py", "Alpha"),
+        "beta-id":  _class("src/plugins/b.py", "Beta"),
+        "out-id":   _class("src/other/c.py", "Gamma"),
+    }
+    for e_id, entity in entities.items():
+        entity.id  # noqa: B018 — touch the cached property
+        entities[e_id] = entity
+    feature_index: dict[str, FeatureSet] = {
+        e.id: FeatureSet() for e in entities.values()
+    }
+    name_keyed = {e.id: e for e in entities.values()}
+
+    enrich_entry_point_registration(name_keyed, feature_index, tmp_path)
+
+    alpha = next(e for e in entities.values() if "Alpha" in e.qualified_name)
+    beta = next(e for e in entities.values() if "Beta" in e.qualified_name)
+    out = next(e for e in entities.values() if "Gamma" in e.qualified_name)
+    assert feature_index[alpha.id].get_set("entry_point_registered") == frozenset({"registered"})
+    assert feature_index[beta.id].get_set("entry_point_registered") == frozenset()
+    # Class outside the registered directory: feature not emitted at all.
+    assert "entry_point_registered" not in feature_index[out.id].by_kind
+
+
+def test_entry_point_skips_when_pyproject_missing(tmp_path):
+    """No pyproject.toml: enrichment is a no-op, never raises."""
+    entities = {"x-id": _class("src/p.py", "X")}
+    name_keyed = {e.id: e for e in entities.values()}
+    feature_index = {e.id: FeatureSet() for e in entities.values()}
+    enrich_entry_point_registration(name_keyed, feature_index, tmp_path)
+    for fs in feature_index.values():
+        assert "entry_point_registered" not in fs.by_kind
+
+
+def test_entry_point_skips_when_no_entry_points_declared(tmp_path):
+    """Project that doesn't use entry-points pays nothing."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "ex"\nversion = "0.1.0"\n'
+    )
+    entities = {"x-id": _class("src/p.py", "X")}
+    name_keyed = {e.id: e for e in entities.values()}
+    feature_index = {e.id: FeatureSet() for e in entities.values()}
+    enrich_entry_point_registration(name_keyed, feature_index, tmp_path)
+    for fs in feature_index.values():
+        assert "entry_point_registered" not in fs.by_kind

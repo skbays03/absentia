@@ -555,7 +555,7 @@ _INFO_LINES: tuple[str, ...] = (
     "  • Missing sibling tests    — N of M files in src/ have a tests/* sibling",
     "  • Inheritance gaps         — N of M classes in panels/ extend BasePanel",
     "  • Series gaps              — migrations/0001, 0002, 0004 (where's 0003?)",
-    "  …plus call-pair, has_docstring, has_return_type, has_param_types, has_post_init, has_all_export, call_kwargs.",
+    "  …plus call-pair, has_docstring, has_return_type, has_param_types, has_post_init, has_all_export, call_kwargs, entry_point_registered.",
     "",
     "[bold]Quick start[/]",
     "  [cyan]absentia init[/]           # generate absentia.toml in cwd",
@@ -1111,7 +1111,7 @@ def scan_corpus(
         # not persisted because the result depends on the full set of
         # entities, not on any single file.
         from .enrichment import enrich_all
-        enrich_all(entities, feature_index)
+        enrich_all(entities, feature_index, root=root)
 
         items = [(e, feature_index[e.id]) for e in entities.values()]
         groups: list = []
@@ -1194,6 +1194,8 @@ def scan_corpus(
                 lambda h: _mine_kind("has_all_export", h)),
             ("frequency:call_kwargs",
                 lambda h: _mine_kind("call_kwargs", h)),
+            ("frequency:entry_point_registered",
+                lambda h: _mine_kind("entry_point_registered", h)),
             ("symmetry pairs",
                 lambda h: find_symmetry_gaps(entities, progress_hook=h)),
             ("call-pair",
