@@ -16,22 +16,18 @@
 name = "absentia-self"
 path = "."           # always present (relative to repo root)
 language = "python"
-expected_gaps = 79        # 78 → 79; +1 from one of the three
-                          # new series detectors firing on
-                          # absentia's own source (probably the
-                          # ordinal CRUD-style alphabet on a
-                          # storage / repo class).
-expected_rules = 42       # 41 → 42 alongside the new gap.
-expected_entities = 1214  # 1187 → 1214; +27 from
-                          # find_letter_series_gaps,
-                          # _cluster_letters_by_proximity,
-                          # find_version_directory_gaps,
-                          # _first_entity_in_dir,
-                          # find_ordinal_series_gaps,
-                          # _candidate_prefixes,
-                          # _ORDINAL_ALPHABETS table, plus the
-                          # 14 new tests in test_series.py and
-                          # the _class_with_methods helper.
+expected_gaps = 79        # unchanged. Item H (closure detector)
+                          # fires zero gaps on absentia self —
+                          # the test-file + entry-point-registered
+                          # + corpus-identifier-count filters
+                          # collectively spare every class.
+expected_rules = 42       # unchanged.
+expected_entities = 1234  # 1214 → 1234; +20 from closure.py
+                          # (find_unused_class_gaps,
+                          # _build_identifier_count,
+                          # _bare_class_name, _normalize_reference,
+                          # _extension_of) + 10 closure tests + a
+                          # few test helpers.
 optional = false
 
 [[corpus]]
@@ -50,12 +46,17 @@ optional = true
 name = "nestjs"
 path = "/tmp/nest"
 language = "typescript"
-expected_gaps = 129       # 121 → 129; +8 from Item G's ordinal
-                          # CRUD detector finding real "Service /
-                          # Controller class implements 3 of 4 CRUD
-                          # ops; missing one" cases. Audited by hand
-                          # 2026-05-09 — all 8 are genuine.
-expected_rules = 101      # 93 → 101 alongside the new gaps.
+expected_gaps = 139       # 129 → 139; +10 from Item H (closure)
+                          # finding genuinely unused classes:
+                          # ExceptionInterceptor, NatsStrategy,
+                          # AudioModule, ComplexityPlugin,
+                          # HttpCacheInterceptor,
+                          # InvalidMiddlewareConfigurationException,
+                          # Chat / Dog / ExternalSvc entities,
+                          # RMQBroadcastController. Each verified
+                          # to have only its declaration site in
+                          # the entire codebase (audited 2026-05-09).
+expected_rules = 111      # 101 → 111 alongside the new gaps.
 expected_entities = 4066
 optional = true
 

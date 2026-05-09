@@ -1148,6 +1148,7 @@ def scan_corpus(
         from concurrent.futures import ThreadPoolExecutor
 
         from .symmetry import find_call_pair_gaps, find_symmetry_gaps
+        from .closure import find_unused_class_gaps
         from .series import (
             find_letter_series_gaps,
             find_ordinal_series_gaps,
@@ -1213,6 +1214,10 @@ def scan_corpus(
                 lambda h: find_version_directory_gaps(entities, progress_hook=h)),
             ("ordinal-series",
                 lambda h: find_ordinal_series_gaps(entities, progress_hook=h)),
+            ("closure",
+                lambda h: find_unused_class_gaps(
+                    entities, feature_index, root=root, progress_hook=h,
+                )),
         ]
 
         # Per-strategy timing. With ThreadPool + GIL the wall-clock per
