@@ -16,18 +16,13 @@
 name = "absentia-self"
 path = "."           # always present (relative to repo root)
 language = "python"
-expected_gaps = 77        # 79 → 77; -2 from Item B. The new
-                          # module-entity-per-file pulls the
-                          # directory selector's group sizes up,
-                          # which slightly redistributes some
-                          # confidence rules. Two of Item A's
-                          # post_init-related gaps fell below the
-                          # 0.8 threshold once modules joined.
-expected_rules = 40       # 41 → 40; one rule tipped out for the
-                          # same reason as the gap drift above.
-expected_entities = 1176  # 1175 → 1176; +1 from the new
-                          # action_toggle_info_panels method on
-                          # AbsentiaApp (collapsible info panels).
+expected_gaps = 78        # 77 → 78; +1 from Item C's call_kwargs
+                          # mining picking up a kwarg pattern in
+                          # absentia's own source.
+expected_rules = 41       # 40 → 41; +1 rule from call_kwargs.
+expected_entities = 1181  # 1176 → 1181; +5 from _walk_call_kwargs
+                          # + three new feature tests + one
+                          # integration test.
 optional = false
 
 [[corpus]]

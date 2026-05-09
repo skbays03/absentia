@@ -153,6 +153,49 @@ def test_decorator_call_not_counted_as_function_body_call():
     assert features.get_set("calls") == frozenset({"bar"})
 
 
+# ── call_kwargs (Item C: logging/tracing call-marker gap) ─────────
+
+
+def test_function_collects_keyword_argument_names():
+    """Every keyword argument used in any call inside the function
+    body should appear in call_kwargs, suffixed with ``=`` so the
+    rendered gap reads "missing request_id=" instead of "missing
+    request_id" (avoids confusion with a free identifier)."""
+    src = (
+        "def handler():\n"
+        "    log.info('start', request_id=req, trace_id=t)\n"
+        "    db.write(key='x')\n"
+    )
+    root = _parse(src)
+    [(_, features)] = _non_module(root)
+    assert features.get_set("call_kwargs") == frozenset(
+        {"request_id=", "trace_id=", "key="}
+    )
+
+
+def test_function_with_no_kwargs_has_empty_call_kwargs():
+    src = "def silent():\n    log.info('msg')\n    db.write('x')\n"
+    root = _parse(src)
+    [(_, features)] = _non_module(root)
+    assert features.get_set("call_kwargs") == frozenset()
+
+
+def test_method_carries_call_kwargs_too():
+    """Methods need the same coverage — the logging convention
+    typically sits on instance methods of a Handler / Service
+    class, not free functions."""
+    src = (
+        "class H:\n"
+        "    def post(self):\n"
+        "        log.info('m', request_id=self.rid)\n"
+    )
+    root = _parse(src)
+    method = next(
+        f for e, f in _non_module(root) if e.kind == "method"
+    )
+    assert "request_id=" in method.get_set("call_kwargs")
+
+
 # ── module entity + has_all_export (Item B: __all__ gap) ───────────
 
 

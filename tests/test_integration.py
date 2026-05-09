@@ -318,6 +318,48 @@ def test_post_init_gap_fires_when_one_class_skips_validation(
     assert target["entity"]["qualified_name"].endswith("MetricsCfg")
 
 
+def test_call_kwargs_gap_fires_when_one_endpoint_skips_request_id(
+    tmp_path, capsys,
+):
+    """Item C — logging/tracing call-marker gap. Four endpoint
+    handlers in src/api/ pass `request_id=` to log.info; the fifth
+    skips it. `absentia check` should flag the fifth with a
+    "missing request_id=" gap."""
+    import json as json_module
+
+    api = tmp_path / "api"
+    api.mkdir()
+    (api / "users.py").write_text(
+        "def list_users(req):\n"
+        "    log.info('list', request_id=req.id)\n"
+        "    return []\n\n"
+        "def create_user(req):\n"
+        "    log.info('create', request_id=req.id)\n"
+        "    return {}\n\n"
+        "def update_user(req):\n"
+        "    log.info('update', request_id=req.id)\n"
+        "    return {}\n\n"
+        "def delete_user(req):\n"
+        "    log.info('delete', request_id=req.id)\n"
+        "    return {}\n\n"
+        "def health(req):\n"
+        "    log.info('health')\n"
+        "    return 'ok'\n"
+    )
+
+    cmd_check(root=tmp_path, config=Config(), quiet=True, as_json=True)
+    payload = json_module.loads(capsys.readouterr().out)
+    feature_values = {gap["rule"]["feature_value"] for gap in payload["gaps"]}
+    assert "request_id=" in feature_values, (
+        f"expected a missing-request_id= gap; saw {feature_values}"
+    )
+    target = next(
+        gap for gap in payload["gaps"]
+        if gap["rule"]["feature_value"] == "request_id="
+    )
+    assert target["entity"]["qualified_name"].endswith("health")
+
+
 def test_max_gaps_with_no_gaps_exits_zero(tmp_path, capsys):
     """No gaps + any --max-gaps value → exit 0."""
     api = tmp_path / "api"

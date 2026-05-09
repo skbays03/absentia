@@ -28,6 +28,13 @@ _PY_LANGUAGE = Language(tree_sitter_python.language())
 # Compiled once at import; runs in C, much faster than the previous
 # Python ``walk_subtree`` + ``if node.type ==`` loop.
 _CALLS_QUERY = Query(_PY_LANGUAGE, "(call function: (_) @target)")
+# Captures every keyword argument name appearing in any call within
+# a subtree. Used by call_kwargs mining (Item C) to surface "every
+# endpoint passes request_id= to some call; this one doesn't."
+_KWARGS_QUERY = Query(
+    _PY_LANGUAGE,
+    "(keyword_argument name: (identifier) @kwarg_name)",
+)
 
 
 class PythonExtractor(Extractor):
@@ -117,6 +124,12 @@ def _emit_function(
     features = FeatureSet(by_kind={
         "decorator": frozenset(decorators),
         "calls": frozenset(_walk_calls(fn_node)),
+        # call_kwargs is the set of keyword-argument names appearing
+        # in any call inside this function's body, with a trailing
+        # `=` so output reads "missing request_id=". Surfaces logging
+        # / tracing conventions: "every endpoint passes request_id=
+        # to some call; this one doesn't."
+        "call_kwargs": frozenset(_walk_call_kwargs(fn_node)),
         # has_docstring is populated for every function so mining sees
         # the function as eligible; the value "docstring" is present
         # iff the function actually has one. Mining reads "X% of group
@@ -196,6 +209,7 @@ def _emit_method(
     features = FeatureSet(by_kind={
         "decorator": frozenset(decorators),
         "calls": frozenset(_walk_calls(fn_node)),
+        "call_kwargs": frozenset(_walk_call_kwargs(fn_node)),
         "has_docstring": _docstring_marker(fn_node),
         "has_return_type": _return_type_marker(fn_node),
         "has_param_types": _param_types_marker(fn_node),
@@ -216,6 +230,17 @@ def _walk_calls(root: Node) -> Iterator[str]:
     for _, captures in cursor.matches(root):
         for target in captures.get("target", ()):
             yield clean_call_name(target.text.decode("utf-8").strip())
+
+
+def _walk_call_kwargs(root: Node) -> Iterator[str]:
+    """Yield each ``name=`` token used as a keyword argument anywhere
+    in ``root``'s call subtree. Returns the bare identifier with a
+    trailing ``=`` so gap output reads "missing request_id=" — visually
+    obvious that we're talking about a kwarg, not a free identifier."""
+    cursor = QueryCursor(_KWARGS_QUERY)
+    for _, captures in cursor.matches(root):
+        for name in captures.get("kwarg_name", ()):
+            yield f"{name.text.decode('utf-8').strip()}="
 
 
 def _return_type_marker(fn_node: Node) -> frozenset[str]:

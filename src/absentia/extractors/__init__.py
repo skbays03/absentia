@@ -59,7 +59,9 @@ from .typescript import TSXExtractor, TypeScriptExtractor
 #        config-validation gap (Item A on the gap-detector roadmap).
 #   v4 — module entity + has_all_export detector added to
 #        PythonExtractor for the __all__-export gap (Item B).
-EXTRACTOR_FINGERPRINT = "v4"
+#   v5 — call_kwargs feature added to function/method emission for
+#        the logging / tracing call-marker gap (Item C).
+EXTRACTOR_FINGERPRINT = "v5"
 
 
 _BUILTIN_EXTRACTORS: tuple[type[Extractor], ...] = (
