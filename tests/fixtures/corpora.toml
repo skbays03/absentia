@@ -29,7 +29,9 @@ expected_gaps = 71        # 64 → 71 with Phase 3 polish + the TUI
                           # back over min_confidence and surfaced 7
                           # new gaps (one per new rule).
 expected_rules = 36       # 29 → 36
-expected_entities = 1005  # 984 → 1005; +21 from Phase 3 work
+expected_entities = 1006  # 984 → 1006; +22 from Phase 3 work + the
+                          # _ABSENTIA_INPUT_CSS constant added during
+                          # the modal-input-style consistency pass
 optional = false
 
 [[corpus]]

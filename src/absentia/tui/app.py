@@ -86,19 +86,50 @@ def editor_command(editor: str, file_path: Path, line: int) -> list[str]:
 # ── Modals ───────────────────────────────────────────────────────────
 
 
+# Canonical Input-widget style for every absentia modal. Concatenated
+# into each modal's DEFAULT_CSS so the field looks identical across
+# SuppressScreen, FilterScreen, ExportPathInputScreen, and any future
+# modal that yields an Input. Pinning the rule here keeps the design
+# architecture consistent without per-modal copy-paste.
+#
+# width: 1fr  → claim the parent's content area exactly so the Input's
+#               own border renders inside the dialog (not bleeding past
+#               the padding's right edge — caught visually 2026-05-08).
+# height: 3   → 1 row for content, 2 rows for top+bottom border.
+# margin: 0   → defeat the default vertical margin that would shift
+#               the field out of alignment with surrounding labels.
+# border + background → make the textbox visibly distinct from the
+#               surrounding dialog so users see typed text land
+#               somewhere obvious.
+_ABSENTIA_INPUT_CSS = """
+    Input {
+        width: 1fr;
+        height: 3;
+        margin: 0;
+        border: solid $accent;
+        background: $boost;
+    }
+"""
+
+
 class SuppressScreen(ModalScreen[tuple[str, str] | None]):
-    """Prompt for a suppression reason. Returns ``(short_id, reason)``."""
+    """Prompt for a suppression reason. Returns ``(short_id, reason)``.
+
+    Styled to match ExportPathInputScreen — visible bordered textbox
+    with a boost background so the user clearly sees their typed
+    text land somewhere distinct from the surrounding labels.
+    """
 
     DEFAULT_CSS = """
     SuppressScreen { align: center middle; }
     #dialog {
-        width: 70; height: 11;
+        width: 70; height: 12;
         background: $surface;
         border: thick $primary;
         padding: 1 2;
     }
     #dialog Label { margin-bottom: 1; }
-    """
+    """ + _ABSENTIA_INPUT_CSS
 
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
 
@@ -135,12 +166,13 @@ class FilterScreen(ModalScreen[str | None]):
     DEFAULT_CSS = """
     FilterScreen { align: center middle; }
     #dialog {
-        width: 70; height: 7;
+        width: 70; height: 9;
         background: $surface;
         border: thick $accent;
         padding: 1 2;
     }
-    """
+    #dialog Label { margin-bottom: 1; }
+    """ + _ABSENTIA_INPUT_CSS
 
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
 
@@ -580,15 +612,7 @@ class ExportPathInputScreen(ModalScreen[str | None]):
         padding: 1 2;
     }
     #export_path_dialog Label { margin-bottom: 1; }
-    /* Make the textbox visually obvious — a bordered, taller field
-       so the user sees their typed characters land somewhere
-       distinct from the surrounding labels. */
-    #path_input {
-        border: solid $accent;
-        background: $boost;
-        height: 3;
-    }
-    """
+    """ + _ABSENTIA_INPUT_CSS
 
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
 
@@ -1773,12 +1797,26 @@ class AbsentiaApp(App[None]):
             self._open_entity_in_editor(self._entities[gap.entity_id])
 
     def _open_entity_in_editor(self, entity: Entity) -> None:
-        target = self.root / entity.file_path
+        self._open_in_editor(self.root / entity.file_path, entity.line)
+
+    def _open_in_editor(self, target: Path, line: int = 1) -> None:
+        """Open ``target`` at ``line`` in the user's editor.
+
+        Embedded hosts (Dev-Dashboard panel) get forwarded via the
+        ``on_open_editor`` callback registered at app construction.
+        Standalone runs spawn ``$EDITOR`` via subprocess inside
+        ``self.suspend()`` so Textual restores cooked terminal
+        mode for the editor and re-enters the alternate screen on
+        exit.
+
+        Reused by both the gap-row Enter handler and the Settings
+        panel's "open absentia.toml" action.
+        """
         if self._on_open_editor is not None:
             # Embedded mode (e.g. Dev-Dashboard panel) — host owns the
             # editor surface; we just forward the file + line.
             try:
-                self._on_open_editor(target, entity.line)
+                self._on_open_editor(target, line)
             except Exception as exc:
                 self.notify(
                     f"Editor callback failed: {exc}",
@@ -1788,7 +1826,7 @@ class AbsentiaApp(App[None]):
 
         # Standalone mode — spawn $EDITOR via subprocess.
         editor = os.environ.get("EDITOR") or "vi"
-        cmd = editor_command(editor, target, entity.line)
+        cmd = editor_command(editor, target, line)
         try:
             with self.suspend():
                 subprocess.run(cmd, check=False)
