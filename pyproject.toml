@@ -6,7 +6,13 @@ readme = "README.md"
 requires-python = ">=3.13"
 authors = [{ name = "Shawn Bays", email = "shawnbays2003@gmail.com" }]
 license = "Apache-2.0"
-license-files = ["LICENSE", "NOTICE"]
+# license-files is intentionally omitted: PEP 639 adoption is still
+# in flux across packaging tools — hatchling versions in the
+# cibuildwheel isolated build env reject the array form
+# (`["LICENSE", "NOTICE"]`) with "Field `project.license-files` must
+# be a table". Default discovery globs (LICENSE*, NOTICE*) pick both
+# files up automatically, which is the same effective result without
+# the version-skew failure mode.
 keywords = ["code-quality", "static-analysis", "patterns", "tui"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
@@ -79,7 +85,11 @@ swift      = "absentia.extractors.swift:SwiftExtractor"
 # Repository = "https://github.com/..."  # Deferred — see DEFERRALS.md
 
 [build-system]
-requires = ["hatchling", "hatch-mypyc"]
+# hatchling >= 1.27 ships a stable PEP 639 implementation; older
+# versions reject the modern license-files shapes with "must be a
+# table." Pinning a floor avoids a recurring class of build-isolation
+# version-drift failures.
+requires = ["hatchling>=1.27", "hatch-mypyc"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
