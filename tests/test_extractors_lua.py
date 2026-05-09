@@ -49,3 +49,56 @@ def test_calls_with_dotted_receiver():
     calls = features.get_set("calls")
     assert "helper" in calls
     assert "M.foo" in calls
+
+
+def test_table_assignment_function_extracted_as_method():
+    """`M.foo = function() end` — common module-of-functions pattern.
+    Pre-fix the extractor missed these entirely."""
+    src = (
+        "local M = {}\n"
+        "M.greet = function(name)\n"
+        "  return name\n"
+        "end\n"
+        "return M\n"
+    )
+    root = _parse(src)
+    items = list(extract_lua_entities(root, "x.lua"))
+    by_qn = {e.qualified_name: e.kind for e, _ in items}
+    assert "x.lua::M.greet" in by_qn
+    assert by_qn["x.lua::M.greet"] == "method"
+
+
+def test_local_assignment_function_extracted_as_function():
+    """`local foo = function() end` — local-bound function expression.
+    Pre-fix the extractor missed these too."""
+    src = "local foo = function() return 1 end\n"
+    root = _parse(src)
+    [(entity, _)] = list(extract_lua_entities(root, "x.lua"))
+    assert entity.kind == "function"
+    assert entity.qualified_name == "x.lua::foo"
+
+
+def test_table_assigned_function_captures_calls():
+    """The new table-assignment path must walk the function body
+    for calls just like the function-declaration path does."""
+    src = (
+        "local M = {}\n"
+        "M.process = function(items)\n"
+        "  helper()\n"
+        "  return list.map(items)\n"
+        "end\n"
+    )
+    root = _parse(src)
+    [(_, features)] = list(extract_lua_entities(root, "x.lua"))
+    calls = features.get_set("calls")
+    assert "helper" in calls
+    assert "list.map" in calls
+
+
+def test_non_function_assignment_skipped():
+    """`local M = {}` shouldn't yield an entity — only assignments
+    whose RHS is a function definition produce entities."""
+    src = "local M = {}\nlocal x = 42\n"
+    root = _parse(src)
+    items = list(extract_lua_entities(root, "x.lua"))
+    assert items == []

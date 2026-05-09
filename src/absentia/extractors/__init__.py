@@ -65,7 +65,13 @@ from .typescript import TSXExtractor, TypeScriptExtractor
 #        pattern), so encapsulated `function init() {}` etc. inside
 #        `const App = (() => {...})()` become extractable. Affects
 #        any pre-ES-modules JS codebase.
-EXTRACTOR_FINGERPRINT = "v6"
+#   v7 — RubyExtractor recurses into nested classes/modules (so a
+#        `module Foo; class Bar; def baz` chain emits all three
+#        entities, not just the outer module). LuaExtractor handles
+#        `M.foo = function() ... end` and `local foo = function()`
+#        — the table-of-functions module pattern that plenary.nvim,
+#        most Neovim plugins, and most modern Lua use.
+EXTRACTOR_FINGERPRINT = "v7"
 
 
 _BUILTIN_EXTRACTORS: tuple[type[Extractor], ...] = (

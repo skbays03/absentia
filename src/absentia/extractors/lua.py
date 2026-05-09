@@ -47,6 +47,26 @@ def extract_lua_entities(
     for child in root.children:
         if child.type == "function_declaration":
             yield _emit_function(child, file_path)
+        elif child.type == "assignment_statement":
+            # Top-level `M.foo = function() ... end` — common
+            # table-of-functions module pattern. The function's
+            # name comes from the variable_list (a `dot_index_
+            # expression` for table fields, an `identifier` for
+            # plain rebindings).
+            emitted = _from_assignment(child, file_path)
+            if emitted is not None:
+                yield emitted
+        elif child.type == "variable_declaration":
+            # `local bar = function() ... end` — local-bound
+            # function expression. Same shape, one level deeper:
+            # variable_declaration → assignment_statement → RHS
+            # function_definition.
+            for inner in child.children:
+                if inner.type == "assignment_statement":
+                    emitted = _from_assignment(inner, file_path)
+                    if emitted is not None:
+                        yield emitted
+                    break
 
 
 def _emit_function(
@@ -62,6 +82,59 @@ def _emit_function(
     )
     features = FeatureSet(by_kind={
         "calls": frozenset(_walk_calls(fn_node)),
+    })
+    return entity, features
+
+
+def _from_assignment(
+    assign_node: Node, file_path: str,
+) -> tuple[Entity, FeatureSet] | None:
+    """Emit a function entity for an `assignment_statement` whose
+    right-hand side is a `function_definition`. Returns None for any
+    other assignment shape (variable rebinds, table literals, etc.)."""
+    var_list = None
+    expr_list = None
+    for child in assign_node.children:
+        if child.type == "variable_list":
+            var_list = child
+        elif child.type == "expression_list":
+            expr_list = child
+    if var_list is None or expr_list is None:
+        return None
+    # The expression must be exactly one function_definition for us
+    # to treat it as a function-binding assignment. Multi-target
+    # assignments (`a, b = 1, 2`) and non-function values get skipped.
+    fn_def = None
+    for child in expr_list.children:
+        if child.type == "function_definition":
+            fn_def = child
+            break
+    if fn_def is None:
+        return None
+    # The name comes from the first variable in the variable_list:
+    # an `identifier` (free function) or a `dot_index_expression`
+    # (`M.foo`). Method-index (`M:foo`) doesn't appear here — Lua
+    # parses `M:foo = ...` as a syntax error; method-style
+    # definitions only appear via `function M:foo()` syntax.
+    name = "<anonymous>"
+    is_method = False
+    for child in var_list.children:
+        if child.type == "identifier":
+            name = child.text.decode("utf-8")
+            break
+        if child.type == "dot_index_expression":
+            name = child.text.decode("utf-8")
+            is_method = True
+            break
+    kind = "method" if is_method else "function"
+    entity = Entity(
+        kind=kind,
+        qualified_name=f"{file_path}::{name}",
+        file_path=file_path,
+        line=fn_def.start_point[0] + 1,
+    )
+    features = FeatureSet(by_kind={
+        "calls": frozenset(_walk_calls(fn_def)),
     })
     return entity, features
 

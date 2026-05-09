@@ -99,3 +99,65 @@ def test_module_methods_extracted():
     by_qn = {e.qualified_name: e.kind for e, _ in extract_ruby_entities(root, "x.rb")}
     assert by_qn["x.rb::Greetable"] == "module"
     assert by_qn["x.rb::Greetable.hello"] == "method"
+
+
+def test_classes_nested_inside_module_are_extracted():
+    """The Sinatra-style pattern — a top-level module containing
+    classes that contain methods. Pre-fix, the extractor only
+    emitted the outer module and missed everything inside it,
+    losing 99% of entities on a typical lib/<gem>/base.rb file."""
+    src = (
+        "module Sinatra\n"
+        "  class Request\n"
+        "    def accept; end\n"
+        "    def safe?; end\n"
+        "  end\n"
+        "  class Response\n"
+        "    def status; end\n"
+        "  end\n"
+        "end\n"
+    )
+    root = _parse(src)
+    by_qn = {e.qualified_name: e.kind for e, _ in extract_ruby_entities(root, "x.rb")}
+    assert by_qn["x.rb::Sinatra"] == "module"
+    assert by_qn["x.rb::Request"] == "class"
+    assert by_qn["x.rb::Response"] == "class"
+    assert by_qn["x.rb::Request.accept"] == "method"
+    assert by_qn["x.rb::Request.safe?"] == "method"
+    assert by_qn["x.rb::Response.status"] == "method"
+
+
+def test_modules_nested_inside_module_are_extracted():
+    """Two module levels deep — both should surface, plus the
+    method inside the inner module."""
+    src = (
+        "module Outer\n"
+        "  module Inner\n"
+        "    def foo; end\n"
+        "  end\n"
+        "end\n"
+    )
+    root = _parse(src)
+    by_qn = {e.qualified_name: e.kind for e, _ in extract_ruby_entities(root, "x.rb")}
+    assert by_qn["x.rb::Outer"] == "module"
+    assert by_qn["x.rb::Inner"] == "module"
+    assert by_qn["x.rb::Inner.foo"] == "method"
+
+
+def test_singleton_methods_emitted():
+    """`def self.create` is a class method — should be extracted same
+    as an instance method (not skipped). The qualified_name shape
+    isn't the test target; visibility-to-mining is."""
+    src = (
+        "class Foo\n"
+        "  def self.create; end\n"
+        "  def name; end\n"
+        "end\n"
+    )
+    root = _parse(src)
+    qns = [e.qualified_name for e, _ in extract_ruby_entities(root, "x.rb")]
+    # Both methods must surface; the file must yield at least 3
+    # entities (class Foo + 2 methods).
+    assert len(qns) >= 3
+    assert any("create" in qn for qn in qns)
+    assert any("name" in qn for qn in qns)

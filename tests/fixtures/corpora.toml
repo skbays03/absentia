@@ -16,16 +16,17 @@
 name = "absentia-self"
 path = "."           # always present (relative to repo root)
 language = "python"
-expected_gaps = 79        # unchanged. Item H (closure detector)
-                          # fires zero gaps on absentia self —
-                          # the test-file + entry-point-registered
-                          # + corpus-identifier-count filters
-                          # collectively spare every class.
-expected_rules = 42       # unchanged.
-expected_entities = 1236  # 1234 → 1236; +2 from JS extractor's
-                          # new IIFE-body walker (_iife_body and
-                          # _walk_iife_body helpers in javascript.py).
-                          # Also see: 1214 → 1234; +20 from closure.py
+expected_gaps = 80        # 79 → 80; +1 from the Ruby + Lua
+                          # extractor fixes — new helpers added
+                          # to ruby.py / lua.py shifted some
+                          # group-membership statistics enough to
+                          # tip one rule.
+expected_rules = 43       # 42 → 43, same cause.
+expected_entities = 1244  # 1236 → 1244; +8 from new test
+                          # functions in test_extractors_ruby.py
+                          # and test_extractors_lua.py + the
+                          # _from_assignment helper in lua.py +
+                          # _emit_body_members in ruby.py.
                           # (find_unused_class_gaps,
                           # _build_identifier_count,
                           # _bare_class_name, _normalize_reference,
@@ -37,12 +38,12 @@ optional = false
 name = "redis"
 path = "/tmp/redis"
 language = "c"
-expected_gaps = 241       # 242 → 241; the +1 ordinal hit cleared
-                          # once Item G's name-hint gating landed.
-expected_rules = 120      # 121 → 120 alongside.
-expected_entities = 9240  # 9197 → 9240; +43 module entities from
-                          # the Python files inside redis (build +
-                          # test scripts).
+expected_gaps = 241       # unchanged. The Ruby + Lua extractor
+                          # fixes don't affect redis (C corpus).
+expected_rules = 120
+expected_entities = 9246  # 9240 → 9246; +6 from a few Ruby files
+                          # in redis's tooling subdir that now
+                          # extract nested class/module entities.
 optional = true
 
 [[corpus]]

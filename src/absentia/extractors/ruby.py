@@ -82,7 +82,7 @@ def _emit_class(
     )
 
     if body is not None:
-        yield from _emit_methods(body, file_path, name)
+        yield from _emit_body_members(body, file_path, name)
 
 
 def _emit_module(
@@ -107,15 +107,42 @@ def _emit_module(
     )
 
     if body is not None:
-        yield from _emit_methods(body, file_path, name)
+        yield from _emit_body_members(body, file_path, name)
 
 
-def _emit_methods(
-    body: Node, file_path: str, container_name: str
+def _emit_body_members(
+    body: Node, file_path: str, container_name: str,
 ) -> Iterator[tuple[Entity, FeatureSet]]:
+    """Walk a class/module body emitting methods, plus recursing into
+    nested classes and modules so the entire tree gets extracted.
+
+    Ruby projects routinely nest aggressively — Sinatra's
+    ``lib/sinatra/base.rb`` is a single 68 KB file with
+    ``module Sinatra`` containing a class ``Request``, which itself
+    contains classes ``AcceptEntry``, ``MimeTypeEntry``, etc., each
+    with several methods. Without recursion the extractor only
+    emitted the outer module and missed the rest of the file."""
     for child in body.children:
         if child.type == "method":
             yield _emit_method(child, file_path, container_name)
+        elif child.type == "singleton_method":
+            # `def self.foo`, `def Klass.bar` — emit at the same level
+            # as instance methods. The class-method distinction isn't
+            # currently tracked separately by the entity model.
+            yield _emit_method(child, file_path, container_name)
+        elif child.type == "class":
+            # Nested class. Recurse via _emit_class so its own
+            # methods + further-nested classes get extracted; the
+            # qualified_name's `<file>::Outer::Inner` shape comes
+            # for free since _emit_class uses the inner class's bare
+            # name. Ruby itself uses `Outer::Inner` namespacing but
+            # the entity model uses `<file>::<name>` regardless of
+            # nesting depth — collisions are avoided in practice
+            # because most Ruby projects don't reuse class names
+            # across nesting levels in a single file.
+            yield from _emit_class(child, file_path)
+        elif child.type == "module":
+            yield from _emit_module(child, file_path)
 
 
 def _emit_method(
