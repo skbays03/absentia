@@ -16,16 +16,21 @@
 name = "absentia-self"
 path = "."           # always present (relative to repo root)
 language = "python"
-expected_gaps = 73        # 71 → 73 with the TUI Settings panel
-                          # (SettingsScreen + SettingsIntInputScreen
-                          # + 5 action_/handler methods + reset/edit
-                          # flows + comma keybind + _open_in_editor
-                          # helper). 24 new entities; 1 tipped a
-                          # rule over min_confidence and surfaced
-                          # 2 new gaps.
-expected_rules = 37       # 36 → 37
-expected_entities = 1030  # 1006 → 1030; +24 from the Settings
-                          # panel + Int-input modal + handlers
+expected_gaps = 73        # unchanged with Phase 4 (preview pane,
+                          # capital-S sort cycle, animated CLI-style
+                          # spinner, LoadingScreen escape hatch).
+                          # 11 new helpers / methods, but they
+                          # didn't tip any rule support — gap count
+                          # stays put.
+expected_rules = 36       # 37 → 36; one rule's support tipped
+                          # under min_confidence with the new
+                          # entities and dropped (gaps for that
+                          # rule got re-attributed to other rules
+                          # so the total count is unchanged).
+expected_entities = 1041  # 1030 → 1041; +11 from Phase 4 work
+                          # (LoadingScreen.action_stop_and_quit /
+                          # _tick_spinner, AbsentiaApp's preview
+                          # methods + sort helpers + cycle action)
 optional = false
 
 [[corpus]]

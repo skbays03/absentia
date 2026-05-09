@@ -465,6 +465,81 @@ async def test_tui_export_default_first_use_saves_to_settings(tmp_path):
     assert len(csv_files) == 1
 
 
+def test_tui_loading_screen_has_quit_escape_hatch():
+    """Long scans were leaving users stuck on the LoadingScreen with
+    no way out. The escape hatch is q / Esc / Ctrl-C bound to a
+    single ``stop_and_quit`` action that calls app.exit().
+
+    Asserted at the binding level — a pilot-driven integration test
+    is fragile here because the synthetic corpus completes before
+    pilot.pause() can sample the LoadingScreen. The behavior under
+    test is "the bindings exist + point at the right action," and
+    that's exactly what this checks.
+    """
+    from absentia.tui.app import LoadingScreen
+
+    keys = {b.key for b in LoadingScreen.BINDINGS}
+    assert "q" in keys
+    assert "escape" in keys
+    assert "ctrl+c" in keys
+    actions = {b.action for b in LoadingScreen.BINDINGS}
+    assert actions == {"stop_and_quit"}
+
+
+@pytest.mark.asyncio
+async def test_tui_preview_pane_renders_gap_context(tmp_path):
+    """Selecting a gap populates the bottom preview pane with the
+    file path + line range header and the lines around the gap."""
+    _write_corpus(tmp_path)
+    app = AbsentiaApp(root=tmp_path, config=Config())
+    async with app.run_test() as pilot:
+        await _wait_for_scan(app, pilot)
+        # Force a row-highlight to populate the preview.
+        gap = app._gaps[0]
+        app._render_gap_preview(gap)
+        await pilot.pause()
+
+        from textual.widgets import Static
+        widget = app.query_one("#preview", Static)
+        # Textual's Static stores the content passed to update() as
+        # the widget's renderable; .render() returns it. Stringifying
+        # collapses any Text/markup back to plain text we can grep.
+        preview_text = str(widget.render())
+
+    # Header should mention the file path + lines marker.
+    assert "api/users.py" in preview_text
+    assert "lines" in preview_text
+    # The gap line is `def delete_user(): pass` — should be present.
+    assert "delete_user" in preview_text
+
+
+@pytest.mark.asyncio
+async def test_tui_capital_s_cycles_sort_key(tmp_path):
+    """Capital S advances the gaps view's sort key one step in the
+    cycle and updates the subtitle."""
+    _write_corpus(tmp_path)
+    app = AbsentiaApp(root=tmp_path, config=Config())
+    async with app.run_test() as pilot:
+        await _wait_for_scan(app, pilot)
+        assert app._sort_keys["gaps"] == "conf_desc"
+
+        await pilot.press("S")
+        await pilot.pause()
+        assert app._sort_keys["gaps"] == "conf_asc"
+        assert "conf↑" in app.sub_title
+
+        await pilot.press("S")
+        await pilot.pause()
+        assert app._sort_keys["gaps"] == "file"
+        assert "sort: file" in app.sub_title
+
+        # Cycle wraps back to conf_desc after walking the full list.
+        await pilot.press("S")  # → entity
+        await pilot.press("S")  # → conf_desc (wrap)
+        await pilot.pause()
+        assert app._sort_keys["gaps"] == "conf_desc"
+
+
 @pytest.mark.asyncio
 async def test_tui_settings_edit_jobs_default(tmp_path):
     """`,` opens settings → 1 sets jobs_default → integer persists."""

@@ -236,6 +236,8 @@ class HelpScreen(ModalScreen[None]):
                 "  s            suppress selected gap\n"
                 "               (also works inside the e modal —\n"
                 "                no need to close it first)\n"
+                "  S            cycle sort key for current view\n"
+                "               (gaps: conf↓ → conf↑ → file → entity)\n"
                 "  x            export scan results (md/html/txt/\n"
                 "               json/csv/sarif) to default_export_path\n"
                 "  ,            open settings panel (jobs_default,\n"
@@ -271,13 +273,16 @@ class LoadingScreen(ModalScreen[None]):
     the worker. Other stages are too fast to need granular progress
     on real-world projects.
 
-    Cannot be dismissed manually — the scan owns the lifecycle.
+    Bound to ``q`` / Esc / Ctrl-C as a non-destructive escape
+    hatch — quits the app cleanly without waiting for the scan to
+    finish. The scan owns the lifecycle of normal completion; the
+    user owns the lifecycle of "I'm done waiting."
     """
 
     DEFAULT_CSS = """
     LoadingScreen { align: center middle; }
     #loading_dialog {
-        width: 76; height: 12;
+        width: 76; height: 14;
         background: $surface;
         border: thick $accent;
         padding: 1 2;
@@ -285,10 +290,24 @@ class LoadingScreen(ModalScreen[None]):
     #loading_title { margin-bottom: 1; }
     """
 
-    # Empty BINDINGS: the user can't dismiss the loader; the scan
-    # tears it down when it finishes. Quitting still works because
-    # AbsentiaApp's `q` binding fires from the parent screen.
-    BINDINGS = []
+    # Escape hatch: a long scan (kernel-scale, slow disk, etc.)
+    # used to leave the user stuck on this screen with no way out
+    # short of Ctrl-C from the host shell. q / Esc / ctrl+c now
+    # quit the app cleanly. The scan worker is daemon-flagged so
+    # it dies with the process; any in-flight Storage operations
+    # roll back via the `with Storage(...)` context, so there's no
+    # half-committed state to worry about. We don't try to
+    # gracefully cancel scan_corpus mid-stage — it doesn't have an
+    # interruption protocol, and the user's intent here is "I'm
+    # leaving," not "pause without quitting."
+    BINDINGS = [
+        Binding("q", "stop_and_quit", "Quit"),
+        Binding("escape", "stop_and_quit", "Quit"),
+        Binding("ctrl+c", "stop_and_quit", "Quit"),
+    ]
+
+    def action_stop_and_quit(self) -> None:
+        self.app.exit()
 
     _STAGES = ("walk", "parse", "store", "mine", "finalize")
     _STAGE_LABELS = {
@@ -298,6 +317,12 @@ class LoadingScreen(ModalScreen[None]):
         "mine":     "Mining rules",
         "finalize": "Finalizing",
     }
+    # Same braille spinner frames the CLI's progress.Spinner uses.
+    # Keeping them aligned is deliberate: a user who's seen one
+    # recognizes the other immediately, and anything more
+    # decorative would just be a second pattern to memorize.
+    _SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+    _SPINNER_INTERVAL_S = 0.08
 
     def __init__(self, root: Path) -> None:
         super().__init__()
@@ -306,6 +331,7 @@ class LoadingScreen(ModalScreen[None]):
         self._details: dict[str, str] = {s: "" for s in self._STAGES}
         self._parse_done = 0
         self._parse_total = 0
+        self._frame_idx = 0
 
     def compose(self) -> ComposeResult:
         with Vertical(id="loading_dialog"):
@@ -314,9 +340,28 @@ class LoadingScreen(ModalScreen[None]):
                 id="loading_title",
             )
             yield Static("", id="stage_list")
+            yield Static(
+                "[dim]q / Esc to quit (no partial state saved)[/]",
+                id="loading_hint",
+            )
 
     def on_mount(self) -> None:
         self._refresh()
+        # Drive the spinner — same cadence the CLI uses (80 ms/frame
+        # ≈ 12.5 Hz). Textual's set_interval returns a Timer that
+        # auto-stops when the screen is dismissed, so no explicit
+        # cleanup needed.
+        self.set_interval(self._SPINNER_INTERVAL_S, self._tick_spinner)
+
+    def _tick_spinner(self) -> None:
+        # Only refresh when at least one stage is active; while
+        # everything is pending or all are done there's nothing to
+        # animate and a refresh would just churn the widget.
+        if any(s == "active" for s in self._states.values()):
+            self._frame_idx = (
+                self._frame_idx + 1
+            ) % len(self._SPINNER_FRAMES)
+            self._refresh()
 
     def update_stage(
         self, stage: str, event: str, **details: object,
@@ -364,14 +409,21 @@ class LoadingScreen(ModalScreen[None]):
         return " · ".join(parts)
 
     def _refresh(self) -> None:
+        # Active stage uses the rolling braille spinner frame in cyan
+        # — same color the CLI's progress.Spinner uses, so the
+        # animation reads identically across surfaces. Pending is
+        # dim; done is the green ✓ everyone recognizes.
+        active_glyph = (
+            f"[cyan]{self._SPINNER_FRAMES[self._frame_idx]}[/]"
+        )
         lines: list[str] = []
         for stage in self._STAGES:
             label = self._STAGE_LABELS[stage]
             state = self._states[stage]
             if state == "pending":
-                glyph = "[dim]○[/]"
+                glyph = "[dim]·[/]"
             elif state == "active":
-                glyph = "[yellow]◐[/]"
+                glyph = active_glyph
             else:  # done
                 glyph = "[bright_green]✓[/]"
 
@@ -1047,11 +1099,24 @@ class AbsentiaApp(App[None]):
         color: $text-muted;
         background: $boost;
     }
-    DataTable { height: 65%; }
+    /* Layout: table flexes, detail is fixed-small, preview is a
+       fixed bottom pane showing code context around the selected
+       gap. height: 1fr on the DataTable means "take whatever's
+       left after the fixed-height widgets claim theirs"; detail
+       and preview stay readable on tall terminals (each row of
+       the table is more visible) and survive small terminals (the
+       fixed budget is small). */
+    DataTable { height: 1fr; min-height: 8; }
     #detail {
-        height: 1fr;
-        padding: 1 2;
+        height: 6;
+        padding: 0 2;
         border: solid $accent;
+    }
+    #preview {
+        height: 12;
+        padding: 0 2;
+        border: solid $accent;
+        background: $boost;
     }
     #stats_text {
         padding: 1 2;
@@ -1066,6 +1131,7 @@ class AbsentiaApp(App[None]):
         Binding("3", "view_groups", "Groups"),
         Binding("4", "view_stats", "Stats"),
         Binding("s", "suppress", "Suppress"),
+        Binding("S", "cycle_sort", "Sort"),
         Binding("e", "explain", "Explain"),
         Binding("x", "export", "Export"),
         Binding("comma", "settings", "Settings"),
@@ -1105,6 +1171,32 @@ class AbsentiaApp(App[None]):
         # modals; cleared when the chain finishes (success, cancel,
         # or write failure).
         self._pending_export_fmt: tuple[int, str, str, str] | None = None
+        # Per-view sort key cycled by capital `S`. Default ordering
+        # for each view matches what the engine returns naturally
+        # so cold first-impressions don't change unless the user
+        # opts in. The order list per view is the cycle that S
+        # walks through.
+        self._sort_keys: dict[str, str] = {
+            "gaps":   "conf_desc",
+            "rules":  "conf_desc",
+            "groups": "members_desc",
+        }
+        self._sort_cycles: dict[str, list[str]] = {
+            "gaps":   ["conf_desc", "conf_asc", "file", "entity"],
+            "rules":  ["conf_desc", "support_desc", "group"],
+            "groups": ["members_desc", "members_asc", "name"],
+        }
+        self._sort_labels: dict[str, str] = {
+            "conf_desc":    "conf↓",
+            "conf_asc":     "conf↑",
+            "file":         "file",
+            "entity":       "entity",
+            "support_desc": "support↓",
+            "group":        "group",
+            "members_desc": "members↓",
+            "members_asc":  "members↑",
+            "name":         "name",
+        }
 
     # ── Layout ────────────────────────────────────────────────────────
 
@@ -1119,6 +1211,16 @@ class AbsentiaApp(App[None]):
                     zebra_stripes=True,
                 )
                 yield Static("(loading…)", id="detail")
+                # Bottom context pane — code lines surrounding the
+                # currently-selected gap. Header line shows
+                # ``file_path | line N-M`` so the user knows where
+                # they are without checking the gap row. Updated on
+                # every cursor-row change via
+                # on_data_table_row_highlighted.
+                yield Static(
+                    "[dim](select a gap to preview)[/]",
+                    id="preview",
+                )
             with Vertical(id="stats_pane"):
                 yield Static("(loading…)", id="stats_text")
         yield Footer()
@@ -1284,11 +1386,19 @@ class AbsentiaApp(App[None]):
         suppressed = s.get("suppressed", 0)
         sup = f" · {suppressed} suppressed" if suppressed else ""
         watch = " · ●watching" if self._watch_timer else ""
+        # Surface the current sort key so the user sees what they
+        # cycled into when capital-S is pressed. Stats view has no
+        # sortable list, so the indicator is suppressed there.
+        sort_key = self._sort_keys.get(self._view)
+        sort_note = (
+            f" · sort: {self._sort_labels.get(sort_key, sort_key)}"
+            if sort_key and self._view != "stats" else ""
+        )
         self.sub_title = (
             f"[{_VIEW_LABELS[self._view]}] · "
             f"{s.get('entities_scanned', 0)} entities · "
             f"{s.get('rules', 0)} rules · "
-            f"{len(self._gaps)} gaps{sup}{watch}"
+            f"{len(self._gaps)} gaps{sup}{sort_note}{watch}"
         )
 
     def _update_breadcrumb(self) -> None:
@@ -1329,21 +1439,48 @@ class AbsentiaApp(App[None]):
 
     def _filtered_gaps(self) -> list[Gap]:
         f = self._filter.get("gaps", "").lower()
-        if not f:
-            return self._gaps
-        out = []
-        for g in self._gaps:
-            entity = self._entities.get(g.entity_id)
-            rule = self._rules_by_id.get(g.rule_id)
-            haystack = " ".join([
-                g.short_id,
-                entity.file_path if entity else "",
-                entity.qualified_name if entity else "",
-                rule.feature_value if rule else "",
-            ]).lower()
-            if f in haystack:
-                out.append(g)
-        return out
+        if f:
+            picked: list[Gap] = []
+            for g in self._gaps:
+                entity = self._entities.get(g.entity_id)
+                rule = self._rules_by_id.get(g.rule_id)
+                haystack = " ".join([
+                    g.short_id,
+                    entity.file_path if entity else "",
+                    entity.qualified_name if entity else "",
+                    rule.feature_value if rule else "",
+                ]).lower()
+                if f in haystack:
+                    picked.append(g)
+        else:
+            picked = list(self._gaps)
+        return self._sort_gaps(picked)
+
+    def _sort_gaps(self, gaps: list[Gap]) -> list[Gap]:
+        """Apply the current Gaps-view sort key to a list of gaps."""
+        key = self._sort_keys.get("gaps", "conf_desc")
+
+        def conf(g: Gap) -> float:
+            r = self._rules_by_id.get(g.rule_id)
+            return r.confidence if r is not None else 0.0
+
+        def file_key(g: Gap) -> str:
+            e = self._entities.get(g.entity_id)
+            return (e.file_path, e.line) if e else ("", 0)  # type: ignore[return-value]
+
+        def entity_key(g: Gap) -> str:
+            e = self._entities.get(g.entity_id)
+            return e.qualified_name if e else ""
+
+        if key == "conf_desc":
+            return sorted(gaps, key=lambda g: -conf(g))
+        if key == "conf_asc":
+            return sorted(gaps, key=conf)
+        if key == "file":
+            return sorted(gaps, key=file_key)
+        if key == "entity":
+            return sorted(gaps, key=entity_key)
+        return gaps  # unknown key — leave as-is
 
     def _render_gaps_table(self, table: DataTable) -> None:
         from rich.text import Text
@@ -1441,15 +1578,28 @@ class AbsentiaApp(App[None]):
 
     def _filtered_rules(self) -> list[Rule]:
         f = self._filter.get("rules", "").lower()
-        if not f:
-            return self._rules
-        out = []
-        for r in self._rules:
-            haystack = " ".join([r.id, r.group_id, r.feature_value,
-                                 f"{r.confidence:.2f}"]).lower()
-            if f in haystack:
-                out.append(r)
-        return out
+        if f:
+            picked = []
+            for r in self._rules:
+                haystack = " ".join([
+                    r.id, r.group_id, r.feature_value,
+                    f"{r.confidence:.2f}",
+                ]).lower()
+                if f in haystack:
+                    picked.append(r)
+        else:
+            picked = list(self._rules)
+        return self._sort_rules(picked)
+
+    def _sort_rules(self, rules: list[Rule]) -> list[Rule]:
+        key = self._sort_keys.get("rules", "conf_desc")
+        if key == "conf_desc":
+            return sorted(rules, key=lambda r: -r.confidence)
+        if key == "support_desc":
+            return sorted(rules, key=lambda r: -r.support_n)
+        if key == "group":
+            return sorted(rules, key=lambda r: r.group_id)
+        return rules
 
     def _render_rules_table(self, table: DataTable) -> None:
         table.add_columns(
@@ -1527,16 +1677,28 @@ class AbsentiaApp(App[None]):
 
     def _filtered_groups(self) -> list[Group]:
         f = self._filter.get("groups", "").lower()
-        if not f:
-            return self._groups
-        return [
-            g for g in self._groups
-            if f in g.id.lower() or f in g.selector_type.lower()
-        ]
+        if f:
+            picked = [
+                g for g in self._groups
+                if f in g.id.lower() or f in g.selector_type.lower()
+            ]
+        else:
+            picked = list(self._groups)
+        return self._sort_groups(picked)
+
+    def _sort_groups(self, groups: list[Group]) -> list[Group]:
+        key = self._sort_keys.get("groups", "members_desc")
+        if key == "members_desc":
+            return sorted(groups, key=lambda g: -len(g.members))
+        if key == "members_asc":
+            return sorted(groups, key=lambda g: len(g.members))
+        if key == "name":
+            return sorted(groups, key=lambda g: g.id)
+        return groups
 
     def _render_groups_table(self, table: DataTable) -> None:
         table.add_columns("Group", "Selector", "Members", "Rules")
-        groups = sorted(self._filtered_groups(), key=lambda g: -len(g.members))
+        groups = self._filtered_groups()
         # Map group_id → rule count for quick lookup
         rule_counts: dict[str, int] = {}
         for r in self._rules:
@@ -1637,6 +1799,91 @@ class AbsentiaApp(App[None]):
     def _set_detail(self, text: str) -> None:
         self.query_one("#detail", Static).update(text)
 
+    def _set_preview(self, text: str) -> None:
+        """Update the bottom code-context pane.
+
+        Tolerant of races where the widget hasn't mounted yet (e.g.
+        very early calls during compose); silently no-ops in that
+        case. Same defensive shape as LoadingScreen._refresh.
+        """
+        try:
+            self.query_one("#preview", Static).update(text)
+        except Exception:
+            pass
+
+    def _render_gap_preview(self, gap: Gap) -> None:
+        """Render a code-context block for the selected gap.
+
+        Reads the gap's source file, slices ~5 lines on either side
+        of the gap entity's declaration line, and renders them with
+        the target line marked with ``▶`` in bright_yellow. Header
+        on the first line: ``<file_path> | lines N-M``.
+
+        Failures (file unreadable, line out of range, binary file)
+        surface as a dim error message in the preview pane rather
+        than crashing the TUI.
+        """
+        entity = self._entities.get(gap.entity_id)
+        if entity is None:
+            self._set_preview("[dim](no entity for gap)[/]")
+            return
+        target = self.root / entity.file_path
+        line = entity.line
+
+        try:
+            text = target.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            self._set_preview(
+                f"[b cyan]{entity.file_path}[/]\n\n"
+                f"[red]Couldn't read file:[/] [dim]{exc}[/]"
+            )
+            return
+
+        lines = text.splitlines()
+        total = len(lines)
+        if line < 1 or line > total:
+            self._set_preview(
+                f"[b cyan]{entity.file_path}[/]\n\n"
+                f"[red]Line {line} out of range[/] [dim]"
+                f"(file has {total} lines).[/]"
+            )
+            return
+
+        # ±4 lines of context, clamped to file bounds. Total preview
+        # body = up to 9 lines, fits the 12-row pane (1 header +
+        # blank + 9 lines = 11; one row of border).
+        pad = 4
+        start = max(1, line - pad)
+        end = min(total, line + pad)
+        width = len(str(end))
+
+        from rich.markup import escape as _md_escape
+
+        body: list[str] = []
+        for ln in range(start, end + 1):
+            content = _md_escape(lines[ln - 1])
+            num = f"{ln:>{width}}"
+            if ln == line:
+                # The gap line — yellow arrow + bold content so the
+                # eye lands instantly even on a wide terminal.
+                body.append(
+                    f"[bright_yellow]{num}[/] "
+                    f"[bright_yellow]▶[/] [b]{content}[/]"
+                )
+            else:
+                body.append(f"[dim]{num}  [/]   {content}")
+
+        header = (
+            f"[b cyan]{_md_escape(entity.file_path)}[/] "
+            f"[dim]| lines {start}-{end}[/]"
+        )
+        self._set_preview(header + "\n\n" + "\n".join(body))
+
+    # (Row-cursor change handler is the unified
+    # on_data_table_row_highlighted further down — it dispatches to
+    # the right detail-renderer per view AND updates the preview
+    # pane when the gaps view is active.)
+
     def _selected_id(self) -> str | None:
         if self._view == "stats":
             return None
@@ -1659,6 +1906,20 @@ class AbsentiaApp(App[None]):
     def on_data_table_row_highlighted(
         self, event: DataTable.RowHighlighted,
     ) -> None:
+        """Update the detail pane (and gaps-only preview pane) on
+        row-cursor change.
+
+        Per view:
+          - gaps   → render the gap's detail card AND the bottom
+                     code-context preview (file:line + ±4 lines).
+          - rules  → render the rule's group / support / members
+                     breakdown into the detail pane.
+          - groups → render the group's selector / members card.
+
+        Stats view has no row-cursor; this handler is a no-op there
+        (the gate is `if event.row_key is None` since stats pane
+        doesn't have a #main_table populated).
+        """
         if event.row_key is None or event.row_key.value is None:
             return
         rk = event.row_key.value
@@ -1666,6 +1927,7 @@ class AbsentiaApp(App[None]):
             for gap in self._gaps:
                 if gap.short_id == rk:
                     self._render_gap_detail(gap)
+                    self._render_gap_preview(gap)
                     return
         elif self._view == "rules":
             rule = self._rules_by_id.get(rk)
@@ -1856,6 +2118,30 @@ class AbsentiaApp(App[None]):
 
     def action_help(self) -> None:
         self.push_screen(HelpScreen())
+
+    def action_cycle_sort(self) -> None:
+        """Capital-S: advance the current view's sort key one step.
+
+        Each view has its own cycle (defined in __init__'s
+        ``_sort_cycles``); pressing S walks through the options and
+        wraps around. Stats view has no sortable list so the action
+        is a no-op there. Re-renders the table immediately so the
+        user sees the new ordering, and updates the subtitle to
+        show the active sort label.
+        """
+        if self._view not in self._sort_cycles:
+            return
+        cycle = self._sort_cycles[self._view]
+        current = self._sort_keys.get(self._view, cycle[0])
+        try:
+            idx = cycle.index(current)
+        except ValueError:
+            idx = -1
+        next_key = cycle[(idx + 1) % len(cycle)]
+        self._sort_keys[self._view] = next_key
+        self._render_current_view()
+        label = self._sort_labels.get(next_key, next_key)
+        self.notify(f"Sort: {label}", timeout=2)
 
     def action_settings(self) -> None:
         """Open the machine-wide settings panel.
