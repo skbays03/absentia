@@ -88,6 +88,85 @@ def test_suppress_then_check_silences_the_gap(tmp_path, capsys):
     assert after["scan"]["suppressed"] == 1
 
 
+def test_project_toml_suppression_silences_the_gap(tmp_path, capsys):
+    """Project-wide [[suppress]] block in absentia.toml must silence
+    the matching gap from `absentia check` output, exactly the way a
+    local state.db suppression does. Scope = "gap" (default), match
+    by entity + rule feature_value."""
+    import json as json_module
+
+    _write_corpus(tmp_path)
+
+    # Confirm the gap exists pre-suppression.
+    cmd_check(root=tmp_path, config=Config(), quiet=True, as_json=True)
+    pre = json_module.loads(capsys.readouterr().out)
+    assert pre["summary"]["gaps"] == 1
+    target_entity = pre["gaps"][0]["entity"]["qualified_name"]
+
+    # Drop a project-wide suppression into absentia.toml.
+    (tmp_path / "absentia.toml").write_text(
+        '[scan]\nlanguages = ["python"]\n\n'
+        '[[suppress]]\n'
+        f'entity = "{target_entity}"\n'
+        'rule = "@audit"\n'
+        'reason = "delete_user IS the audit endpoint"\n'
+    )
+
+    cmd_check(root=tmp_path, config=Config(), quiet=True, as_json=True)
+    after = json_module.loads(capsys.readouterr().out)
+    assert after["summary"]["gaps"] == 0
+    assert after["scan"]["suppressed"] == 1
+
+
+def test_project_toml_suppression_rule_global_scope(tmp_path, capsys):
+    """scope = 'rule_global' suppresses every gap from the rule,
+    regardless of entity. Useful when a rule's pattern is known
+    to be too aggressive and the team's collectively decided to
+    ignore it project-wide."""
+    import json as json_module
+
+    _write_corpus(tmp_path)
+
+    cmd_check(root=tmp_path, config=Config(), quiet=True, as_json=True)
+    pre = json_module.loads(capsys.readouterr().out)
+    assert pre["summary"]["gaps"] == 1
+
+    (tmp_path / "absentia.toml").write_text(
+        '[scan]\nlanguages = ["python"]\n\n'
+        '[[suppress]]\n'
+        'rule = "@audit"\n'
+        'scope = "rule_global"\n'
+        'reason = "ignoring @audit conventions for now"\n'
+    )
+
+    cmd_check(root=tmp_path, config=Config(), quiet=True, as_json=True)
+    after = json_module.loads(capsys.readouterr().out)
+    assert after["summary"]["gaps"] == 0
+    assert after["scan"]["suppressed"] == 1
+
+
+def test_project_toml_malformed_block_does_not_crash(tmp_path, capsys):
+    """A malformed [[suppress]] block must not break the scan —
+    project suppressions are advisory enforcement, not load-bearing."""
+    import json as json_module
+
+    _write_corpus(tmp_path)
+
+    # Garbled TOML — missing entity, unknown scope, junk types.
+    (tmp_path / "absentia.toml").write_text(
+        '[scan]\nlanguages = ["python"]\n\n'
+        '[[suppress]]\n'
+        'scope = "selector"  # not yet implemented\n'
+        'reason = 12345  # wrong type, treated as ""\n'
+    )
+
+    cmd_check(root=tmp_path, config=Config(), quiet=True, as_json=True)
+    payload = json_module.loads(capsys.readouterr().out)
+    # Original gap should still surface — the bad entry doesn't
+    # match anything, so no suppression fires.
+    assert payload["summary"]["gaps"] == 1
+
+
 def test_suppress_list_shows_existing_suppressions(tmp_path, capsys):
     from absentia.cli import cmd_suppress
     _write_corpus(tmp_path)

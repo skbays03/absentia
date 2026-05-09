@@ -541,6 +541,44 @@ async def test_tui_capital_s_cycles_sort_key(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_tui_rule_detail_renders_bracketed_feature_values(tmp_path):
+    """Feature values that contain '[' / ']' (Python typing,
+    parameterized C++ templates, etc.) used to crash the Rules view
+    via rich.markup.MarkupError when interpolated unescaped into
+    detail-pane markup. Defensive escape now wraps every user-data
+    field — _render_rule_detail with such a value must not raise."""
+    from absentia.mining import Rule
+
+    _write_corpus(tmp_path)
+    app = AbsentiaApp(root=tmp_path, config=Config())
+    async with app.run_test() as pilot:
+        await _wait_for_scan(app, pilot)
+
+        # Hand-craft a rule whose feature_value carries unbalanced
+        # brackets — exactly the shape that used to raise.
+        nasty_rule = Rule(
+            group_id="directory:dangerous/",
+            feature_kind="parent_class",
+            feature_value="List[int]",
+            support_n=8,
+            support_total=10,
+        )
+
+        # Pre-fix: this raises MarkupError inside Static.update.
+        # Post-fix: renders normally.
+        await pilot.press("2")  # Rules view, so the detail widget
+                                # is the rules pane (not stats)
+        await pilot.pause()
+        app._render_rule_detail(nasty_rule)
+        await pilot.pause()
+
+        from textual.widgets import Static
+        detail_text = str(app.query_one("#detail", Static).render())
+        assert "List" in detail_text
+        assert "int" in detail_text
+
+
+@pytest.mark.asyncio
 async def test_tui_suppressions_view_lists_local_entries(tmp_path):
     """After suppressing a gap from the Gaps view, switching to view
     5 (Suppressions) shows the new entry sourced from state.db."""

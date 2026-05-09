@@ -16,21 +16,16 @@
 name = "absentia-self"
 path = "."           # always present (relative to repo root)
 language = "python"
-expected_gaps = 75        # 73 → 75 with the suppression management
-                          # pass (Suppressions view as 5th tab,
-                          # multi-select via Space, bulk suppress on
-                          # gaps, bulk remove on suppressions, project
-                          # absentia.toml block parsing, --jobs N for
-                          # the TUI, hard-exit fallback on the
-                          # LoadingScreen escape hatch).
-expected_rules = 38       # 36 → 38; the new helpers + handler
-                          # methods (_filtered_suppressions,
-                          # _render_suppressions_table,
-                          # action_remove_suppression,
-                          # action_toggle_select, etc.) tipped two
-                          # additional rules over min_confidence.
-expected_entities = 1053  # 1041 → 1053; +12 entities from the
-                          # suppression management work.
+expected_gaps = 75        # unchanged with the command palette +
+                          # project [[suppress]] enforcement +
+                          # markup-escape pass.
+expected_rules = 38       # unchanged
+expected_entities = 1071  # 1053 → 1071; +18 from CommandPaletteScreen
+                          # + 5 nested action methods + the shared
+                          # _suppressions module's loader/predicate +
+                          # markup-escape inline imports across the
+                          # detail-render methods. No rule supports
+                          # tipped this round.
 optional = false
 
 [[corpus]]

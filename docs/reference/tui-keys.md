@@ -46,4 +46,5 @@ breadcrumb).
 | Key | Action |
 |---|---|
 | `?` | Help (this reference) |
+| `Ctrl+P` | Command palette — fuzzy-search every TUI action by name. Type to filter, ↑/↓ to navigate, Enter to dispatch. Each entry shows its native keystroke so the palette doubles as a discoverability surface for unfamiliar shortcuts. |
 | `q` | Quit |

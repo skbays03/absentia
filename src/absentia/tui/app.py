@@ -199,6 +199,149 @@ class FilterScreen(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+class CommandPaletteScreen(ModalScreen[str | None]):
+    """Fuzzy-search modal listing every TUI action.
+
+    Opens via ``Ctrl+P``; type to narrow the list, ↑/↓ to navigate,
+    Enter to dispatch the highlighted action via
+    ``app.run_action(action)``. Returns the action name on Enter so
+    the parent handler does the dispatch (keeps the screen-level
+    code from needing the App import).
+
+    Each entry: ``(label, description, action_name, keystroke)``.
+    The keystroke is shown dim on the right so the palette doubles
+    as a discoverability surface — power users learn shortcuts by
+    seeing them here.
+    """
+
+    DEFAULT_CSS = """
+    CommandPaletteScreen { align: center middle; }
+    #palette_dialog {
+        width: 90; height: 24;
+        background: $surface;
+        border: thick $primary;
+        padding: 1 2;
+    }
+    #palette_dialog Label { margin-bottom: 1; }
+    #palette_results { height: 1fr; border: solid $accent; }
+    """ + _ABSENTIA_INPUT_CSS
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    # (label, description, action, keystroke). Action is the
+    # binding action name (e.g. "view_gaps"); the parent app
+    # routes the dismissal via run_action.
+    _ENTRIES: list[tuple[str, str, str, str]] = [
+        # Views
+        ("View: Gaps",         "What to fix",                          "view_gaps",         "1"),
+        ("View: Rules",        "Conventions absentia mined",           "view_rules",        "2"),
+        ("View: Groups",       "Every formed group + members",         "view_groups",       "3"),
+        ("View: Stats",        "One-screen scan summary",              "view_stats",        "4"),
+        ("View: Suppressions", "Active suppressions (local + project)", "view_suppressions", "5"),
+        # Triage
+        ("Filter…",            "Narrow the current view",              "filter",            "/"),
+        ("Sort cycle",         "Cycle sort key for current view",      "cycle_sort",        "S"),
+        ("Toggle multi-select", "Mark/unmark cursor row",              "toggle_select",     "Space"),
+        ("Explain",            "Why was this gap flagged?",            "explain",           "e"),
+        ("Suppress",           "Suppress selected gap(s) with reason", "suppress",          "s"),
+        ("Remove suppression", "Unsuppress (suppressions view only)",  "remove_suppression", "r"),
+        ("Follow link",        "Drill into the related view",          "follow",            "f"),
+        ("Back",               "Pop nav stack",                        "back",              "Esc"),
+        ("Open in editor",     "Open selected entity in $EDITOR",      "open_in_editor",    "Enter"),
+        # Lifecycle
+        ("Rescan",             "Re-run the scan now",                  "rescan",            "Ctrl+R"),
+        ("Watch toggle",       "Auto-rescan every 2 s",                "toggle_watch",      "w"),
+        # Output / config
+        ("Export",             "Export results (md/html/txt/…)",       "export",            "x"),
+        ("Settings",           "Edit machine-wide settings.json",      "settings",          ","),
+        ("Help",               "Show keybinding reference",            "help",              "?"),
+        ("Quit",               "Exit the TUI",                         "quit",              "q"),
+    ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._highlighted_idx = 0
+        self._matches: list[tuple[str, str, str, str]] = list(self._ENTRIES)
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="palette_dialog"):
+            yield Label(
+                "[b cyan]Command palette[/]   "
+                "[dim]type to filter · ↑↓ navigate · Enter run · Esc close[/]"
+            )
+            yield Input(
+                placeholder="Search commands…",
+                id="palette_input",
+            )
+            yield Static("", id="palette_results")
+
+    def on_mount(self) -> None:
+        self.query_one("#palette_input", Input).focus()
+        self._refresh_results()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Re-filter the results list as the user types. Reset the
+        highlighted index whenever the match set changes so we
+        don't point past the end."""
+        query = event.value.strip().lower()
+        if query:
+            self._matches = [
+                e for e in self._ENTRIES
+                if query in e[0].lower()
+                or query in e[1].lower()
+                or query in e[3].lower()
+            ]
+        else:
+            self._matches = list(self._ENTRIES)
+        if self._highlighted_idx >= len(self._matches):
+            self._highlighted_idx = max(0, len(self._matches) - 1)
+        self._refresh_results()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if not self._matches:
+            return
+        action = self._matches[self._highlighted_idx][2]
+        self.dismiss(action)
+
+    def on_key(self, event) -> None:  # noqa: ANN001 — Textual Key
+        """↑/↓ move the highlight while the Input retains focus."""
+        if event.key == "up":
+            if self._matches:
+                self._highlighted_idx = max(0, self._highlighted_idx - 1)
+                self._refresh_results()
+            event.stop()
+        elif event.key == "down":
+            if self._matches:
+                self._highlighted_idx = min(
+                    len(self._matches) - 1, self._highlighted_idx + 1,
+                )
+                self._refresh_results()
+            event.stop()
+
+    def _refresh_results(self) -> None:
+        if not self._matches:
+            text = "[dim]No commands match.[/]"
+        else:
+            lines: list[str] = []
+            for i, (label, desc, _action, keys) in enumerate(self._matches):
+                marker = "[bright_yellow]▸[/]" if i == self._highlighted_idx else " "
+                key_cell = f"[dim cyan]{keys}[/]"
+                lines.append(
+                    f"{marker} [b]{label:<22}[/]  [dim]{desc:<40}[/]  "
+                    f"{key_cell}"
+                )
+            text = "\n".join(lines)
+        try:
+            self.query_one("#palette_results", Static).update(text)
+        except Exception:
+            pass
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 class HelpScreen(ModalScreen[None]):
     """Show keybinding reference."""
 
@@ -253,6 +396,8 @@ class HelpScreen(ModalScreen[None]):
                 "  w            toggle watch (auto-rescan)\n\n"
                 "[b]Global[/]\n"
                 "  ?            this help\n"
+                "  Ctrl+P       command palette (fuzzy-search\n"
+                "               every TUI action by name)\n"
                 "  q            quit"
             )
 
@@ -1122,42 +1267,20 @@ _VIEW_LABELS = {
 
 
 def _load_project_suppressions(root: Path) -> list[dict]:
-    """Read [[suppress]] blocks from ``absentia.toml`` for read-only
-    display in the Suppressions view.
+    """TUI-side adapter over ``_suppressions.load_project_suppressions``.
 
-    Returns a list of dicts with the same shape the local DB
-    suppressions use, plus a ``"source": "project"`` discriminator.
-    Failures (missing file, parse errors) return an empty list —
-    project-wide suppressions are advisory until the engine wires
-    them up, so a malformed block shouldn't block the TUI.
+    Adds the ``"source": "project"`` discriminator the
+    Suppressions view needs to distinguish read-only project rows
+    from local-DB ones. The underlying schema + parsing is now
+    shared with ``scan_corpus``'s engine-level enforcement so both
+    surfaces see the same set of project entries from the same
+    ``absentia.toml`` parse path.
     """
-    toml_path = root / "absentia.toml"
-    if not toml_path.exists():
-        return []
-    # py 3.13+ minimum (per pyproject.toml requires-python), so
-    # tomllib is always available — no tomli fallback needed.
-    import tomllib
-    try:
-        with open(toml_path, "rb") as fh:
-            data = tomllib.load(fh)
-    except (OSError, ValueError):
-        return []
-    raw = data.get("suppress")
-    if not isinstance(raw, list):
-        return []
-    out: list[dict] = []
-    for entry in raw:
-        if not isinstance(entry, dict):
-            continue
-        out.append({
-            "source": "project",
-            "rule": entry.get("rule"),
-            "entity": entry.get("entity"),
-            "scope": entry.get("scope", "gap"),
-            "reason": entry.get("reason", ""),
-            "created": entry.get("created", ""),
-        })
-    return out
+    from .._suppressions import load_project_suppressions
+    return [
+        {**entry, "source": "project"}
+        for entry in load_project_suppressions(root)
+    ]
 
 
 class AbsentiaApp(App[None]):
@@ -1216,6 +1339,7 @@ class AbsentiaApp(App[None]):
         Binding("w", "toggle_watch", "Watch"),
         Binding("question_mark", "help", "Help"),
         Binding("enter", "open_in_editor", "Open"),
+        Binding("ctrl+p", "command_palette", "Command palette"),
     ]
 
     def __init__(
@@ -1750,6 +1874,17 @@ class AbsentiaApp(App[None]):
             self._set_detail("[b]No rules match the current filter.[/]")
 
     def _render_rule_detail(self, rule: Rule) -> None:
+        # Escape every user-data interpolation: member names can contain
+        # [] (Python typing like List[int], parameterized C++ template
+        # types, etc.), and rule.feature_value can carry decorator-arg
+        # parens / brackets. Unescaped, those tokens crash rich's
+        # markup parser with MarkupError when Static.update parses the
+        # detail pane. Caught when the Rules view tried to render every
+        # rule (Gaps view hides this because it only renders rules with
+        # current divergences, which often skips the rules carrying
+        # bracket-bearing values).
+        from rich.markup import escape as _esc
+
         group = self._groups_by_id.get(rule.group_id)
         members_with: list[str] = []
         members_without: list[str] = []
@@ -1767,17 +1902,17 @@ class AbsentiaApp(App[None]):
                 else:
                     if ent and self._is_eligible(ent, rule.feature_kind):
                         members_without.append(mid.rsplit("::", 1)[-1])
-        with_text = "  ".join(f"✓ {m}" for m in members_with[:9])
+        with_text = "  ".join(f"✓ {_esc(m)}" for m in members_with[:9])
         if len(members_with) > 9:
             with_text += f"   …(+{len(members_with) - 9} more)"
-        without_text = "  ".join(f"✗ {m}" for m in members_without[:9])
+        without_text = "  ".join(f"✗ {_esc(m)}" for m in members_without[:9])
         if len(members_without) > 9:
             without_text += f"   …(+{len(members_without) - 9} more)"
         self._set_detail(
-            f"[b cyan]{rule.id}[/]\n\n"
-            f"[b]Group[/]    {rule.group_id}\n"
-            f"[b]Pattern[/]  {rule.feature_kind} = "
-            f"[cyan]{rule.feature_value}[/]\n"
+            f"[b cyan]{_esc(rule.id)}[/]\n\n"
+            f"[b]Group[/]    {_esc(rule.group_id)}\n"
+            f"[b]Pattern[/]  {_esc(rule.feature_kind)} = "
+            f"[cyan]{_esc(rule.feature_value)}[/]\n"
             f"[b]Support[/]  {rule.support_n} / {rule.support_total}   "
             f"(confidence [b]{rule.confidence:.2f}[/])\n\n"
             f"[b]With ({len(members_with)})[/]:    "
@@ -1848,22 +1983,30 @@ class AbsentiaApp(App[None]):
             self._set_detail("[b]No groups match the current filter.[/]")
 
     def _render_group_detail(self, group: Group) -> None:
+        # Same defensive escape as the gap / rule detail renders —
+        # group ids can carry `[]` (e.g. typed-class parent_class
+        # values), member tail names can carry brackets, and rule
+        # feature values can be anything.
+        from rich.markup import escape as _esc
+
         rules_for = [r for r in self._rules if r.group_id == group.id]
-        member_names = [m.rsplit("::", 1)[-1] for m in group.members[:20]]
+        member_names = [
+            _esc(m.rsplit("::", 1)[-1]) for m in group.members[:20]
+        ]
         more = (
             f"   …(+{len(group.members) - 20} more)"
             if len(group.members) > 20 else ""
         )
         rules_text = (
             "\n".join(
-                f"  {r.feature_kind} = {r.feature_value}   "
+                f"  {_esc(r.feature_kind)} = {_esc(r.feature_value)}   "
                 f"{r.support_n}/{r.support_total} ({r.confidence:.2f})"
                 for r in rules_for
             ) or "  (none — no feature reached the confidence threshold)"
         )
         self._set_detail(
-            f"[b cyan]{group.id}[/]\n\n"
-            f"[b]Selector[/]  {group.selector_type}\n"
+            f"[b cyan]{_esc(group.id)}[/]\n\n"
+            f"[b]Selector[/]  {_esc(group.selector_type)}\n"
             f"[b]Members[/]   {len(group.members)}\n"
             f"  {'  '.join(member_names)}{more}\n\n"
             f"[b]Rules ({len(rules_for)})[/]:\n{rules_text}\n\n"
@@ -1995,10 +2138,18 @@ class AbsentiaApp(App[None]):
 
     def _render_suppression_detail(self, row: dict) -> None:
         """Detail-pane card for the highlighted suppression."""
+        # Escape user-data fields (target = entity qualified_name with
+        # optional rule_id, reason = free-form user text). Both can
+        # carry [ ] brackets that confuse rich's markup parser.
+        from rich.markup import escape as _esc
+
         source = row["source"]
-        target = row["target"] or "—"
-        reason = row["reason"] or "[dim](no reason recorded)[/]"
-        created = row["created"] or "—"
+        target = _esc(row["target"]) if row["target"] else "—"
+        reason = (
+            _esc(row["reason"]) if row["reason"]
+            else "[dim](no reason recorded)[/]"
+        )
+        created = _esc(row["created"]) if row["created"] else "—"
         if source == "local":
             actions = (
                 "[b]r[/] remove · [b]Space[/] toggle multi-select · "
@@ -2011,7 +2162,7 @@ class AbsentiaApp(App[None]):
                 "[dim] open absentia.toml.[/]"
             )
         self._set_detail(
-            f"[b cyan]{row['label']}[/]   [dim]({source})[/]\n\n"
+            f"[b cyan]{_esc(row['label'])}[/]   [dim]({source})[/]\n\n"
             f"[b]Target[/]   {target}\n"
             f"[b]Reason[/]   {reason}\n"
             f"[b]Created[/]  {created}\n\n"
@@ -2311,20 +2462,25 @@ class AbsentiaApp(App[None]):
                     return
 
     def _render_gap_detail(self, gap: Gap) -> None:
+        # Escape every user-data field — feature_value / qualified_name
+        # / file_path can contain [ ] / parens / unicode that breaks
+        # rich's markup parser when Static.update reparses the string.
+        from rich.markup import escape as _esc
+
         rule = self._rules_by_id[gap.rule_id]
         entity = self._entities[gap.entity_id]
         self._set_detail(
-            f"[b cyan]{gap.short_id}[/]   ([dim]{gap.id}[/])\n\n"
-            f"[b]Entity[/]   {entity.qualified_name}\n"
-            f"         {entity.file_path}:{entity.line}   "
-            f"[dim]\\[{entity.kind}][/]\n\n"
-            f"[b]Rule[/]     {rule.id}\n"
+            f"[b cyan]{gap.short_id}[/]   ([dim]{_esc(gap.id)}[/])\n\n"
+            f"[b]Entity[/]   {_esc(entity.qualified_name)}\n"
+            f"         {_esc(entity.file_path)}:{entity.line}   "
+            f"[dim]\\[{_esc(entity.kind)}][/]\n\n"
+            f"[b]Rule[/]     {_esc(rule.id)}\n"
             f"         {rule.support_n}/{rule.support_total} members of "
-            f"[yellow]{rule.group_id}[/] have "
-            f"[cyan]{rule.feature_value}[/]\n"
+            f"[yellow]{_esc(rule.group_id)}[/] have "
+            f"[cyan]{_esc(rule.feature_value)}[/]\n"
             f"         confidence [b]{rule.confidence:.2f}[/]\n\n"
             f"[b]Verdict[/]  this entity does not have "
-            f"[cyan]{rule.feature_value}[/].\n"
+            f"[cyan]{_esc(rule.feature_value)}[/].\n"
             f"         [b]e[/] explain · [b]s[/] suppress · "
             f"[b]Enter[/] open · [b]f[/] follow to rule"
         )
@@ -2534,6 +2690,40 @@ class AbsentiaApp(App[None]):
 
     def action_help(self) -> None:
         self.push_screen(HelpScreen())
+
+    def action_command_palette(self) -> None:
+        """Open the fuzzy-search command palette.
+
+        Mirrors the Cmd+K / Ctrl+P pattern from VS Code, JetBrains,
+        and most modern editors. Lists every TUI action with its
+        keystroke; users learn shortcuts by seeing them, and power
+        users can just type "exp" → Enter rather than memorizing x.
+        """
+        self.push_screen(
+            CommandPaletteScreen(),
+            self._on_command_palette_done,
+        )
+
+    async def _on_command_palette_done(self, action: str | None) -> None:
+        """Dispatch the selected action via Textual's run_action.
+
+        ``run_action`` is async (returns a coroutine) — the
+        callback is async so we can await it directly. Push-screen
+        callbacks accept both sync and async forms. ``run_action``
+        accepts the action name as a string and routes it through
+        the standard binding-resolution path — same code path the
+        keystroke would take, so dispatch stays in lockstep with
+        the bindings table.
+        """
+        if not action:
+            return
+        try:
+            await self.run_action(action)
+        except Exception as exc:
+            self.notify(
+                f"Couldn't run action {action!r}: {exc}",
+                severity="error", timeout=8,
+            )
 
     def action_cycle_sort(self) -> None:
         """Capital-S: advance the current view's sort key one step.

@@ -1397,8 +1397,21 @@ def scan_corpus(
         suppressed_full_ids = {
             v["full_id"] for v in suppressions.values() if v["full_id"]
         }
+        # Project-wide suppressions from absentia.toml's
+        # [[suppress]] blocks. Local DB + project entries are
+        # AND'd into the same filter — both shed gaps from the
+        # final list. See _suppressions.py for scope semantics.
+        from ._suppressions import (
+            gap_matches_project_entry,
+            load_project_suppressions,
+        )
+        project_entries = load_project_suppressions(root)
         suppressed_count = 0
-        if suppressed_short_ids or suppressed_full_ids:
+        suppressed_by_project = 0
+        if (
+            suppressed_short_ids or suppressed_full_ids
+            or project_entries
+        ):
             kept = []
             for gap in gaps:
                 if (
@@ -1406,6 +1419,25 @@ def scan_corpus(
                     or gap.id in suppressed_full_ids
                 ):
                     suppressed_count += 1
+                    continue
+                # Project filter — only relevant when a TOML
+                # entry exists, but the predicate is cheap so
+                # the unconditional walk is fine.
+                rule = next(
+                    (r for r in rules if r.id == gap.rule_id), None,
+                )
+                rule_value = rule.feature_value if rule else ""
+                if any(
+                    gap_matches_project_entry(
+                        entity_id=gap.entity_id,
+                        rule_id=gap.rule_id,
+                        rule_feature_value=rule_value,
+                        entry=entry,
+                    )
+                    for entry in project_entries
+                ):
+                    suppressed_count += 1
+                    suppressed_by_project += 1
                     continue
                 kept.append(gap)
             gaps = kept
