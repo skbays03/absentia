@@ -25,11 +25,9 @@ expected_gaps = 77        # 79 → 77; -2 from Item B. The new
                           # 0.8 threshold once modules joined.
 expected_rules = 40       # 41 → 40; one rule tipped out for the
                           # same reason as the gap drift above.
-expected_entities = 1175  # 1083 → 1175; +92 from the module entity
-                          # added per .py file in the project (Item B).
-                          # Roughly one per python source file +
-                          # test fixture; counts the 4 new feature
-                          # tests as well.
+expected_entities = 1176  # 1175 → 1176; +1 from the new
+                          # action_toggle_info_panels method on
+                          # AbsentiaApp (collapsible info panels).
 optional = false
 
 [[corpus]]

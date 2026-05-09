@@ -256,6 +256,7 @@ class CommandPaletteScreen(ModalScreen[str | None]):
         # Output / config
         ("Export",             "Export results (md/html/txt/…)",       "export",            "x"),
         ("Settings",           "Edit machine-wide settings.json",      "settings",          ","),
+        ("Toggle info panels", "Collapse / expand detail + preview",   "toggle_info_panels", "i"),
         ("Help",               "Show keybinding reference",            "help",              "?"),
         ("Quit",               "Exit the TUI",                         "quit",              "q"),
     ]
@@ -1358,14 +1359,32 @@ class AbsentiaApp(App[None]):
         color: $text-muted;
         background: $boost;
     }
-    /* Layout: table flexes, detail is fixed-small, preview is a
-       fixed bottom pane showing code context around the selected
-       gap. height: 1fr on the DataTable means "take whatever's
-       left after the fixed-height widgets claim theirs"; detail
-       and preview stay readable on tall terminals (each row of
-       the table is more visible) and survive small terminals (the
-       fixed budget is small). */
+    /* Layout: table flexes, info panels (detail + preview) are
+       docked to the bottom of the pane so they always sit flush
+       with the footer regardless of available height. The wrapper
+       container collapses via the `i` binding — when collapsed it
+       hides entirely (display: none) and the DataTable claims the
+       freed rows, with a single-line hint at the bottom showing
+       how to bring the panels back. */
     DataTable { height: 1fr; min-height: 8; }
+    #info_panels {
+        dock: bottom;
+        height: auto;
+    }
+    #info_panels.collapsed {
+        display: none;
+    }
+    #info_collapsed_hint {
+        dock: bottom;
+        height: 1;
+        padding: 0 2;
+        color: $text-muted;
+        background: $boost;
+        display: none;
+    }
+    #info_collapsed_hint.visible {
+        display: block;
+    }
     #detail {
         height: 6;
         padding: 0 2;
@@ -1404,6 +1423,7 @@ class AbsentiaApp(App[None]):
         Binding("question_mark", "help", "Help"),
         Binding("enter", "open_in_editor", "Open"),
         Binding("ctrl+p", "command_palette", "Command palette"),
+        Binding("i", "toggle_info_panels", "Toggle info"),
     ]
 
     def __init__(
@@ -1572,16 +1592,21 @@ class AbsentiaApp(App[None]):
                     cursor_type="row",
                     zebra_stripes=True,
                 )
-                yield Static("(loading…)", id="detail")
-                # Bottom context pane — code lines surrounding the
-                # currently-selected gap. Header line shows
-                # ``file_path | line N-M`` so the user knows where
-                # they are without checking the gap row. Updated on
-                # every cursor-row change via
-                # on_data_table_row_highlighted.
+                # Info panels — detail (cursor-row metadata) +
+                # preview (code context). Wrapped in a container
+                # docked to the bottom of the pane and collapsible
+                # via the `i` binding. When collapsed, a one-line
+                # hint takes their place so the user remembers how
+                # to expand again.
+                with Vertical(id="info_panels"):
+                    yield Static("(loading…)", id="detail")
+                    yield Static(
+                        "[dim](select a gap to preview)[/]",
+                        id="preview",
+                    )
                 yield Static(
-                    "[dim](select a gap to preview)[/]",
-                    id="preview",
+                    "[dim]press [bold]i[/] to show detail + preview[/]",
+                    id="info_collapsed_hint",
                 )
             with Vertical(id="stats_pane"):
                 yield Static("(loading…)", id="stats_text")
@@ -2870,6 +2895,27 @@ class AbsentiaApp(App[None]):
 
     def action_help(self) -> None:
         self.push_screen(HelpScreen())
+
+    def action_toggle_info_panels(self) -> None:
+        """Collapse / re-expand the bottom detail + preview panels.
+
+        Some users want maximum table real-estate; others want the
+        context panes pinned. The toggle is sticky for the session
+        (no persistence — the panes default to expanded on every
+        TUI start since first-time users benefit most from seeing
+        the detail pane immediately)."""
+        try:
+            panels = self.query_one("#info_panels")
+            hint = self.query_one("#info_collapsed_hint")
+        except Exception:
+            return
+        is_collapsed = "collapsed" in panels.classes
+        if is_collapsed:
+            panels.remove_class("collapsed")
+            hint.remove_class("visible")
+        else:
+            panels.add_class("collapsed")
+            hint.add_class("visible")
 
     def action_command_palette(self) -> None:
         """Open the fuzzy-search command palette.

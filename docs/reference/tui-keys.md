@@ -34,6 +34,7 @@ The same reference is available in-app via `?`.
 | `r` | Remove the suppression(s) on the cursor row or selection in the Suppressions view, then rescan so the unsuppressed gaps reappear. Project-source suppressions are read-only — edit `absentia.toml` via `,` → `e` instead. |
 | `x` | Export scan results to disk. Opens a modal listing the six formats (Markdown / HTML / Text / JSON / CSV / SARIF — same as the CLI's post-check prompt); pick one with a number key, then a Custom / Default location, then either type a path or use the saved default. Writes to `<base>/docs/absentia/<corpus>/gaps-<UTC-ts>.<ext>`. |
 | `,` | Open the settings panel: edit `jobs_default`, `default_export_path`, reset the first-run intro hint, or hand off to `$EDITOR` for this project's `absentia.toml`. Persists to `~/.absentia/settings.json`. |
+| `i` | Collapse / expand the bottom info panels (detail + code preview). When collapsed, the DataTable claims the freed rows; a one-line hint at the bottom shows how to bring the panels back. Toggle is sticky for the session, not persisted. |
 | `Ctrl+R` | Rescan now |
 | `w` | Toggle watch mode (auto-rescan every 2s) |
 
