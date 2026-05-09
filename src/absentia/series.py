@@ -450,37 +450,77 @@ def _first_entity_in_dir(
 # what matters is set membership. To add a new alphabet, append a
 # row here and re-run the tests; the engine picks it up immediately
 # without selector or mining changes.
-# Only ≥3-member alphabets — two-member pairs (start/stop,
-# subscribe/unsubscribe, acquire/release) overlap with what the
-# symmetry detector already mines from the corpus, and re-detecting
-# them here would just produce duplicate gaps. Item G's reason to
-# exist is named *ordinal* alphabets where the symmetry strategy
-# can't help: CRUD-shaped sets where every class fully implements
-# the alphabet, so there's nothing to mine — but the alphabet
-# itself is a known convention.
-_ORDINAL_ALPHABETS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("crud", ("create", "read", "update", "delete")),
-    ("crud_get", ("create", "get", "update", "delete")),
-    ("crud_list", ("create", "list", "update", "delete")),
-    ("init_run_close", ("init", "run", "close")),
-    ("init_run_teardown", ("init", "run", "teardown")),
-    ("setup_run_teardown", ("setup", "run", "teardown")),
-    ("first_second_third", ("first", "second", "third")),
+# Each alphabet is a slot list. Each slot is a tuple of synonym
+# names — a class "has the slot" if any synonym matches one of its
+# methods. This collapses the false-positive case where a class
+# with create/update/delete + findAll fired three separate gaps
+# for "missing read", "missing get", and "missing list" against
+# three independent alphabets. Now read/get/list/find/findAll/
+# findOne all count as the same slot, and the gap fires only when
+# *no* synonym is present.
+#
+# `name_hints` is a tuple of substrings that must appear in the
+# class name for the alphabet to fire. Empty tuple = no gating
+# (any class can match). Hints prevent the "happens-to-have-init-
+# and-close so missing run" false positive on lifecycle services.
+_OrdinalAlphabet = tuple[
+    str,                      # alphabet id
+    tuple[tuple[str, ...], ...],  # ordered slots, each = synonym tuple
+    tuple[str, ...],          # name_hints (case-insensitive substrings)
+]
+
+_ORDINAL_ALPHABETS: tuple[_OrdinalAlphabet, ...] = (
+    (
+        "crud",
+        (
+            ("create", "add", "insert"),
+            ("read", "get", "list", "find", "findAll", "findOne",
+             "fetch", "show"),
+            ("update", "edit", "modify", "patch"),
+            ("delete", "remove", "destroy"),
+        ),
+        # Only fire on classes whose name hints at CRUD intent —
+        # repositories, services, controllers, resolvers,
+        # explicit CRUD test classes. Rules out lifecycle / utility
+        # classes that happen to share a method name.
+        ("crud", "repo", "repository", "controller", "service",
+         "resolver", "dao", "store", "manager"),
+    ),
+    (
+        "lifecycle_three",
+        (
+            ("init", "initialize", "setup", "start"),
+            ("run", "execute", "process"),
+            ("close", "teardown", "stop", "shutdown", "cleanup"),
+        ),
+        # Only fire when the class clearly represents a unit of
+        # work / job / task — not on every lifecycle-shaped class.
+        ("job", "task", "worker", "runner", "pipeline", "step"),
+    ),
+    (
+        "ordinal_three",
+        (
+            ("first",),
+            ("second",),
+            ("third",),
+        ),
+        (),  # no gating; the names are unambiguous enough on their own
+    ),
 )
 
 
-# How many alphabet members a class must already have to be
-# considered "intentionally implementing" the alphabet. A class
-# with only one CRUD method shouldn't get flagged for missing the
-# other three; that's not a convention being followed, that's
-# just one method that happens to share a name.
+# How completely the alphabet must already be implemented before we
+# claim "this class is following the convention." A class with only
+# one matching slot shouldn't get flagged for missing the rest;
+# that's not a convention being followed, it's just one method
+# that happens to share a name with a known alphabet.
 _MIN_PRESENT_FRACTION = 0.75
 
 
 def find_ordinal_series_gaps(
     entities: dict[str, Entity],
     *,
-    alphabets: tuple[tuple[str, tuple[str, ...]], ...] = _ORDINAL_ALPHABETS,
+    alphabets: tuple[_OrdinalAlphabet, ...] = _ORDINAL_ALPHABETS,
     min_present_fraction: float = _MIN_PRESENT_FRACTION,
     progress_hook: Any = None,
 ) -> tuple[list[Rule], list[Gap]]:
@@ -489,17 +529,23 @@ def find_ordinal_series_gaps(
     A class ``TestUserCRUD`` with methods ``test_create``,
     ``test_read``, ``test_update`` — but no ``test_delete`` — has
     a hole at the fourth CRUD slot. Same shape as numeric / letter
-    series, but the "alphabet" is a known ordinal vocabulary
-    (CRUD, setup/teardown, start/stop, open/close, etc.) instead
-    of a positional sequence.
+    series, but the "alphabet" is a known ordinal vocabulary (CRUD,
+    init/run/close, first/second/third) instead of a positional
+    sequence.
 
-    Detection is per class: collect the method names, strip any
-    common prefix (so ``test_create`` matches ``create``), check
-    against each alphabet, and flag any single missing element when
-    ≥``min_present_fraction`` of the alphabet is already present.
-    Skipping alphabets where the present count is below the
-    threshold avoids the "one method coincidentally named ``read``
-    flagged for missing ``create/update/delete``" failure mode."""
+    Each alphabet is a list of *slots*; each slot is a tuple of
+    synonyms (e.g. read/get/list/find all count as the read slot).
+    A slot is "present" if any synonym matches a class method.
+    The detector fires when ≥``min_present_fraction`` of slots are
+    present and exactly one slot is empty — that empty slot is the
+    gap. Synonyms collapse the prior false positive where a class
+    with create/update/delete + findAll triggered three separate
+    gaps.
+
+    Each alphabet also carries a ``name_hints`` tuple. If non-empty,
+    the class name (case-insensitive) must contain at least one
+    hint substring. Rules out the "lifecycle service happens to
+    have init+close so flagged for missing run" failure mode."""
     methods_by_class: dict[str, list[Entity]] = defaultdict(list)
     classes_by_qn: dict[str, Entity] = {}
     for ent in entities.values():
@@ -530,37 +576,49 @@ def find_ordinal_series_gaps(
         }
         if not method_names:
             continue
+        class_basename = class_qn.rsplit("::", 1)[-1].lower()
 
-        for alpha_id, alphabet in alphabets:
-            min_present = max(2, int(min_present_fraction * len(alphabet)))
-            # For each plausible prefix (empty + the most common
-            # method-name prefix), check the alphabet match.
+        for alpha_id, slots, name_hints in alphabets:
+            if name_hints and not any(
+                h in class_basename for h in name_hints
+            ):
+                continue
+            min_present = max(2, int(min_present_fraction * len(slots)))
+
             for prefix in _candidate_prefixes(method_names):
                 normalized = {
                     n[len(prefix):] if n.startswith(prefix) else n
                     for n in method_names
                 }
-                present = normalized & set(alphabet)
-                if len(present) < min_present:
+                # Each slot is present iff any of its synonyms is
+                # in the normalized method set.
+                present_slots: list[int] = []
+                missing_slots: list[int] = []
+                for i, synonyms in enumerate(slots):
+                    if any(s in normalized for s in synonyms):
+                        present_slots.append(i)
+                    else:
+                        missing_slots.append(i)
+                if len(present_slots) < min_present:
                     continue
-                missing = set(alphabet) - present
-                if len(missing) != 1:
-                    # Detector only fires when exactly one member is
-                    # missing. Two or more missing means the class
-                    # probably isn't trying to implement the alphabet.
+                if len(missing_slots) != 1:
                     continue
-                missing_name = next(iter(missing))
-                feature_value = f"{prefix}{missing_name}"
+                missing_idx = missing_slots[0]
+                missing_canonical = slots[missing_idx][0]
+                feature_value = f"{prefix}{missing_canonical}"
                 rule = Rule(
                     group_id=f"ordinal:{alpha_id}::{class_qn}",
                     feature_kind="series",
                     feature_value=feature_value,
-                    support_n=len(present),
-                    support_total=len(alphabet),
+                    support_n=len(present_slots),
+                    support_total=len(slots),
                 )
                 rules.append(rule)
                 gaps.append(Gap(rule_id=rule.id, entity_id=class_ent.id))
-                break  # one alphabet hit per class is enough
+                break
+            else:
+                continue
+            break  # one alphabet hit per class — outer loop break
 
     return rules, gaps
 

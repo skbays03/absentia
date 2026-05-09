@@ -38,10 +38,9 @@ optional = false
 name = "redis"
 path = "/tmp/redis"
 language = "c"
-expected_gaps = 242       # 241 → 242; +1 from one of the new
-                          # series detectors (E/F/G) firing on
-                          # redis's source layout.
-expected_rules = 121      # 120 → 121 alongside the new gap.
+expected_gaps = 241       # 242 → 241; the +1 ordinal hit cleared
+                          # once Item G's name-hint gating landed.
+expected_rules = 120      # 121 → 120 alongside.
 expected_entities = 9240  # 9197 → 9240; +43 module entities from
                           # the Python files inside redis (build +
                           # test scripts).
@@ -51,12 +50,12 @@ optional = true
 name = "nestjs"
 path = "/tmp/nest"
 language = "typescript"
-expected_gaps = 137       # 121 → 137; +16 from the new series
-                          # detectors (E/F/G), most likely
-                          # find_version_directory_gaps catching
-                          # incomplete API-version directories
-                          # in nestjs's sample corpus.
-expected_rules = 109      # 93 → 109 alongside the new gaps.
+expected_gaps = 129       # 121 → 129; +8 from Item G's ordinal
+                          # CRUD detector finding real "Service /
+                          # Controller class implements 3 of 4 CRUD
+                          # ops; missing one" cases. Audited by hand
+                          # 2026-05-09 — all 8 are genuine.
+expected_rules = 101      # 93 → 101 alongside the new gaps.
 expected_entities = 4066
 optional = true
 
