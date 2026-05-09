@@ -305,36 +305,92 @@ class CommandPaletteScreen(ModalScreen[str | None]):
         action = self._matches[self._highlighted_idx][2]
         self.dismiss(action)
 
+    # Roughly the number of entry rows the results pane fits after
+    # accounting for the title label, the input box, the dialog
+    # padding/borders, and the optional "↑ N more" / "↓ N more"
+    # hint rows. Windowed rendering uses this so the highlight
+    # marker never goes off-screen.
+    _VISIBLE_ROWS = 8
+
     def on_key(self, event) -> None:  # noqa: ANN001 — Textual Key
-        """↑/↓ move the highlight while the Input retains focus."""
+        """↑/↓ wrap-around through the match list while the Input
+        retains focus.
+
+        Wrap-around (vs clamp): once the user reaches the last match,
+        pressing ↓ again cycles to the first. This is the convention
+        for command palettes in VS Code, JetBrains, Slack, etc., and
+        avoids the dead-end feeling of a bumped clamp.
+        """
         if event.key == "up":
             if self._matches:
-                self._highlighted_idx = max(0, self._highlighted_idx - 1)
+                n = len(self._matches)
+                self._highlighted_idx = (
+                    self._highlighted_idx - 1
+                ) % n
                 self._refresh_results()
             event.stop()
         elif event.key == "down":
             if self._matches:
-                self._highlighted_idx = min(
-                    len(self._matches) - 1, self._highlighted_idx + 1,
-                )
+                n = len(self._matches)
+                self._highlighted_idx = (
+                    self._highlighted_idx + 1
+                ) % n
                 self._refresh_results()
             event.stop()
 
     def _refresh_results(self) -> None:
         if not self._matches:
             text = "[dim]No commands match.[/]"
+            try:
+                self.query_one(
+                    "#palette_results", Static,
+                ).update(text)
+            except Exception:
+                pass
+            return
+
+        # Windowed view: center the visible slice on the highlight
+        # so the marker is always in frame even when there are more
+        # entries than fit. With 20 entries and ~8 visible rows,
+        # the user can navigate through the whole list with ↑/↓
+        # and the window scrolls to follow.
+        n = len(self._matches)
+        window = min(self._VISIBLE_ROWS, n)
+        if n <= window:
+            start = 0
         else:
-            lines: list[str] = []
-            for i, (label, desc, _action, keys) in enumerate(self._matches):
-                marker = "[bright_yellow]▸[/]" if i == self._highlighted_idx else " "
-                key_cell = f"[dim cyan]{keys}[/]"
-                lines.append(
-                    f"{marker} [b]{label:<22}[/]  [dim]{desc:<40}[/]  "
-                    f"{key_cell}"
-                )
-            text = "\n".join(lines)
+            half = window // 2
+            start = max(0, self._highlighted_idx - half)
+            if start + window > n:
+                start = n - window
+        end = start + window
+        visible = list(range(start, end))
+
+        lines: list[str] = []
+        if start > 0:
+            lines.append(
+                f"[dim]   ↑ {start} more above[/]"
+            )
+        for i in visible:
+            label, desc, _action, keys = self._matches[i]
+            marker = (
+                "[bright_yellow]▸[/]"
+                if i == self._highlighted_idx else " "
+            )
+            key_cell = f"[dim cyan]{keys}[/]"
+            lines.append(
+                f"{marker} [b]{label:<22}[/]  [dim]{desc:<40}[/]  "
+                f"{key_cell}"
+            )
+        below = n - end
+        if below > 0:
+            lines.append(
+                f"[dim]   ↓ {below} more below[/]"
+            )
         try:
-            self.query_one("#palette_results", Static).update(text)
+            self.query_one(
+                "#palette_results", Static,
+            ).update("\n".join(lines))
         except Exception:
             pass
 
@@ -1286,6 +1342,14 @@ def _load_project_suppressions(root: Path) -> list[dict]:
 class AbsentiaApp(App[None]):
     """The main  absentia TUI."""
 
+    # Textual ships a built-in command palette on the same Ctrl+P
+    # keystroke we use for our own; leaving the built-in enabled
+    # double-stuffs the Footer with two "Command palette" entries
+    # and the binding resolution races. Our palette covers
+    # absentia-specific actions and the keystroke layout users
+    # expect from us, so the built-in goes off.
+    ENABLE_COMMAND_PALETTE = False
+
     DEFAULT_CSS = """
     Screen { background: $surface; }
     #breadcrumb {
@@ -1358,6 +1422,16 @@ class AbsentiaApp(App[None]):
         # macOS spawn-mode multiprocessing under Textual's event
         # loop. See the comment in _do_scan.
         self._jobs: int = jobs if jobs is not None and jobs > 0 else 1
+        # Debug log path. Append-only; capped at ~1 MB to bound
+        # disk use. Captures every keystroke + action + scan
+        # outcome so a crash report from a user can be reproduced
+        # by replaying the keys against the same corpus. Stays
+        # under ~/.absentia/ alongside settings + calibration so
+        # it's all in one tree.
+        self._debug_log_path: Path = (
+            Path.home() / ".absentia" / "tui.log"
+        )
+        self._init_debug_log()
         self._gaps: list[Gap] = []
         self._rules: list[Rule] = []
         self._rules_by_id: dict[str, Rule] = {}
@@ -1420,6 +1494,71 @@ class AbsentiaApp(App[None]):
             "members_asc":  "members↑",
             "name":         "name",
         }
+
+    # ── Debug log ────────────────────────────────────────────────────
+
+    _DEBUG_LOG_MAX_BYTES = 1_000_000  # ~1 MB; rotated below
+
+    def _init_debug_log(self) -> None:
+        """Bootstrap the per-session debug log.
+
+        Creates ``~/.absentia/`` if missing, rotates the file when
+        it crosses 1 MB (keep one backup at ``.tui.log.1``), and
+        writes a session-start marker. Failures (read-only home,
+        full disk, permission errors) silently disable logging —
+        a debug log that crashes the TUI defeats the purpose.
+        """
+        try:
+            self._debug_log_path.parent.mkdir(parents=True, exist_ok=True)
+            if (
+                self._debug_log_path.exists()
+                and self._debug_log_path.stat().st_size
+                > self._DEBUG_LOG_MAX_BYTES
+            ):
+                backup = self._debug_log_path.with_suffix(".log.1")
+                try:
+                    backup.unlink(missing_ok=True)
+                    self._debug_log_path.rename(backup)
+                except OSError:
+                    pass
+            self._debug_log("session_start", root=str(self.root))
+        except OSError:
+            # Logging unavailable — set the path to None so future
+            # _debug_log calls short-circuit.
+            self._debug_log_path = None  # type: ignore[assignment]
+
+    def _debug_log(self, kind: str, **fields: object) -> None:
+        """Append one line to the debug log.
+
+        Format: ``ISO-8601-utc kind=<kind> key1=val1 key2=val2 …``.
+        Plain text on purpose so users can grep it before pasting
+        into a bug report. Values are repr'd to keep multi-line
+        content (file paths, exception messages) on one line.
+        """
+        if self._debug_log_path is None:
+            return
+        from datetime import datetime, timezone
+
+        ts = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+        bits = " ".join(f"{k}={v!r}" for k, v in fields.items())
+        try:
+            with self._debug_log_path.open("a", encoding="utf-8") as fh:
+                fh.write(f"{ts}  {kind}  {bits}\n")
+        except OSError:
+            pass
+
+    def on_key(self, event) -> None:  # noqa: ANN001 — Textual Key
+        """Log every keystroke. Non-destructive — Textual's binding
+        resolution still runs after this handler returns."""
+        self._debug_log("key", key=event.key, view=self._view)
+        # No event.stop() — we want the binding system to handle it.
+
+    async def run_action(self, action: str, *args, **kwargs):  # type: ignore[override]
+        """Log every action invocation alongside Textual's normal
+        dispatch. Awaits the parent return so the await-chain
+        stays intact for async actions."""
+        self._debug_log("action", name=action, view=self._view)
+        return await super().run_action(action, *args, **kwargs)
 
     # ── Layout ────────────────────────────────────────────────────────
 
@@ -1617,6 +1756,13 @@ class AbsentiaApp(App[None]):
 
     def _scan_failed(self, exc: BaseException) -> None:
         """Main-thread callback when the worker raises."""
+        import traceback as _tb
+        self._debug_log(
+            "scan_failed",
+            exc_type=type(exc).__name__,
+            exc=str(exc),
+            tb=_tb.format_exc().replace("\n", " | "),
+        )
         if isinstance(self.screen, LoadingScreen):
             self.pop_screen()
         self.notify(f"Scan failed: {exc}", severity="error", timeout=8)
@@ -1735,7 +1881,16 @@ class AbsentiaApp(App[None]):
         gaps = self._filtered_gaps()
         flt = self._filter.get("gaps", "")
         sel_set = self._selected.get("gaps", set())
+        # Defensive dedup on short_id: SHA-256-truncated short
+        # IDs collide rarely in practice (8-char hex over a small
+        # gap population), but DataTable raises DuplicateKey on
+        # any collision. Skip the second occurrence — same shape
+        # as _render_rules_table / _render_groups_table.
+        seen_keys: set[str] = set()
         for gap in gaps:
+            if gap.short_id in seen_keys:
+                continue
+            seen_keys.add(gap.short_id)
             rule = self._rules_by_id[gap.rule_id]
             entity = self._entities[gap.entity_id]
             short = entity.qualified_name.split("::", 1)[-1]
@@ -1860,7 +2015,21 @@ class AbsentiaApp(App[None]):
             "Rule (kind = value)", "Group", "Support", "Conf",
         )
         rules = self._filtered_rules()
+        # Defensive dedup: different mining strategies can emit two
+        # Rule objects with the same id (e.g. symmetry-pairs auto-
+        # mining a `__init__` pattern that's also caught by the
+        # frequency strategy). DataTable raises DuplicateKey when
+        # two add_row calls share a key, which would crash the
+        # whole Rules view. Drop the second occurrence — they're
+        # semantically the same rule.
+        seen_keys: set[str] = set()
+        deduped: list[Rule] = []
         for rule in rules:
+            if rule.id in seen_keys:
+                continue
+            seen_keys.add(rule.id)
+            deduped.append(rule)
+        for rule in deduped:
             table.add_row(
                 f"{rule.feature_kind} = {rule.feature_value}",
                 rule.group_id,
@@ -1868,8 +2037,8 @@ class AbsentiaApp(App[None]):
                 f"{rule.confidence:.2f}",
                 key=rule.id,
             )
-        if rules:
-            self._render_rule_detail(rules[0])
+        if deduped:
+            self._render_rule_detail(deduped[0])
         else:
             self._set_detail("[b]No rules match the current filter.[/]")
 
@@ -1969,7 +2138,18 @@ class AbsentiaApp(App[None]):
         for r in self._rules:
             rule_counts[r.group_id] = rule_counts.get(r.group_id, 0) + 1
 
+        # Same defensive dedup as _render_rules_table — a future
+        # selector that emits the same group_id from two different
+        # selector types (e.g. directory + manual override) would
+        # otherwise crash this view with DuplicateKey.
+        seen_keys: set[str] = set()
+        deduped: list[Group] = []
         for group in groups:
+            if group.id in seen_keys:
+                continue
+            seen_keys.add(group.id)
+            deduped.append(group)
+        for group in deduped:
             table.add_row(
                 group.name,
                 group.selector_type,
@@ -1977,8 +2157,8 @@ class AbsentiaApp(App[None]):
                 str(rule_counts.get(group.id, 0)),
                 key=group.id,
             )
-        if groups:
-            self._render_group_detail(groups[0])
+        if deduped:
+            self._render_group_detail(deduped[0])
         else:
             self._set_detail("[b]No groups match the current filter.[/]")
 
@@ -3030,6 +3210,7 @@ def run_tui(
     Defaults to ``None`` which the app interprets as "use 1" — see
     the comment in ``_do_scan`` for the macOS spawn-mode caveat.
     """
+    import sys as _sys
     state_dir = root / ".absentia"
     try:
         with StateLock(state_dir / "lockfile"):
@@ -3038,6 +3219,47 @@ def run_tui(
                 on_open_editor=on_open_editor, jobs=jobs,
             ).run()
     except StateLockError as exc:
-        print(f"absentia: {exc}", file=__import__("sys").stderr)
+        print(f"absentia: {exc}", file=_sys.stderr)
         return 2
+    except Exception:
+        # The TUI raised after init. Log the traceback, print it so
+        # the user sees what went wrong, then offer to file a report.
+        import traceback as _tb
+        log_path = Path.home() / ".absentia" / "tui.log"
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as fh:
+                fh.write("crash\n")
+                fh.write(_tb.format_exc())
+                fh.write("\n")
+        except OSError:
+            pass
+        _tb.print_exc()
+        print(
+            f"\nabsentia: TUI crashed. Debug log saved to {log_path}.",
+            file=_sys.stderr,
+        )
+        if _sys.stdin.isatty() and _sys.stdout.isatty():
+            try:
+                answer = input(
+                    "File a GitHub issue with this log? [y/N] "
+                ).strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                answer = ""
+                print()
+            if answer in {"y", "yes"}:
+                from absentia.cli import cmd_report
+                return cmd_report(no_prompt=True)
+            print(
+                "(Run `absentia report` later to file with the saved "
+                "log.)",
+                file=_sys.stderr,
+            )
+        else:
+            print(
+                "Run `absentia report` to file a GitHub issue with "
+                "this log.",
+                file=_sys.stderr,
+            )
+        return 1
     return 0

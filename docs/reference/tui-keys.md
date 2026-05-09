@@ -48,3 +48,7 @@ breadcrumb).
 | `?` | Help (this reference) |
 | `Ctrl+P` | Command palette — fuzzy-search every TUI action by name. Type to filter, ↑/↓ to navigate, Enter to dispatch. Each entry shows its native keystroke so the palette doubles as a discoverability surface for unfamiliar shortcuts. |
 | `q` | Quit |
+
+## Crash recovery
+
+If the TUI crashes outright, it logs the traceback to `~/.absentia/tui.log` and prompts `File a GitHub issue with this log? [y/N]`. Saying yes chains into `absentia report`, which composes a prefilled issue with system info + the last 200 log lines and opens it in your browser (or in `gh issue create --web` if available). You can also run `absentia report` after the fact to file from a log captured earlier.

@@ -335,6 +335,20 @@ def main(argv: list[str] | None = None) -> int:
                                "PATH argument instead. Kept for backward "
                                "compatibility with existing scripts.")
 
+    report = sub.add_parser(
+        "report",
+        help=(
+            "Compose a GitHub issue from the TUI debug log + system "
+            "info. Prompts before sending so nothing leaves the "
+            "machine without your OK."
+        ),
+    )
+    report.add_argument(
+        "--no-prompt", action="store_true",
+        help="Skip the [y/N] prompt and go straight to issue "
+             "composition. Useful when you've already decided.",
+    )
+
     args = parser.parse_args(argv)
 
     # --no-color must take effect BEFORE the first import of `_color`
@@ -464,6 +478,9 @@ def main(argv: list[str] | None = None) -> int:
             remove=args.remove,
             as_list=args.as_list,
         )
+
+    if args.cmd == "report":
+        return cmd_report(no_prompt=args.no_prompt)
 
     return 0
 
@@ -2425,6 +2442,187 @@ def _normalize_short(gap_id: str) -> str:
     if gap_id.startswith("g-"):
         return gap_id
     return short_id_for(gap_id)
+
+
+# ── absentia report ─────────────────────────────────────────────────
+
+_BUG_REPORT_REPO = "Transcending-Binary/absentia"
+_TUI_LOG_PATH = Path.home() / ".absentia" / "tui.log"
+_RUNS_LOG_PATH = Path.home() / ".absentia" / "runs.jsonl"
+_BUG_REPORT_LOG_TAIL_LINES = 200
+_BUG_REPORT_LOG_MAX_BYTES = 60_000
+
+
+def cmd_report(*, no_prompt: bool = False) -> int:
+    """Compose a GitHub bug report with the TUI debug log + system info.
+
+    Best-effort and conservative: shows the user exactly what would be
+    sent and prompts ``[y/N]`` (default no) before anything leaves the
+    machine. ``--no-prompt`` skips that confirmation when the user has
+    already decided. If the GitHub CLI (``gh``) is available and
+    authenticated we file the issue directly; otherwise we open a
+    prefilled issue URL in the user's browser.
+    """
+    import platform
+    import shutil
+    import subprocess
+    import sys as _sys
+    import urllib.parse
+    import webbrowser
+
+    log_excerpt = _read_tail(
+        _TUI_LOG_PATH,
+        max_lines=_BUG_REPORT_LOG_TAIL_LINES,
+        max_bytes=_BUG_REPORT_LOG_MAX_BYTES,
+    )
+    last_run_excerpt = _read_tail(
+        _RUNS_LOG_PATH, max_lines=3, max_bytes=4_000,
+    )
+    abs_version = _detect_absentia_version()
+
+    sys_info = (
+        f"- absentia {abs_version}\n"
+        f"- Python {_sys.version.split()[0]}\n"
+        f"- {platform.system()} {platform.release()} "
+        f"({platform.machine()})\n"
+    )
+
+    title = "[bug] absentia TUI crash"
+    body = (
+        "## What happened\n\n"
+        "_(Edit this section with what you were doing when the "
+        "crash occurred.)_\n\n"
+        "## System\n\n"
+        f"{sys_info}\n"
+        "## TUI debug log "
+        f"(`~/.absentia/tui.log`, last "
+        f"{_BUG_REPORT_LOG_TAIL_LINES} lines)\n\n"
+        "```\n"
+        f"{log_excerpt or '(no log found)'}\n"
+        "```\n"
+    )
+    if last_run_excerpt:
+        body += (
+            "\n## Recent runs (`~/.absentia/runs.jsonl`)\n\n"
+            "```\n"
+            f"{last_run_excerpt}\n"
+            "```\n"
+        )
+
+    stdout_console.print(
+        "[bold]absentia report[/] — preparing a GitHub issue."
+    )
+    stdout_console.print(
+        f"  Title: [cyan]{title}[/]"
+    )
+    stdout_console.print(
+        f"  Log:   [cyan]{_TUI_LOG_PATH}[/]"
+        + ("" if log_excerpt else " [dim](empty / not found)[/]")
+    )
+    stdout_console.print(
+        f"  Repo:  [cyan]{_BUG_REPORT_REPO}[/]"
+    )
+    stdout_console.print(
+        "[dim]The issue body is shown in your browser/editor before "
+        "submission — nothing is sent until you confirm there too.[/]"
+    )
+
+    if not no_prompt:
+        if not _sys.stdin.isatty():
+            stderr_console.print(
+                "[red]absentia report:[/] non-interactive shell; "
+                "re-run with [bold]--no-prompt[/] if you've already "
+                "decided to file."
+            )
+            return 2
+        try:
+            answer = input("File this report? [y/N] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            stdout_console.print()
+            return 1
+        if answer not in {"y", "yes"}:
+            stdout_console.print("[dim]Cancelled.[/]")
+            return 0
+
+    gh = shutil.which("gh")
+    if gh is not None:
+        try:
+            proc = subprocess.run(
+                [
+                    gh, "issue", "create",
+                    "--repo", _BUG_REPORT_REPO,
+                    "--title", title,
+                    "--body", body,
+                    "--web",
+                ],
+                check=False,
+            )
+            if proc.returncode == 0:
+                stdout_console.print(
+                    "[bright_green]✓[/] Opened a prefilled issue via "
+                    "[bold]gh[/]."
+                )
+                return 0
+            stderr_console.print(
+                f"[yellow]gh exited {proc.returncode}; falling back "
+                f"to browser URL.[/]"
+            )
+        except OSError as exc:
+            stderr_console.print(
+                f"[yellow]gh failed ({exc}); falling back to browser "
+                f"URL.[/]"
+            )
+
+    qs = urllib.parse.urlencode({"title": title, "body": body})
+    url = f"https://github.com/{_BUG_REPORT_REPO}/issues/new?{qs}"
+    if len(url) > 8_000:
+        # GitHub silently truncates very long URLs. Trim the body and
+        # tell the user.
+        body_short = body[:6_000] + "\n\n_(log truncated for URL " \
+            "length — paste the full log from " \
+            f"`{_TUI_LOG_PATH}`)_\n"
+        qs = urllib.parse.urlencode({"title": title, "body": body_short})
+        url = f"https://github.com/{_BUG_REPORT_REPO}/issues/new?{qs}"
+    stdout_console.print(
+        f"Opening browser: [cyan]{url[:100]}...[/]"
+        if len(url) > 100
+        else f"Opening browser: [cyan]{url}[/]"
+    )
+    try:
+        webbrowser.open(url)
+    except Exception as exc:  # noqa: BLE001 — best-effort
+        stderr_console.print(
+            f"[red]Couldn't open browser ({exc}). Copy this URL "
+            f"manually:[/]\n{url}"
+        )
+        return 1
+    return 0
+
+
+def _read_tail(
+    path: Path, *, max_lines: int, max_bytes: int,
+) -> str:
+    """Read the last ``max_lines`` of ``path``, capped at ``max_bytes``.
+
+    Returns ``""`` if the file is missing or unreadable.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    lines = text.splitlines()[-max_lines:]
+    out = "\n".join(lines)
+    if len(out) > max_bytes:
+        out = "...[truncated]...\n" + out[-max_bytes:]
+    return out
+
+
+def _detect_absentia_version() -> str:
+    try:
+        from importlib.metadata import version as _v
+        return _v("absentia")
+    except Exception:  # noqa: BLE001
+        return "unknown"
 
 
 def _scan_incremental(
