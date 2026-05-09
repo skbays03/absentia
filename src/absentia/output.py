@@ -67,57 +67,86 @@ def format_gaps(
     *,
     min_confidence: float = 0.8,
 ) -> str:
-    """Render the gap list as a styled string.
+    """Render the gap list as a styled, terminal-width-adaptive table.
 
-    Uses a temporary :class:`rich.console.Console` writing into an
-    in-memory buffer so the styled output (or the auto-stripped plain
-    output, when not a TTY) can be returned as a single string and
-    handed to the caller — typically ``print()`` in cmd_check, or
-    accumulated for further composition.
+    Uses ``rich.table.Table`` with per-column ``max_width`` + ``overflow=
+    "fold"`` so long file paths / qualified names / missing-value
+    strings wrap inside their cells instead of pushing other columns
+    out of alignment. The table expands to fill the available terminal
+    width; on narrow terminals the fold-columns wrap to multiple lines
+    rather than truncating.
+
+    Color decisions go through a :class:`rich.console.Console` writing
+    into an in-memory buffer — TTY → ANSI codes; pipe → plain text —
+    so the returned string carries (or doesn't carry) escape codes
+    appropriately for downstream ``print()``.
     """
     if not gaps:
         return "No gaps. (absentia found nothing wrong.)\n"
 
-    # Build a local Console that writes into a buffer. Color decisions
-    # mirror the real stdout's TTY status — TTY → ANSI codes; pipe →
-    # plain text. Returning the buffer's value lets the caller print
-    # via plain ``print()`` and still keep color or strip it correctly.
+    from rich import box
+    from rich.table import Table
+
+    n_rules = len({g.rule_id for g in gaps})
+
+    table = Table(
+        title=f"GAPS · confidence ≥ {min_confidence:.2f}",
+        title_style="bold",
+        title_justify="left",
+        caption=f"{len(gaps)} gaps · {n_rules} rules",
+        caption_style="dim",
+        caption_justify="left",
+        show_header=True,
+        header_style="bold",
+        box=box.SIMPLE_HEAD,
+        expand=True,
+        pad_edge=False,
+        # show_lines=False keeps row dividers off so the table reads
+        # as a clean list rather than a heavy grid.
+    )
+    # Severity dot — a single glyph whose color encodes confidence at
+    # a glance. Matches _confidence_style's bright_green / green /
+    # yellow tiering. Width=1 + no_wrap keeps the indicator column
+    # tight even on narrow terminals.
+    table.add_column("●", justify="center", width=1, no_wrap=True)
+    # The three "fold" columns share whatever terminal width is left
+    # after the fixed ones (●, Conf, ID) are reserved. max_width caps
+    # how much any single one can hog so a 200-char path doesn't
+    # squeeze the others to nothing on a wide terminal.
+    table.add_column(
+        "Location", overflow="fold", max_width=42, style="cyan",
+    )
+    table.add_column("Entity", overflow="fold", max_width=32)
+    table.add_column(
+        "Missing", overflow="fold", max_width=32, style="red",
+    )
+    table.add_column("Conf", justify="right", width=4, no_wrap=True)
+    table.add_column("ID", style="dim", no_wrap=True, width=9)
+
+    for gap in gaps:
+        rule = rules[gap.rule_id]
+        entity = entities[gap.entity_id]
+        loc = f"{entity.file_path}:{entity.line}"
+        short = entity.qualified_name.split("::", 1)[-1]
+        conf_style = _confidence_style(rule.confidence)
+        # Embed the per-row severity color in the dot + the conf value;
+        # the "Location" / "Missing" columns get column-level styles
+        # (cyan, red) since their tone is consistent across rows.
+        dot = f"[{conf_style}]●[/]"
+        entity_cell = f"{entity.kind} `[yellow]{short}[/]`"
+        missing = f"missing {rule.feature_value}"
+        conf_cell = f"[{conf_style}]{rule.confidence:.2f}[/]"
+        table.add_row(
+            dot,
+            loc,
+            entity_cell,
+            missing,
+            conf_cell,
+            gap.short_id,
+        )
+
     with _capturing_console() as (console, buf):
-        console.print(
-            f"[bold]GAPS[/]{'':<46}"
-            f"confidence ≥ {min_confidence:.2f}   {len(gaps)}"
-        )
-        console.print("")
-
-        for gap in gaps:
-            rule = rules[gap.rule_id]
-            entity = entities[gap.entity_id]
-            loc = f"{entity.file_path}:{entity.line}"
-            short = entity.qualified_name.split("::", 1)[-1]
-            kind_label = f"{entity.kind} `{short}`"
-            missing = f"missing {rule.feature_value}"
-            conf_style = _confidence_style(rule.confidence)
-            # Pad the plain text values BEFORE applying markup so column
-            # widths render correctly whether or not rich strips the
-            # codes (piped output gets plain padded text; TTY gets the
-            # same padded text plus color escapes around the parts we
-            # marked).
-            console.print(
-                f"  [cyan]{loc:<40s}[/] "
-                f"{entity.kind} `[yellow]{short}[/]`"
-                f"{' ' * max(0, 32 - len(kind_label))} "
-                f"[red]{missing:<32s}[/] "
-                f"[{conf_style}]{rule.confidence:.2f}[/]  "
-                f"[dim]{gap.short_id}[/]"
-            )
-
-        console.print("")
-        console.print(f"[dim]{'─' * 60}[/]")
-        console.print(
-            f"  [bold]{len(gaps)}[/] gaps  ·  [bold]{len(rules)}[/] rules"
-        )
-        console.print("")
-
+        console.print(table)
     return buf.getvalue()
 
 
