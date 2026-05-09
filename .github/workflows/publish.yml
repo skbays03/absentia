@@ -24,9 +24,18 @@ name: Publish to PyPI
 #   which re-runs mypyc locally — exercising that path on the
 #   install side. Choose target=testpypi (default) or target=pypi.
 #
-# Required secrets:
-#   PYPI_API_TOKEN       — scoped to the absentia project on PyPI.
-#   TEST_PYPI_API_TOKEN  — scoped to absentia on test.pypi.org.
+# Auth: OIDC Trusted Publishing (no long-lived API tokens stored in
+# repo secrets). Each registry must have a Trusted Publisher entry
+# pointing at this workflow:
+#
+#   PyPI:     https://pypi.org/manage/project/absentia/settings/publishing/
+#   TestPyPI: https://test.pypi.org/manage/project/absentia/settings/publishing/
+#
+# The publisher entry binds (repo owner, repo name, workflow filename,
+# optional environment) to a project. The job below mints an OIDC ID
+# token (via id-token: write), pypa/gh-action-pypi-publish exchanges
+# it for a short-lived PyPI upload token. Compromised repo → no
+# long-lived credential to leak.
 
 on:
   release:
@@ -41,6 +50,10 @@ on:
 
 permissions:
   contents: read
+  # OIDC id-token minting for PyPI Trusted Publishing. Job-level
+  # would also work; workflow-level keeps the surface uniform across
+  # every step in the publish job.
+  id-token: write
 
 jobs:
   publish:
@@ -79,12 +92,16 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
-          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          # No password / token — the action auto-detects OIDC when
+          # id-token write permission is granted and no credentials
+          # are passed. PyPI verifies the GitHub-issued token against
+          # the configured Trusted Publisher entry.
           skip-existing: true
 
       - name: Publish to PyPI
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi')
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          # OIDC Trusted Publishing — see the publish-to-TestPyPI step
+          # above for the auth model.
           skip-existing: true
