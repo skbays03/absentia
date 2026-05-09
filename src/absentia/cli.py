@@ -2446,7 +2446,7 @@ def _normalize_short(gap_id: str) -> str:
 
 # ── absentia report ─────────────────────────────────────────────────
 
-_BUG_REPORT_REPO = "Transcending-Binary/absentia"
+_BUG_REPORT_REPO = "skbays03/absentia"
 _TUI_LOG_PATH = Path.home() / ".absentia" / "tui.log"
 _RUNS_LOG_PATH = Path.home() / ".absentia" / "runs.jsonl"
 _BUG_REPORT_LOG_TAIL_LINES = 200
