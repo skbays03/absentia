@@ -57,7 +57,9 @@ from .typescript import TSXExtractor, TypeScriptExtractor
 #        added to PythonExtractor (commits c73c60b + 3f9f11e)
 #   v3 — has_post_init detector added to PythonExtractor for the
 #        config-validation gap (Item A on the gap-detector roadmap).
-EXTRACTOR_FINGERPRINT = "v3"
+#   v4 — module entity + has_all_export detector added to
+#        PythonExtractor for the __all__-export gap (Item B).
+EXTRACTOR_FINGERPRINT = "v4"
 
 
 _BUILTIN_EXTRACTORS: tuple[type[Extractor], ...] = (

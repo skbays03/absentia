@@ -47,9 +47,17 @@ def directory_groups(
     items: Iterable[tuple[Entity, FeatureSet]],
     *,
     min_members: int = 3,
-    kind_filter: tuple[str, ...] = ("function", "class"),
+    kind_filter: tuple[str, ...] = ("function", "class", "module"),
 ) -> list[Group]:
-    """Group entities by their immediate parent directory."""
+    """Group entities by their immediate parent directory.
+
+    ``module`` entities (one per Python file) are included by default
+    so module-scope mining (``has_all_export``) has groups to work on.
+    They're harmless to existing function/class mining — ``mine()``
+    filters group members by feature-kind eligibility, so a module
+    with no ``decorator`` feature isn't counted in ``decorator``
+    mining's denominator.
+    """
     by_dir: dict[str, list[str]] = defaultdict(list)
     for entity, _features in items:
         if entity.kind not in kind_filter:

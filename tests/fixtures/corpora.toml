@@ -16,16 +16,20 @@
 name = "absentia-self"
 path = "."           # always present (relative to repo root)
 language = "python"
-expected_gaps = 79        # 77 → 79; +2 from feature-set drift
-                          # introduced by the has_post_init mining
-                          # task (Item A — config-validation gap).
-                          # Zero of the new gaps are themselves
-                          # __post_init__ misses; absentia's own
-                          # classes don't follow that convention.
-expected_rules = 41       # 39 → 41; +2 rules tipped by the new
-                          # has_post_init feature kind.
-expected_entities = 1083  # 1078 → 1083; +5 from _post_init_marker +
-                          # three feature tests + one integration test.
+expected_gaps = 77        # 79 → 77; -2 from Item B. The new
+                          # module-entity-per-file pulls the
+                          # directory selector's group sizes up,
+                          # which slightly redistributes some
+                          # confidence rules. Two of Item A's
+                          # post_init-related gaps fell below the
+                          # 0.8 threshold once modules joined.
+expected_rules = 40       # 41 → 40; one rule tipped out for the
+                          # same reason as the gap drift above.
+expected_entities = 1175  # 1083 → 1175; +92 from the module entity
+                          # added per .py file in the project (Item B).
+                          # Roughly one per python source file +
+                          # test fixture; counts the 4 new feature
+                          # tests as well.
 optional = false
 
 [[corpus]]
@@ -38,7 +42,9 @@ expected_gaps = 241       # bumped from 240 alongside the
                           # additional gap that pre-salt cached
                           # entries had silently shadowed)
 expected_rules = 120
-expected_entities = 9197
+expected_entities = 9240  # 9197 → 9240; +43 module entities from
+                          # the Python files inside redis (build +
+                          # test scripts).
 optional = true
 
 [[corpus]]

@@ -53,8 +53,10 @@ def extract_python_entities(
     root: Node,
     file_path: str,
 ) -> Iterator[tuple[Entity, FeatureSet]]:
-    """Yield (entity, features) for top-level functions, classes, and the
-    methods inside those classes."""
+    """Yield (entity, features) for top-level functions, classes, the
+    methods inside those classes, plus a single ``module`` entity per
+    file carrying module-scope features (``has_all_export``)."""
+    yield _emit_module(root, file_path)
     for child in root.children:
         yield from _process_top_level(child, file_path)
 
@@ -75,6 +77,29 @@ def _process_top_level(
             if child.type == "class_definition":
                 yield from _emit_class(child, file_path, decorators)
                 return
+
+
+def _emit_module(
+    root: Node,
+    file_path: str,
+) -> tuple[Entity, FeatureSet]:
+    """One module entity per .py file. Carries module-scope features
+    that don't fit on any single function or class — currently just
+    ``has_all_export`` (whether the file declares ``__all__`` at
+    module scope). Mining over the directory selector treats the
+    module as just another group member; eligibility filtering in
+    mine() means modules don't pollute decorator/parent_class rules."""
+    return (
+        Entity(
+            kind="module",
+            qualified_name=f"{file_path}::__module__",
+            file_path=file_path,
+            line=1,
+        ),
+        FeatureSet(by_kind={
+            "has_all_export": _all_export_marker(root),
+        }),
+    )
 
 
 def _emit_function(
@@ -232,6 +257,29 @@ def _param_types_marker(fn_node: Node) -> frozenset[str]:
         # Non-parameter children: parens, commas, *args markers.
         # Skip silently.
     return frozenset({"param types"})
+
+
+def _all_export_marker(root: Node) -> frozenset[str]:
+    """Return ``frozenset({"__all__"})`` if the module declares
+    ``__all__`` at module scope, else ``frozenset()``. We accept any
+    assignment whose left-hand side is the bare identifier ``__all__``;
+    we don't validate the RHS shape (``[...]`` vs ``(...)`` vs
+    ``foo + bar``) — declaring it at all is the convention.
+    """
+    for child in root.children:
+        # Plain `__all__ = [...]` is an `expression_statement` whose
+        # only child is an `assignment`.
+        if child.type == "expression_statement":
+            for sub in child.children:
+                if sub.type == "assignment":
+                    target = sub.child_by_field_name("left")
+                    if (
+                        target is not None
+                        and target.type == "identifier"
+                        and target.text == b"__all__"
+                    ):
+                        return frozenset({"__all__"})
+    return frozenset()
 
 
 def _post_init_marker(class_node: Node) -> frozenset[str]:

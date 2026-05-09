@@ -87,6 +87,12 @@ def test_parse_one_python():
     src = b"def foo():\n    pass\n\ndef bar():\n    foo()\n"
     rel, items = parse_one(("example.py", src, "python"))
     assert rel == "example.py"
-    assert len(items) == 2
+    # Item B: every Python file emits a module entity in addition to
+    # its functions/classes/methods. Two functions + 1 module = 3.
+    assert len(items) == 3
     names = sorted(e.qualified_name for e, _ in items)
-    assert names == ["example.py::bar", "example.py::foo"]
+    assert names == [
+        "example.py::__module__",
+        "example.py::bar",
+        "example.py::foo",
+    ]
