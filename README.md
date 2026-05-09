@@ -62,13 +62,42 @@ one doesn't"* (a local pattern your team established without writing it down).
 
 ## Install
 
-Recommended — [`pipx`](https://pipx.pypa.io/) (installs absentia
-into an isolated environment, puts the `absentia` command on your
-PATH, won't pollute your system Python):
+Two recommended paths — pick whichever your toolchain already has.
+Both install absentia into an isolated environment and put the
+`absentia` command on your PATH.
+
+### `uv` (fastest, modern Astral toolchain)
+
+If you use [`uv`](https://docs.astral.sh/uv/):
+
+```bash
+uv tool install absentia
+```
+
+Equivalent of pipx but ~10–100× faster install. Pulls from the
+same PyPI. To use absentia as a *library* inside a project:
+
+```bash
+uv add absentia
+```
+
+If you don't have `uv` yet:
+
+| OS | Install uv |
+|---|---|
+| macOS / Linux / WSL | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| macOS via Homebrew | `brew install uv` |
+| Windows | `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 \| iex"` |
+| Anywhere via pip | `pip install --user uv` |
+
+### `pipx` (the long-standing standard)
 
 ```bash
 pipx install absentia
 ```
+
+Behaviorally identical to `uv tool install`; slightly slower but
+ships in most distro repos.
 
 If you don't have `pipx` yet:
 
@@ -80,16 +109,19 @@ If you don't have `pipx` yet:
 | Arch | `sudo pacman -S python-pipx && pipx ensurepath` |
 | Windows | `python -m pip install --user pipx && python -m pipx ensurepath` |
 
-After `pipx ensurepath`, open a new shell so the PATH update takes
-effect.
+After `pipx ensurepath` (or installing `uv`), open a new shell so
+the PATH update takes effect.
 
-### Plain `pip install` (for using absentia as a library)
+### Plain `pip install` (inside a venv)
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate     # PowerShell on Windows: .venv\Scripts\Activate.ps1
 pip install absentia
 ```
 
-On modern Debian / Ubuntu / WSL you'll see:
+Note: outside a venv, on modern Debian / Ubuntu / WSL / Fedora you'll
+get:
 
 ```
 error: externally-managed-environment
@@ -97,15 +129,10 @@ error: externally-managed-environment
 ```
 
 That's [PEP 668](https://peps.python.org/pep-0668/) — your distro's
-system Python is protected. The right answer for any CLI tool is
-`pipx` (above). If you specifically want to use absentia as a
-library inside a project, create a venv first:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate     # PowerShell on Windows: .venv\Scripts\Activate.ps1
-pip install absentia
-```
+system Python refuses to install packages directly. The right answer
+for any CLI tool is `uv tool install` or `pipx install` (above).
+For library use inside a project, the venv form above is the
+canonical workaround.
 
 ### Requirements
 
