@@ -11,6 +11,17 @@ Where ``<base>`` is either a custom path the user types in, or the
 default stored as ``default_export_path`` in
 ``~/.absentia/settings.json`` (set on first use).
 
+For HTML exports the user can opt into a localhost-serve preview
+mode after the file lands on disk. We bind a stdlib
+``http.server`` to a random port on 127.0.0.1, serve the export's
+parent directory as docroot, and open
+``http://127.0.0.1:<port>/<filename>`` in the user's default
+browser. The reason this exists: Safari's WebKit sandbox refuses
+``file://`` URLs by default ("outside the sandbox" error), but
+treats ``http://localhost:*`` as a regular web origin — same as
+any deployed site — so the sandbox doesn't apply. Same pattern
+Dev-Dashboard's markdown preview uses.
+
 Six formats ship today:
 
   1. Markdown      — review-friendly; pastes into PRs and issues.
@@ -732,7 +743,129 @@ def prompt_and_export(
         )
         return None
 
+    # The path is wrapped in rich's OSC 8 hyperlink markup so terminals
+    # that support OSC 8 (iTerm2, Terminal.app on Sequoia+, Warp, kitty,
+    # alacritty, recent VS Code / Cursor) make the cyan path cmd/ctrl-
+    # clickable to open via the user's default app. Plain terminals just
+    # see the path text — no escape-code clutter.
+    out_uri = out_path.as_uri()
     stdout_console.print(
-        f"\nExported to : [cyan]{out_path}[/]"
+        f"\nExported to : [link={out_uri}][cyan]{out_path}[/cyan][/link]"
     )
+
+    # HTML-specific affordance: offer to spin up a localhost preview
+    # server. Safari's WebKit sandbox refuses local file:// URLs by
+    # default ("outside the sandbox"), but treats http://localhost:*
+    # as a regular web origin — so serving the file via a transient
+    # local HTTP server bypasses the restriction entirely. Same
+    # pattern Dev-Dashboard's markdown preview uses.
+    if fmt_ext == "html":
+        ans = _read_choice(
+            "Preview in browser via localhost? [y/N]: ", default="n",
+        )
+        if ans.lower() in ("y", "yes"):
+            serve_and_open(out_path)
     return out_path
+
+
+# ── Localhost preview server ────────────────────────────────────
+
+
+def start_export_server(
+    file_path: Path, *, host: str = "127.0.0.1",
+) -> tuple[Any, str]:
+    """Bind a stdlib HTTP server to a random localhost port serving
+    the directory containing ``file_path``.
+
+    Returns ``(server, url)`` where ``server`` is the
+    ``socketserver.TCPServer`` (caller must drive its lifecycle)
+    and ``url`` is the http://… URL pointing at ``file_path``.
+
+    Factored out so tests can drive it without going through the
+    blocking ``serve_and_open`` user-facing entry point.
+    """
+    import http.server
+    import socketserver
+
+    serve_dir = str(file_path.parent)
+    fname = file_path.name
+
+    class _Handler(http.server.SimpleHTTPRequestHandler):
+        # Pin the docroot to the export's parent dir; suppress the
+        # default access-log spam so the user's terminal stays clean.
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, directory=serve_dir, **kwargs)
+
+        def log_message(
+            self, format: str, *args: Any,  # noqa: A002
+        ) -> None:
+            return None
+
+    server = socketserver.TCPServer((host, 0), _Handler)
+    port = server.server_address[1]
+    url = f"http://{host}:{port}/{fname}"
+    return server, url
+
+
+def serve_and_open(file_path: Path) -> None:
+    """User-facing: start a localhost server, open the URL in the
+    default browser, block on serve_forever until Ctrl-C.
+
+    Cleanly shuts down the server + closes the socket on
+    KeyboardInterrupt. Safe to call from any TTY context — does
+    not return until the user stops it. Intended for the post-
+    export "preview HTML" flow; called from prompt_and_export.
+    """
+    import webbrowser
+
+    if not file_path.exists():
+        stderr_console.print(
+            f"[red]Preview Failed![/] [dim]file not found: {file_path}[/]"
+        )
+        return
+
+    try:
+        server, url = start_export_server(file_path)
+    except OSError as exc:
+        # Port binding can fail in exotic sandboxes (e.g. some CI
+        # containers, restricted launchctl policies). Fall back to
+        # the file:// path so the user at least gets a working URL.
+        stderr_console.print(
+            f"[yellow]Couldn't bind localhost server:[/] [dim]{exc}[/]"
+        )
+        try:
+            webbrowser.open(file_path.as_uri())
+        except Exception as exc2:
+            stderr_console.print(
+                f"  [yellow]Couldn't auto-open:[/] [dim]{exc2}[/]"
+            )
+        return
+
+    stdout_console.print(
+        f"  Serving at [cyan][link={url}]{url}[/link][/cyan]"
+    )
+    stdout_console.print(
+        "  [dim]Safari-friendly — http://localhost is a regular web origin, "
+        "so the WebKit file:// sandbox doesn't apply.[/]"
+    )
+    stdout_console.print(
+        "  [dim]Press Ctrl-C to stop the server and exit absentia.[/]"
+    )
+
+    try:
+        webbrowser.open(url)
+    except Exception as exc:
+        stderr_console.print(
+            f"  [yellow]Couldn't launch browser:[/] [dim]{exc}[/]"
+        )
+        stdout_console.print(
+            "  [dim]Open the URL above manually.[/]"
+        )
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        stdout_console.print("\n  [dim]Server stopped.[/]")
+    finally:
+        server.shutdown()
+        server.server_close()

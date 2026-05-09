@@ -16,17 +16,16 @@
 name = "absentia-self"
 path = "."           # always present (relative to repo root)
 language = "python"
-expected_gaps = 63        # 59 → 63 with the explain→suppress chain
-                          # (action_request_suppress on ExplainScreen +
-                          # _explain_done callback on the main app).
-                          # +4 rules / +4 gaps from the new methods +
-                          # tests pushing several conformance percentages
-                          # back over min_confidence — verified that
-                          # nothing silently disappeared this round.
-expected_rules = 29       # 25 → 29; new rules surfaced by the shifted
-                          # support counts above
-expected_entities = 954   # 950 → 954; +4 from new methods on ExplainScreen
-                          # + the parent app's _explain_done
+expected_gaps = 63        # unchanged with the localhost preview server
+                          # (start_export_server + serve_and_open +
+                          # nested _Handler class + log_message
+                          # override). Gap and rule counts unchanged
+                          # because the new entities sit alongside
+                          # similarly-shaped existing functions —
+                          # confidence percentages don't tip.
+expected_rules = 29       # unchanged
+expected_entities = 960   # 954 → 960; +6 from the localhost preview
+                          # server functions and helpers
 optional = false
 
 [[corpus]]

@@ -354,3 +354,85 @@ def test_prompt_export_eof_during_prompt_aborts(sample_data, capsys):
     with patch("builtins.input", _raise):
         result = prompt_and_export(**sample_data)
     assert result is None
+
+
+# ── Localhost preview server ─────────────────────────────────────
+
+
+def test_start_export_server_serves_file_content(tmp_path):
+    """Spin up the server, fetch the file via HTTP, verify it
+    serves the on-disk contents and tear down cleanly."""
+    import threading
+    import urllib.request
+
+    from absentia.export import start_export_server
+
+    html = tmp_path / "gaps-2026-05-09T00-00-00.html"
+    html.write_text("<html><body><h1>hi</h1></body></html>", encoding="utf-8")
+
+    server, url = start_export_server(html)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with urllib.request.urlopen(url, timeout=2) as resp:
+            body = resp.read().decode("utf-8")
+            assert resp.status == 200
+        assert "<h1>hi</h1>" in body
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_start_export_server_uses_random_port(tmp_path):
+    """Two concurrent servers on the same file get different ports
+    (port=0 → kernel-assigned)."""
+    from absentia.export import start_export_server
+
+    html = tmp_path / "x.html"
+    html.write_text("<html></html>", encoding="utf-8")
+
+    server_a, url_a = start_export_server(html)
+    server_b, url_b = start_export_server(html)
+    try:
+        port_a = int(url_a.rsplit(":", 1)[1].split("/", 1)[0])
+        port_b = int(url_b.rsplit(":", 1)[1].split("/", 1)[0])
+        assert port_a != port_b
+        assert port_a > 0 and port_b > 0
+    finally:
+        server_a.server_close()
+        server_b.server_close()
+
+
+def test_start_export_server_only_binds_localhost(tmp_path):
+    """The server binds to 127.0.0.1 — never 0.0.0.0 — so the
+    preview can't be reached from another machine on the network."""
+    from absentia.export import start_export_server
+
+    html = tmp_path / "x.html"
+    html.write_text("<html></html>", encoding="utf-8")
+
+    server, url = start_export_server(html)
+    try:
+        assert url.startswith("http://127.0.0.1:")
+        assert server.server_address[0] == "127.0.0.1"
+    finally:
+        server.server_close()
+
+
+def test_serve_mode_skipped_for_non_html_formats(sample_data, tmp_path):
+    """Picking CSV / JSON / etc. must NOT trigger the serve prompt
+    — only HTML asks 'Preview in browser?'"""
+    inputs = iter([
+        "y",                    # export?
+        "5",                    # format = CSV
+        "1",                    # location = custom
+        str(tmp_path / "out"),  # custom path
+    ])
+    with patch("builtins.input", lambda _prompt="": next(inputs)):
+        result = prompt_and_export(**sample_data)
+
+    assert result is not None
+    assert result.suffix == ".csv"
+    # If a serve prompt had been shown, the inputs iterator would
+    # have raised StopIteration — passing means it wasn't.
