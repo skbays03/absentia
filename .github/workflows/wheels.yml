@@ -30,8 +30,13 @@ jobs:
             archs: x86_64
           - os: ubuntu-24.04-arm
             archs: aarch64
-          - os: macos-13          # x86_64 runner (Intel)
-            archs: x86_64
+          # macos-13 (Intel) intentionally omitted: Apple stopped
+          # selling Intel Macs in mid-2023, GitHub Actions is phasing
+          # macos-13 runners out, and the live runner pool is scarce
+          # enough that jobs frequently hang in the queue for 10+
+          # minutes waiting for pickup. Intel Mac users get the sdist
+          # fallback, which builds locally via mypyc (slower at install
+          # time but functionally identical).
           - os: macos-14          # arm64 runner (Apple Silicon)
             archs: arm64
           - os: windows-latest
