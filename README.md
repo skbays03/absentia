@@ -62,29 +62,66 @@ one doesn't"* (a local pattern your team established without writing it down).
 
 ## Install
 
-The engine isn't on PyPI yet (still pre-1.0). The `absentia` name *is*
-claimed on PyPI as a metadata-only placeholder — `pip install absentia`
-today resolves to v0.0.1 with no CLI, just the pitch — so install from
-the repo until the v1.0 cut:
+Recommended — [`pipx`](https://pipx.pypa.io/) (installs absentia
+into an isolated environment, puts the `absentia` command on your
+PATH, won't pollute your system Python):
+
+```bash
+pipx install absentia
+```
+
+If you don't have `pipx` yet:
+
+| OS | Install pipx |
+|---|---|
+| macOS | `brew install pipx && pipx ensurepath` |
+| Debian / Ubuntu / WSL | `sudo apt install pipx && pipx ensurepath` |
+| Fedora | `sudo dnf install pipx && pipx ensurepath` |
+| Arch | `sudo pacman -S python-pipx && pipx ensurepath` |
+| Windows | `python -m pip install --user pipx && python -m pipx ensurepath` |
+
+After `pipx ensurepath`, open a new shell so the PATH update takes
+effect.
+
+### Plain `pip install` (for using absentia as a library)
+
+```bash
+pip install absentia
+```
+
+On modern Debian / Ubuntu / WSL you'll see:
+
+```
+error: externally-managed-environment
+× This environment is externally managed
+```
+
+That's [PEP 668](https://peps.python.org/pep-0668/) — your distro's
+system Python is protected. The right answer for any CLI tool is
+`pipx` (above). If you specifically want to use absentia as a
+library inside a project, create a venv first:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate     # PowerShell on Windows: .venv\Scripts\Activate.ps1
+pip install absentia
+```
+
+### Requirements
+
+Python 3.13+. Cross-platform (macOS, Linux, Windows). Pre-built
+mypyc-compiled wheels for cp313 × {Linux x86_64, Linux aarch64,
+macOS arm64, Windows AMD64}; other platforms (including cp314
+and Intel Mac) install from sdist and compile via mypyc locally
+at install time — same end result, slower first install.
+
+### From source (development)
 
 ```bash
 git clone https://github.com/skbays03/absentia.git
 cd absentia
-pip install .                   # or `pip install -e .` for an editable install
+pip install -e ".[dev]"      # editable install + test deps
 ```
-
-Or with [pipx](https://pipx.pypa.io/) (recommended for CLI tools — installs into an isolated environment, puts `absentia` on your PATH):
-
-```bash
-git clone https://github.com/skbays03/absentia.git
-pipx install ./absentia
-```
-
-Requires Python 3.13+. Cross-platform (macOS, Linux, Windows).
-On Windows, the same `pip install .` / `pipx install ./absentia`
-commands work in PowerShell or `cmd`; if you want a venv first,
-activate it with `.venv\Scripts\activate` instead of the
-POSIX `source .venv/bin/activate`.
 
 ## Quickstart
 
