@@ -361,6 +361,107 @@ class LoadingScreen(ModalScreen[None]):
             pass
 
 
+# Per-language palette mapped to rich color names for use inside
+# Textual widgets (the engine's _color._LANG_COLORS uses raw ANSI
+# escapes for the stderr progress UI; not portable to rich markup).
+# Keep the language→hue assignments in sync with _color.py so the
+# CLI parse bar's per-worker colors match the TUI table's per-row
+# colors for the same file.
+_TUI_LANG_COLORS: dict[str, str] = {
+    "python":     "bright_blue",
+    "javascript": "bright_yellow",
+    "typescript": "blue",
+    "tsx":        "blue",
+    "rust":       "bright_red",
+    "go":         "bright_cyan",
+    "java":       "red",
+    "ruby":       "red",
+    "csharp":     "bright_magenta",
+    "c":          "bright_white",
+    "cpp":        "bright_white",
+    "php":        "magenta",
+    "kotlin":     "magenta",
+    "scala":      "bright_magenta",
+    "lua":        "blue",
+    "bash":       "green",
+    "swift":      "bright_yellow",
+}
+
+# File extension → language tag. Mirrors the extractor entry-point
+# group's coverage; unknown suffixes fall back to no special color
+# (cyan via TableColumn default). Kept here rather than imported
+# from extractors/ so the TUI doesn't pay an extractor-discovery
+# tax just to color a file path.
+_EXT_TO_LANG: dict[str, str] = {
+    ".py":   "python",
+    ".js":   "javascript", ".mjs":  "javascript", ".cjs":  "javascript",
+    ".ts":   "typescript",
+    ".tsx":  "tsx",
+    ".rs":   "rust",
+    ".go":   "go",
+    ".java": "java",
+    ".rb":   "ruby",
+    ".cs":   "csharp",
+    ".c":    "c", ".h": "c",
+    ".cpp":  "cpp", ".cc": "cpp", ".cxx": "cpp", ".hpp": "cpp", ".hh": "cpp",
+    ".php":  "php",
+    ".kt":   "kotlin", ".kts": "kotlin",
+    ".scala": "scala",
+    ".lua":  "lua",
+    ".sh":   "bash", ".bash": "bash",
+    ".swift": "swift",
+}
+
+
+def _lang_color_for_path(file_path: str) -> str:
+    """Pick a rich color name for a file path's extension. Returns
+    ``"cyan"`` (the table-default location style) for unknown."""
+    from os.path import splitext
+    ext = splitext(file_path)[1].lower()
+    lang = _EXT_TO_LANG.get(ext)
+    if lang is None:
+        return "cyan"
+    return _TUI_LANG_COLORS.get(lang, "cyan")
+
+
+def _confidence_glyph_style(confidence: float) -> str:
+    """Severity dot color matching output._confidence_style.
+
+    bright_green ≥ 0.95, green ≥ 0.80, yellow below.
+    """
+    if confidence >= 0.95:
+        return "bright_green"
+    if confidence >= 0.80:
+        return "green"
+    return "yellow"
+
+
+def _highlight_match(content: str, query: str) -> str:
+    """Wrap case-insensitive matches of ``query`` in ``content`` with
+    ``[reverse yellow]…[/]`` markup so the substring that matched the
+    filter is visible at a glance.
+
+    Empty query returns content unchanged. Preserves the original
+    casing of the matched substring; only the case of the query is
+    folded for the comparison.
+    """
+    if not query:
+        return content
+    lower = content.lower()
+    q = query.lower()
+    out: list[str] = []
+    i = 0
+    while i < len(content):
+        idx = lower.find(q, i)
+        if idx < 0:
+            out.append(content[i:])
+            break
+        out.append(content[i:idx])
+        out.append(f"[reverse yellow]{content[idx:idx + len(q)]}[/]")
+        i = idx + len(q)
+    return "".join(out)
+
+
 class ExportFormatScreen(ModalScreen[int | None]):
     """Pick a post-scan export format from inside the TUI.
 
@@ -414,6 +515,107 @@ class ExportFormatScreen(ModalScreen[int | None]):
     def action_pick_4(self) -> None: self.dismiss(4)
     def action_pick_5(self) -> None: self.dismiss(5)
     def action_pick_6(self) -> None: self.dismiss(6)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class ExportLocationScreen(ModalScreen[str | None]):
+    """Pick custom-path vs default-path for the TUI export flow.
+
+    Returns ``"custom"``, ``"default"``, or ``None`` on Esc/q.
+    Mirrors the CLI's post-export Location prompt so the
+    behavior + keystrokes transfer between surfaces.
+    """
+
+    DEFAULT_CSS = """
+    ExportLocationScreen { align: center middle; }
+    #export_loc_dialog {
+        width: 50; height: 9;
+        background: $surface;
+        border: thick $primary;
+        padding: 1 2;
+    }
+    """
+
+    BINDINGS = [
+        Binding("1", "pick_custom", "Custom"),
+        Binding("2", "pick_default", "Default"),
+        Binding("escape", "cancel", "Cancel"),
+        Binding("q", "cancel", "Cancel"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="export_loc_dialog"):
+            yield Label("[b]Export location[/]")
+            yield Static(
+                "\n  [b]1[/]) Custom path\n"
+                "  [b]2[/]) Default path  [dim](from settings)[/]\n\n"
+                "  [dim]Esc / q to cancel[/]"
+            )
+
+    def action_pick_custom(self) -> None: self.dismiss("custom")
+    def action_pick_default(self) -> None: self.dismiss("default")
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class ExportPathInputScreen(ModalScreen[str | None]):
+    """Text-input modal for typing an export base path.
+
+    Used in two contexts — collecting a one-off custom path, or
+    setting the default for the first time. The ``prompt`` arg
+    distinguishes the two so the user knows which one they're
+    answering. Returns the typed string (caller resolves ~ and
+    relative paths) or ``None`` on Esc / empty submit.
+    """
+
+    DEFAULT_CSS = """
+    ExportPathInputScreen { align: center middle; }
+    #export_path_dialog {
+        width: 80; height: 12;
+        background: $surface;
+        border: thick $primary;
+        padding: 1 2;
+    }
+    #export_path_dialog Label { margin-bottom: 1; }
+    /* Make the textbox visually obvious — a bordered, taller field
+       so the user sees their typed characters land somewhere
+       distinct from the surrounding labels. */
+    #path_input {
+        border: solid $accent;
+        background: $boost;
+        height: 3;
+    }
+    """
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, prompt: str, initial: str = "") -> None:
+        super().__init__()
+        self._prompt = prompt
+        self._initial = initial
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="export_path_dialog"):
+            yield Label(self._prompt)
+            yield Label(
+                "[dim]Enter saves · Esc cancels · ~/ and absolute "
+                "paths supported[/]"
+            )
+            yield Input(
+                value=self._initial,
+                placeholder="e.g. ~/exports or /tmp/absentia",
+                id="path_input",
+            )
+
+    def on_mount(self) -> None:
+        self.query_one("#path_input", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        value = event.value.strip()
+        self.dismiss(value or None)
 
     def action_cancel(self) -> None:
         self.dismiss(None)
@@ -602,6 +804,11 @@ class AbsentiaApp(App[None]):
         self._nav_stack: list[tuple[str, str]] = []
         from textual.timer import Timer
         self._watch_timer: Timer | None = None
+        # Stashes the (menu_id, name, ext, fn_name) tuple while the
+        # x-export flow walks through Format → Location → Path
+        # modals; cleared when the chain finishes (success, cancel,
+        # or write failure).
+        self._pending_export_fmt: tuple[int, str, str, str] | None = None
 
     # ── Layout ────────────────────────────────────────────────────────
 
@@ -843,29 +1050,95 @@ class AbsentiaApp(App[None]):
         return out
 
     def _render_gaps_table(self, table: DataTable) -> None:
-        table.add_columns("Location", "Entity", "Missing", "Conf", "ID")
+        from rich.text import Text
+
+        table.add_columns(
+            "●", "Location", "Entity", "Missing", "Conf", "ID",
+        )
         gaps = self._filtered_gaps()
+        flt = self._filter.get("gaps", "")
         for gap in gaps:
             rule = self._rules_by_id[gap.rule_id]
             entity = self._entities[gap.entity_id]
-            loc = f"{entity.file_path}:{entity.line}"
             short = entity.qualified_name.split("::", 1)[-1]
+
+            # Severity dot — color encodes confidence at a glance,
+            # matching the CLI table's leftmost column.
+            dot_style = _confidence_glyph_style(rule.confidence)
+            dot = Text("●", style=dot_style)
+
+            # Location: file path colored by language, line number
+            # in dim. Filter matches highlighted in reverse-yellow.
+            lang_color = _lang_color_for_path(entity.file_path)
+            loc_markup = (
+                f"[{lang_color}]{_highlight_match(entity.file_path, flt)}[/]"
+                f"[dim]:{entity.line}[/]"
+            )
+            location = Text.from_markup(loc_markup)
+
+            entity_markup = (
+                f"{_highlight_match(entity.kind, flt)} "
+                f"`[yellow]{_highlight_match(short, flt)}[/]`"
+            )
+            entity_cell = Text.from_markup(entity_markup)
+
+            missing_markup = (
+                f"missing "
+                f"[red]{_highlight_match(rule.feature_value, flt)}[/]"
+            )
+            missing_cell = Text.from_markup(missing_markup)
+
+            conf_cell = Text(
+                f"{rule.confidence:.2f}", style=dot_style,
+            )
+            id_cell = Text.from_markup(
+                f"[dim]{_highlight_match(gap.short_id, flt)}[/]"
+            )
+
             table.add_row(
-                loc,
-                f"{entity.kind} `{short}`",
-                f"missing {rule.feature_value}",
-                f"{rule.confidence:.2f}",
-                gap.short_id,
+                dot, location, entity_cell, missing_cell,
+                conf_cell, id_cell,
                 key=gap.short_id,
             )
+
         if gaps:
             self._render_gap_detail(gaps[0])
-        else:
+        elif self._gaps:
+            # There ARE gaps but the filter excluded them all.
             self._set_detail(
-                "[b green]No gaps to show.[/]\n\n"
-                "Either  absentia found nothing wrong, every divergence has "
-                "been suppressed, or your filter excludes them all. "
-                "[b]/[/] to change the filter, [b]Ctrl+R[/] to rescan."
+                f"[b]No gaps match the filter[/] [yellow]/{flt}[/].\n\n"
+                f"[dim]/[/] to change the filter (Esc inside the input "
+                f"clears it), [dim]Ctrl+R[/] to rescan."
+            )
+        elif self._scan_stats:
+            # Successful scan with zero gaps — celebrate + show what
+            # absentia did so the user knows it actually ran.
+            stats = self._scan_stats
+            ent = stats.get("entities_scanned", 0)
+            rules = stats.get("rules", 0)
+            sup = stats.get("suppressed", 0)
+            dur = (stats.get("duration_ms", 0) or 0) / 1000
+            sup_line = (
+                f"\n[dim]({sup:,d} divergence{'s' if sup != 1 else ''} "
+                f"suppressed via [b]s[/].)[/]"
+            ) if sup else ""
+            self._set_detail(
+                f"[bright_green b]✓ All clean.[/]\n\n"
+                f"absentia scanned [b]{ent:,d}[/] entities and learned "
+                f"[b]{rules:,d}[/] convention{'s' if rules != 1 else ''} "
+                f"in [b]{dur:.2f}s[/] — every entity follows the patterns "
+                f"its peers do."
+                f"{sup_line}\n\n"
+                f"[dim]Ctrl+R to rescan · w to watch · q to quit · "
+                f"x to export[/]"
+            )
+        else:
+            # Initial render before scan completes — shouldn't happen
+            # in practice (LoadingScreen covers the table), but a
+            # defensive fallback prevents an empty pane if something
+            # races.
+            self._set_detail(
+                "[dim]Waiting for scan results…[/]"
             )
 
     # ── Rules view ────────────────────────────────────────────────────
@@ -1315,37 +1588,158 @@ class AbsentiaApp(App[None]):
         self.push_screen(ExportFormatScreen(), self._on_export_format_chosen)
 
     def _on_export_format_chosen(self, fmt_idx: int | None) -> None:
-        """Receive the format choice from ExportFormatScreen and write."""
+        """Format picked → push the location chooser.
+
+        Stashes the format tuple on ``self._pending_export_fmt``
+        so the location-screen callback can find it without
+        re-deriving from ``fmt_idx``.
+        """
         if fmt_idx is None:
             return
         from .. import export as exp_mod
-        from ..settings import load_settings
 
         fmt = next(
             (f for f in exp_mod._FORMATS if f[0] == fmt_idx), None,
         )
         if fmt is None:
-            self.notify(
-                "Unknown format choice.", severity="error",
+            self.notify("Unknown format choice.", severity="error")
+            return
+        self._pending_export_fmt = fmt
+        self.push_screen(
+            ExportLocationScreen(),
+            self._on_export_location_chosen,
+        )
+
+    def _on_export_location_chosen(self, choice: str | None) -> None:
+        """Location picked → either write straight to the saved
+        default, or push the path-input screen for a custom value /
+        first-time default setup."""
+        fmt = self._pending_export_fmt
+        if choice is None or fmt is None:
+            self._pending_export_fmt = None
+            return
+
+        if choice == "custom":
+            self.push_screen(
+                ExportPathInputScreen(prompt="Custom base path:"),
+                self._on_export_custom_path,
             )
             return
-        _, fmt_name, fmt_ext, fmt_fn_name = fmt
 
+        # choice == "default"
+        from ..settings import load_settings
         settings = load_settings()
-        if settings.default_export_path is None:
-            self.notify(
-                "No default export path set. Run `absentia check` once "
-                "from the CLI and pick option 2 to set one, then come "
-                "back here.",
-                severity="warning",
-                timeout=10,
-            )
+        if settings.default_export_path is not None:
+            base = Path(
+                settings.default_export_path,
+            ).expanduser().resolve()
+            self._do_export_write(base, fmt)
             return
 
-        base = Path(settings.default_export_path).expanduser().resolve()
-        corpus_name = self.root.name or "scan"
-        out_path = exp_mod.build_export_path(base, corpus_name, fmt_ext)
+        # No default yet — prompt to set one + remember it.
+        self.push_screen(
+            ExportPathInputScreen(
+                prompt="No default set yet — base path to remember:",
+            ),
+            self._on_export_set_default,
+        )
 
+    def _validate_path(self, raw: str) -> Path | None:
+        """Resolve ``~`` and relative-path syntax safely.
+
+        Returns the absolute Path on success, ``None`` after
+        notifying the user about the specific failure (so the
+        caller knows to re-prompt rather than silently swallow).
+        Catches the full set of exceptions ``Path.expanduser`` /
+        ``Path.resolve`` can raise (RuntimeError on broken
+        ``$HOME`` resolution, OSError on path-too-long /
+        permission, ValueError on null bytes, etc.).
+        """
+        try:
+            return Path(raw).expanduser().resolve()
+        except (OSError, RuntimeError, ValueError) as exc:
+            self.notify(
+                f"Invalid path: {exc}",
+                severity="warning", timeout=8,
+            )
+            return None
+
+    def _on_export_custom_path(self, raw: str | None) -> None:
+        """One-off custom path; not saved to settings.
+
+        Re-prompts on invalid input so the user can correct without
+        starting the format/location flow over from scratch.
+        """
+        fmt = self._pending_export_fmt
+        if raw is None or fmt is None:
+            self._pending_export_fmt = None
+            return
+        base = self._validate_path(raw)
+        if base is None:
+            self.push_screen(
+                ExportPathInputScreen(
+                    prompt="Custom base path (try again):",
+                    initial=raw,
+                ),
+                self._on_export_custom_path,
+            )
+            return
+        self._do_export_write(base, fmt)
+
+    def _on_export_set_default(self, raw: str | None) -> None:
+        """First-time default-path set: persist to settings.json
+        before writing the export. Subsequent picks of the
+        default-path option go through the no-prompt fast path.
+
+        Re-prompts on invalid input. Settings are only written
+        AFTER validation succeeds so a bad path can't poison the
+        saved default.
+        """
+        fmt = self._pending_export_fmt
+        if raw is None or fmt is None:
+            self._pending_export_fmt = None
+            return
+        base = self._validate_path(raw)
+        if base is None:
+            self.push_screen(
+                ExportPathInputScreen(
+                    prompt="Base path to remember (try again):",
+                    initial=raw,
+                ),
+                self._on_export_set_default,
+            )
+            return
+        from dataclasses import replace
+        from ..settings import load_settings, save_settings
+        settings = load_settings()
+        try:
+            save_settings(
+                replace(settings, default_export_path=str(base)),
+            )
+        except OSError as exc:
+            self.notify(
+                f"Couldn't save default path: {exc}",
+                severity="warning", timeout=8,
+            )
+        else:
+            self.notify(
+                f"Saved {base} as default export path", timeout=6,
+            )
+        self._do_export_write(base, fmt)
+
+    def _do_export_write(
+        self, base: Path, fmt: tuple,
+    ) -> None:
+        """Render the export and write to disk under
+        ``<base>/docs/absentia/<corpus>/gaps-<UTC-ts>.<ext>``,
+        notifying the user of the result either way."""
+        from .. import export as exp_mod
+
+        _menu_id, fmt_name, fmt_ext, fmt_fn_name = fmt
+        corpus_name = self.root.name or "scan"
+        out_path = exp_mod.build_export_path(
+            base, corpus_name, fmt_ext,
+        )
         try:
             renderer = getattr(exp_mod, fmt_fn_name)
             body = renderer(
@@ -1361,11 +1755,12 @@ class AbsentiaApp(App[None]):
             self.notify(
                 f"Export failed: {exc}", severity="error", timeout=8,
             )
+            self._pending_export_fmt = None
             return
-
         self.notify(
             f"Exported {fmt_name} to {out_path}", timeout=10,
         )
+        self._pending_export_fmt = None
 
     def action_open_in_editor(self) -> None:
         if self._view == "gaps":

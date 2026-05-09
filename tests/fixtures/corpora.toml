@@ -16,18 +16,20 @@
 name = "absentia-self"
 path = "."           # always present (relative to repo root)
 language = "python"
-expected_gaps = 64        # 63 → 64 with Phase 2 of the modernization
-                          # pass (TUI loading screen + worker-based
-                          # _do_scan + per-stage callbacks + the new
-                          # `x`-key export). 24 new entities —
-                          # LoadingScreen + ExportFormatScreen with
-                          # six action_pick_N methods + scan_corpus's
-                          # _stage helper + _on_export_format_chosen
-                          # + _scan_done / _scan_failed split — and
-                          # one rule's support count tipped one extra
-                          # gap into existence.
-expected_rules = 29       # unchanged
-expected_entities = 984   # 960 → 984; +24 from Phase 2's TUI work
+expected_gaps = 71        # 64 → 71 with Phase 3 polish + the TUI
+                          # export location/path chooser:
+                          # ExportLocationScreen +
+                          # ExportPathInputScreen + path-validation
+                          # helper + reprompt callbacks + the
+                          # confidence/lang-color/highlight helpers
+                          # (_lang_color_for_path,
+                          # _confidence_glyph_style,
+                          # _highlight_match) — 21 new entities,
+                          # which tipped 7 conformance percentages
+                          # back over min_confidence and surfaced 7
+                          # new gaps (one per new rule).
+expected_rules = 36       # 29 → 36
+expected_entities = 1005  # 984 → 1005; +21 from Phase 3 work
 optional = false
 
 [[corpus]]

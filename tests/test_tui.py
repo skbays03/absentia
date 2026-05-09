@@ -270,14 +270,16 @@ async def test_tui_explain_chains_into_suppress(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_tui_export_writes_file_to_default_path(tmp_path):
-    """Pressing `x` then a format key writes a real file under the
-    saved default_export_path. Validates the new TUI export flow
-    end-to-end."""
+async def test_tui_export_default_path_writes_file(tmp_path):
+    """Full TUI export flow with a saved default path:
+       x → 1 (Markdown) → 2 (Default) → file written, no extra prompt.
+    """
     from unittest.mock import patch
 
     from absentia.settings import Settings, save_settings
-    from absentia.tui.app import ExportFormatScreen
+    from absentia.tui.app import (
+        ExportFormatScreen, ExportLocationScreen,
+    )
 
     _write_corpus(tmp_path)
     export_base = tmp_path / "exports"
@@ -296,29 +298,77 @@ async def test_tui_export_writes_file_to_default_path(tmp_path):
             await pilot.pause()
             assert isinstance(app.screen, ExportFormatScreen)
 
-            # 1 = Markdown
-            await pilot.press("1")
+            await pilot.press("1")  # Markdown
+            await pilot.pause()
+            assert isinstance(app.screen, ExportLocationScreen)
+
+            await pilot.press("2")  # Default — no further prompt
             await pilot.pause()
 
-    # File should exist under <export_base>/docs/absentia/<corpus>/
     corpus_dir = export_base / "docs" / "absentia" / tmp_path.name
     md_files = list(corpus_dir.glob("gaps-*.md"))
     assert len(md_files) == 1
     body = md_files[0].read_text()
     assert "# absentia check" in body
-    assert "@audit" in body  # the demo gap is "missing @audit"
+    assert "@audit" in body
 
 
 @pytest.mark.asyncio
-async def test_tui_export_warns_when_no_default_path(tmp_path):
-    """Without a saved default_export_path, the export action must
-    notify the user instead of silently failing."""
+async def test_tui_export_custom_path_writes_file(tmp_path):
+    """Custom-path branch: x → 4 (JSON) → 1 (Custom) → typed path → file."""
     from unittest.mock import patch
 
-    from absentia.tui.app import ExportFormatScreen
+    from absentia.tui.app import (
+        ExportFormatScreen, ExportLocationScreen, ExportPathInputScreen,
+    )
 
     _write_corpus(tmp_path)
+    custom_base = tmp_path / "one-off"
     settings_file = tmp_path / "settings.json"  # never written
+
+    app = AbsentiaApp(root=tmp_path, config=Config())
+    with patch("absentia.settings.settings_path", return_value=settings_file):
+        async with app.run_test() as pilot:
+            await _wait_for_scan(app, pilot)
+
+            await pilot.press("x")
+            await pilot.pause()
+            assert isinstance(app.screen, ExportFormatScreen)
+
+            await pilot.press("4")  # JSON
+            await pilot.pause()
+            assert isinstance(app.screen, ExportLocationScreen)
+
+            await pilot.press("1")  # Custom
+            await pilot.pause()
+            assert isinstance(app.screen, ExportPathInputScreen)
+
+            await pilot.press(*str(custom_base))
+            await pilot.press("enter")
+            await pilot.pause()
+
+    corpus_dir = custom_base / "docs" / "absentia" / tmp_path.name
+    json_files = list(corpus_dir.glob("gaps-*.json"))
+    assert len(json_files) == 1
+    # No default written, since this was a custom one-off.
+    assert not settings_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_tui_export_invalid_path_reprompts(tmp_path):
+    """Typing a path expanduser() rejects (e.g. '~~/foo' → RuntimeError
+    'Could not determine home directory') must NOT crash the TUI —
+    instead notify + re-push the input screen with the bad value
+    pre-filled so the user can fix it."""
+    from unittest.mock import patch
+
+    from absentia.tui.app import (
+        ExportFormatScreen, ExportLocationScreen, ExportPathInputScreen,
+    )
+
+    _write_corpus(tmp_path)
+    settings_file = tmp_path / "settings.json"
+    valid_base = tmp_path / "second-try"
 
     app = AbsentiaApp(root=tmp_path, config=Config())
     notifications: list[tuple] = []
@@ -335,11 +385,84 @@ async def test_tui_export_warns_when_no_default_path(tmp_path):
             await pilot.press("x")
             await pilot.pause()
             assert isinstance(app.screen, ExportFormatScreen)
-            await pilot.press("1")  # markdown
+            await pilot.press("1")  # Markdown
+            await pilot.pause()
+            assert isinstance(app.screen, ExportLocationScreen)
+            await pilot.press("1")  # Custom
+            await pilot.pause()
+            assert isinstance(app.screen, ExportPathInputScreen)
+
+            # First attempt: invalid path. The double-tilde form
+            # raises RuntimeError from Path.expanduser when $HOME
+            # resolution fails — same shape as the user's reported
+            # crash.
+            await pilot.press(*"~~/Desktop")
+            await pilot.press("enter")
             await pilot.pause()
 
-    msgs = " ".join(args[0] for args, _kw in notifications)
-    assert "default export path" in msgs.lower()
+            # Should have notified + re-pushed the input screen
+            # (NOT crashed, NOT silently exported nothing).
+            assert isinstance(app.screen, ExportPathInputScreen)
+            msgs = " ".join(str(args[0]) for args, _kw in notifications)
+            assert "invalid path" in msgs.lower()
+
+            # Second attempt: valid path. Type into the (already
+            # focused) input. Need to clear the pre-filled value
+            # first — Textual's Input doesn't auto-select on focus.
+            input_widget = app.screen.query_one("#path_input")
+            input_widget.value = str(valid_base)
+            await pilot.press("enter")
+            await pilot.pause()
+
+    md_files = list(
+        (valid_base / "docs" / "absentia" / tmp_path.name).glob("gaps-*.md")
+    )
+    assert len(md_files) == 1
+
+
+@pytest.mark.asyncio
+async def test_tui_export_default_first_use_saves_to_settings(tmp_path):
+    """No default set yet → choosing 'default' prompts for one →
+    saves to settings.json and uses it for this write."""
+    from unittest.mock import patch
+
+    from absentia.settings import load_settings
+    from absentia.tui.app import (
+        ExportFormatScreen, ExportLocationScreen, ExportPathInputScreen,
+    )
+
+    _write_corpus(tmp_path)
+    new_default = tmp_path / "new-default"
+    settings_file = tmp_path / "settings.json"  # starts unset
+
+    app = AbsentiaApp(root=tmp_path, config=Config())
+    with patch("absentia.settings.settings_path", return_value=settings_file):
+        async with app.run_test() as pilot:
+            await _wait_for_scan(app, pilot)
+
+            await pilot.press("x")
+            await pilot.pause()
+            assert isinstance(app.screen, ExportFormatScreen)
+
+            await pilot.press("5")  # CSV
+            await pilot.pause()
+            assert isinstance(app.screen, ExportLocationScreen)
+
+            await pilot.press("2")  # Default (none set yet)
+            await pilot.pause()
+            assert isinstance(app.screen, ExportPathInputScreen)
+
+            await pilot.press(*str(new_default))
+            await pilot.press("enter")
+            await pilot.pause()
+
+        saved = load_settings(settings_file)
+        assert saved.default_export_path == str(new_default.resolve())
+
+    csv_files = list(
+        (new_default / "docs" / "absentia" / tmp_path.name).glob("gaps-*.csv")
+    )
+    assert len(csv_files) == 1
 
 
 @pytest.mark.asyncio
