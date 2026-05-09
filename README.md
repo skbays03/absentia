@@ -192,10 +192,10 @@ for the algorithm-deep walkthrough.
 ## Performance
 
 absentia scans the entire Linux kernel — 65,004 files / 686,923 entities
-across ~30 million lines of C — in **~28 seconds warm / ~50 seconds
+across ~30 million lines of C — in **~24 seconds warm / ~48 seconds
 cold** at default jobs on a 10-core M-series MacBook. Warm breakdown:
-parse ~8 s (cache hits) + mine ~14 s + store ~3 s. Cold breakdown:
-parse ~27 s + mine ~14 s + store ~2 s. Single-process baseline ~95 s
+parse ~8 s (cache hits) + mine ~12 s + store ~2 s. Cold breakdown:
+parse ~31 s + mine ~12 s + store ~3 s. Single-process baseline ~95 s
 cold. Most projects on this scale rarely apply — typical real-world
 codebases scan in seconds (and warm-rescan a small edited subset in
 fractions).
@@ -203,8 +203,8 @@ fractions).
 The mining stage is the headline optimization story: a name-indexed
 ``find_symmetry_gaps`` (no more O(P×N) per-pair-per-entity scan) plus
 mypyc-compiled ``mining.py`` and ``symmetry.py`` together cut
-mining-stage wall-clock on the kernel from ~5 minutes to ~14 seconds
-— a **~23× speedup**, gap counts byte-identical to the pre-
+mining-stage wall-clock on the kernel from ~5 minutes to ~12 seconds
+— a **~25× speedup**, gap counts byte-identical to the pre-
 optimization baseline.
 
 If you're running on a free-threaded Python (3.13t / 3.14t), the

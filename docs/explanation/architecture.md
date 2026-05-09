@@ -119,12 +119,12 @@ M-series MacBook):
 
 | Mode | End-to-end at default jobs (5) | Single-process (--jobs 1) |
 |---|---:|---:|
-| **Warm** (cache primed, 0 files changed) | ~28 s | ~26 s |
-| **Cold** (cache empty, full re-parse) | ~50 s | ~95 s |
+| **Warm** (cache primed, 0 files changed) | ~24 s | ~26 s |
+| **Cold** (cache empty, full re-parse) | ~48 s | ~95 s |
 
-Warm-scan stage breakdown: parse ~8 s (cache hits) + mine ~14 s +
-store ~3 s + finalize ~0 s.
-Cold-scan stage breakdown: parse ~27 s + mine ~14 s + store ~2 s
+Warm-scan stage breakdown: parse ~8 s (cache hits) + mine ~12 s +
+store ~2 s + finalize ~0 s.
+Cold-scan stage breakdown: parse ~31 s + mine ~12 s + store ~3 s
 + finalize ~0 s.
 
 A warm rescan with a small edited subset (typical edit-test loop)
@@ -137,12 +137,12 @@ kernel — because ``find_symmetry_gaps`` was scanning every entity
 once per pair (O(P×N) per-pair-per-entity work). Replacing that
 with a per-scope ``{name → [entities]}`` index, plus mypyc
 compilation of ``mining.py`` and ``symmetry.py`` to native C
-extensions, cut mining wall-clock to ~14 seconds on the same
-corpus — a ~23× speedup, gap counts byte-identical to the pre-
+extensions, cut mining wall-clock to ~12 seconds on the same
+corpus — a ~25× speedup, gap counts byte-identical to the pre-
 optimization baseline. See the *Mining stage* subsection below for
 the architecture seam this exploits.
 
-> *Numbers above measured 2026-05-07 on commit `a48c4c7` against
+> *Numbers above measured 2026-05-09 on commit `371a936` against
 > a clean Linux kernel checkout. To know what your hardware does,
 > run* `absentia est` *— it walks the corpus, applies a calibrated
 > cost model, and prints a per-jobs estimate before you scan.*
@@ -160,7 +160,8 @@ roughly **400–11,000 entities/sec**, median ~5,000, with the
 spread driven by per-language extractor cost (deeper AST = more
 nodes to walk) and by per-corpus overhead (small corpora skew
 lower because cold-start fixed costs dominate). On the kernel
-case study at jobs=1: 686,923 entities ÷ 93.6 s = ~7,300 ent/s.
+case study at jobs=1: 686,923 entities ÷ 95 s = ~7,200 ent/s; at
+default jobs (5) the same corpus reaches ~14,400 ent/s cold.
 The relationship is roughly linear in entity count — there's no
 quadratic term that would make a "10× larger corpus" cost
 asymptotically more.
