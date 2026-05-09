@@ -392,9 +392,23 @@ echo "  Committing release..."
 git add "$PYPROJECT"
 git add "$CHANGELOG" 2>/dev/null || true
 
-if ! git commit $VERIFY_FLAG -m "release: v$NEW_VERSION ($BUMP_TYPE)"; then
+# Pull the author identity from git config so the commit-msg hook's
+# Authored-by trailer requirement is satisfied automatically. Falls
+# back to a generic placeholder only if git config isn't readable;
+# the hook accepts any "Name <email>" shape.
+RELEASE_AUTHOR_NAME=$(git config user.name 2>/dev/null || echo "release.sh")
+RELEASE_AUTHOR_EMAIL=$(git config user.email 2>/dev/null || echo "release@local")
+
+RELEASE_COMMIT_MSG=$(printf 'release: v%s (%s)\n\nAuthored-by: %s <%s>\n' \
+    "$NEW_VERSION" "$BUMP_TYPE" \
+    "$RELEASE_AUTHOR_NAME" "$RELEASE_AUTHOR_EMAIL")
+
+if ! git commit $VERIFY_FLAG -m "$RELEASE_COMMIT_MSG"; then
     echo ""
     echo -e "  ${RED}✗ Commit failed — rolling back file changes${NC}" >&2
+    # Hook rejection leaves files staged but uncommitted; unstage
+    # them before discarding so the working tree returns to clean.
+    git reset HEAD "$PYPROJECT" "$CHANGELOG" 2>/dev/null || true
     git checkout -- "$PYPROJECT" "$CHANGELOG" 2>/dev/null || true
     exit 1
 fi
