@@ -61,7 +61,11 @@ from .typescript import TSXExtractor, TypeScriptExtractor
 #        PythonExtractor for the __all__-export gap (Item B).
 #   v5 — call_kwargs feature added to function/method emission for
 #        the logging / tracing call-marker gap (Item C).
-EXTRACTOR_FINGERPRINT = "v5"
+#   v6 — JavaScriptExtractor walks IIFE bodies (revealing-module
+#        pattern), so encapsulated `function init() {}` etc. inside
+#        `const App = (() => {...})()` become extractable. Affects
+#        any pre-ES-modules JS codebase.
+EXTRACTOR_FINGERPRINT = "v6"
 
 
 _BUILTIN_EXTRACTORS: tuple[type[Extractor], ...] = (

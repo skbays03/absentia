@@ -22,7 +22,10 @@ expected_gaps = 79        # unchanged. Item H (closure detector)
                           # + corpus-identifier-count filters
                           # collectively spare every class.
 expected_rules = 42       # unchanged.
-expected_entities = 1234  # 1214 → 1234; +20 from closure.py
+expected_entities = 1236  # 1234 → 1236; +2 from JS extractor's
+                          # new IIFE-body walker (_iife_body and
+                          # _walk_iife_body helpers in javascript.py).
+                          # Also see: 1214 → 1234; +20 from closure.py
                           # (find_unused_class_gaps,
                           # _build_identifier_count,
                           # _bare_class_name, _normalize_reference,

@@ -60,24 +60,54 @@ def _process_top_level(
         yield from _emit_class(node, file_path)
     elif node.type == "lexical_declaration":
         # const/let/var declarations may bind arrow functions or function
-        # expressions; treat those as named functions.
+        # expressions; treat those as named functions. They may also bind
+        # an IIFE (revealing-module pattern) — descend into the IIFE's
+        # body so encapsulated functions are visible to mining.
         for declarator in node.children:
             if declarator.type == "variable_declarator":
-                emitted = _from_declarator(declarator, file_path)
-                if emitted is not None:
-                    yield emitted
+                yield from _from_declarator(declarator, file_path)
+    elif node.type == "expression_statement":
+        # Top-level bare IIFE: `(function () { ... })();`
+        # Walk into it the same way named-IIFE binding does.
+        for child in node.children:
+            iife_body = _iife_body(child)
+            if iife_body is not None:
+                yield from _walk_iife_body(iife_body, file_path, namespace="")
 
 
 def _from_declarator(
     declarator: Node, file_path: str
-) -> tuple[Entity, FeatureSet] | None:
+) -> Iterator[tuple[Entity, FeatureSet]]:
+    """Emit entities for a `const foo = ...` declarator.
+
+    Three forms are recognized:
+
+    1. Arrow / function expression: `const foo = () => {...}` — emit
+       a single function entity.
+    2. IIFE (revealing-module pattern): `const App = (() => {...})()` —
+       descend into the IIFE body and emit each declared function /
+       class with `App.` prefixed onto its qualified name. This is
+       how the bulk of pre-ES-modules JS encapsulates module state;
+       not handling it leaves a 95%+ entity-extraction gap on
+       affected codebases.
+    3. Class expression: `const Foo = class {...}` — not yet handled
+       (rare); falls through silently.
+    """
     name_node = declarator.child_by_field_name("name")
     value_node = declarator.child_by_field_name("value")
     if name_node is None or value_node is None:
-        return None
-    if value_node.type not in ("arrow_function", "function_expression"):
-        return None
+        return
     name = name_node.text.decode("utf-8")
+
+    # Form 2: IIFE with this declarator's name as the namespace.
+    iife_body = _iife_body(value_node)
+    if iife_body is not None:
+        yield from _walk_iife_body(iife_body, file_path, namespace=name)
+        return
+
+    # Form 1: direct arrow / function expression binding.
+    if value_node.type not in ("arrow_function", "function_expression"):
+        return
     entity = Entity(
         kind="function",
         qualified_name=f"{file_path}::{name}",
@@ -87,7 +117,101 @@ def _from_declarator(
     features = FeatureSet(by_kind={
         "calls": frozenset(_walk_calls(value_node)),
     })
-    return entity, features
+    yield entity, features
+
+
+def _iife_body(node: Node) -> Node | None:
+    """Return the inner function body if ``node`` is an IIFE, else None.
+
+    Recognizes the two common shapes:
+
+      ``(() => { ... })()``                  — paren-wrapped arrow + call
+      ``(function () { ... })()``            — paren-wrapped function expr
+      ``(function name () { ... })()``       — named function expr in same shape
+
+    Tree-sitter's parse: ``call_expression`` whose ``function`` field
+    is a ``parenthesized_expression`` containing either an
+    ``arrow_function`` or ``function_expression``. Returns the inner
+    function's body node (a ``statement_block``) for the caller to
+    walk; returns ``None`` for any non-IIFE shape."""
+    if node.type != "call_expression":
+        return None
+    fn_field = node.child_by_field_name("function")
+    if fn_field is None:
+        return None
+    inner = fn_field
+    # The function field may itself be a parenthesized_expression
+    # wrapping the actual arrow / function expression.
+    if fn_field.type == "parenthesized_expression":
+        for child in fn_field.children:
+            if child.type in ("arrow_function", "function_expression"):
+                inner = child
+                break
+        else:
+            return None
+    if inner.type not in ("arrow_function", "function_expression"):
+        return None
+    body = inner.child_by_field_name("body")
+    if body is None or body.type != "statement_block":
+        return None
+    return body
+
+
+def _walk_iife_body(
+    body: Node, file_path: str, namespace: str,
+) -> Iterator[tuple[Entity, FeatureSet]]:
+    """Extract function and class declarations from inside an IIFE
+    statement block.
+
+    ``namespace`` is prefixed to each emitted entity's qualified name
+    (e.g. ``App.init``) so encapsulated functions don't collide with
+    same-named functions in other IIFEs across the corpus. Pass
+    ``""`` for top-level bare IIFEs that don't have a binding name."""
+    prefix = f"{namespace}." if namespace else ""
+    for stmt in body.children:
+        if stmt.type == "function_declaration":
+            name_node = stmt.child_by_field_name("name")
+            if name_node is None:
+                continue
+            inner_name = name_node.text.decode("utf-8")
+            entity = Entity(
+                kind="function",
+                qualified_name=f"{file_path}::{prefix}{inner_name}",
+                file_path=file_path,
+                line=stmt.start_point[0] + 1,
+            )
+            features = FeatureSet(by_kind={
+                "calls": frozenset(_walk_calls(stmt)),
+            })
+            yield entity, features
+        elif stmt.type == "class_declaration":
+            yield from _emit_class(stmt, file_path)
+        elif stmt.type == "lexical_declaration":
+            # Nested `const inner = () => {...}` inside the IIFE.
+            for d in stmt.children:
+                if d.type == "variable_declarator":
+                    name_n = d.child_by_field_name("name")
+                    val_n = d.child_by_field_name("value")
+                    if (
+                        name_n is not None
+                        and val_n is not None
+                        and val_n.type in (
+                            "arrow_function", "function_expression",
+                        )
+                    ):
+                        inner_name = name_n.text.decode("utf-8")
+                        entity = Entity(
+                            kind="function",
+                            qualified_name=(
+                                f"{file_path}::{prefix}{inner_name}"
+                            ),
+                            file_path=file_path,
+                            line=val_n.start_point[0] + 1,
+                        )
+                        features = FeatureSet(by_kind={
+                            "calls": frozenset(_walk_calls(val_n)),
+                        })
+                        yield entity, features
 
 
 def _emit_function(
