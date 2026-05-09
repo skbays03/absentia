@@ -89,8 +89,12 @@ bash       = "absentia.extractors.bash:BashExtractor"
 swift      = "absentia.extractors.swift:SwiftExtractor"
 
 [project.urls]
-# Homepage   = "https://absentia.dev"    # Deferred — see DEFERRALS.md
-# Repository = "https://github.com/..."  # Deferred — see DEFERRALS.md
+Homepage      = "https://github.com/skbays03/absentia"
+Repository    = "https://github.com/skbays03/absentia"
+Issues        = "https://github.com/skbays03/absentia/issues"
+Changelog     = "https://github.com/skbays03/absentia/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/skbays03/absentia/tree/main/docs"
+"Release Notes" = "https://github.com/skbays03/absentia/releases"
 
 [build-system]
 # Unpinned. cibuildwheel's bundled constraint files pin
