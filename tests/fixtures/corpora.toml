@@ -16,22 +16,16 @@
 name = "absentia-self"
 path = "."           # always present (relative to repo root)
 language = "python"
-expected_gaps = 71        # 64 → 71 with Phase 3 polish + the TUI
-                          # export location/path chooser:
-                          # ExportLocationScreen +
-                          # ExportPathInputScreen + path-validation
-                          # helper + reprompt callbacks + the
-                          # confidence/lang-color/highlight helpers
-                          # (_lang_color_for_path,
-                          # _confidence_glyph_style,
-                          # _highlight_match) — 21 new entities,
-                          # which tipped 7 conformance percentages
-                          # back over min_confidence and surfaced 7
-                          # new gaps (one per new rule).
-expected_rules = 36       # 29 → 36
-expected_entities = 1006  # 984 → 1006; +22 from Phase 3 work + the
-                          # _ABSENTIA_INPUT_CSS constant added during
-                          # the modal-input-style consistency pass
+expected_gaps = 73        # 71 → 73 with the TUI Settings panel
+                          # (SettingsScreen + SettingsIntInputScreen
+                          # + 5 action_/handler methods + reset/edit
+                          # flows + comma keybind + _open_in_editor
+                          # helper). 24 new entities; 1 tipped a
+                          # rule over min_confidence and surfaced
+                          # 2 new gaps.
+expected_rules = 37       # 36 → 37
+expected_entities = 1030  # 1006 → 1030; +24 from the Settings
+                          # panel + Int-input modal + handlers
 optional = false
 
 [[corpus]]

@@ -466,6 +466,149 @@ async def test_tui_export_default_first_use_saves_to_settings(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_tui_settings_edit_jobs_default(tmp_path):
+    """`,` opens settings → 1 sets jobs_default → integer persists."""
+    from unittest.mock import patch
+
+    from absentia.settings import Settings, load_settings, save_settings
+    from absentia.tui.app import SettingsIntInputScreen, SettingsScreen
+
+    _write_corpus(tmp_path)
+    settings_file = tmp_path / "settings.json"
+    save_settings(Settings(), path=settings_file)
+
+    app = AbsentiaApp(root=tmp_path, config=Config())
+    with patch("absentia.settings.settings_path", return_value=settings_file):
+        async with app.run_test() as pilot:
+            await _wait_for_scan(app, pilot)
+
+            await pilot.press("comma")
+            await pilot.pause()
+            assert isinstance(app.screen, SettingsScreen)
+
+            await pilot.press("1")
+            await pilot.pause()
+            assert isinstance(app.screen, SettingsIntInputScreen)
+
+            await pilot.press(*"4")
+            await pilot.press("enter")
+            await pilot.pause()
+
+        saved = load_settings(settings_file)
+        assert saved.jobs_default == 4
+
+
+@pytest.mark.asyncio
+async def test_tui_settings_edit_path(tmp_path):
+    """`,` opens settings → 2 → typed path persists to settings.json."""
+    from unittest.mock import patch
+
+    from absentia.settings import Settings, load_settings, save_settings
+    from absentia.tui.app import ExportPathInputScreen, SettingsScreen
+
+    _write_corpus(tmp_path)
+    settings_file = tmp_path / "settings.json"
+    save_settings(Settings(), path=settings_file)
+    new_default = tmp_path / "new-exports"
+
+    app = AbsentiaApp(root=tmp_path, config=Config())
+    with patch("absentia.settings.settings_path", return_value=settings_file):
+        async with app.run_test() as pilot:
+            await _wait_for_scan(app, pilot)
+
+            await pilot.press("comma")
+            await pilot.pause()
+            assert isinstance(app.screen, SettingsScreen)
+
+            await pilot.press("2")
+            await pilot.pause()
+            assert isinstance(app.screen, ExportPathInputScreen)
+
+            await pilot.press(*str(new_default))
+            await pilot.press("enter")
+            await pilot.pause()
+
+        saved = load_settings(settings_file)
+        assert saved.default_export_path == str(new_default.resolve())
+
+
+@pytest.mark.asyncio
+async def test_tui_settings_reset_intro_hint(tmp_path):
+    """`,` → 3 wipes info_hint_shown_at so the next launch re-fires
+    the intro hint."""
+    from unittest.mock import patch
+
+    from absentia.settings import Settings, load_settings, save_settings
+    from absentia.tui.app import SettingsScreen
+
+    _write_corpus(tmp_path)
+    settings_file = tmp_path / "settings.json"
+    # Pre-populate with a timestamp so reset has something to clear.
+    save_settings(
+        Settings(info_hint_shown_at="2026-01-01T00:00:00+00:00"),
+        path=settings_file,
+    )
+
+    app = AbsentiaApp(root=tmp_path, config=Config())
+    with patch("absentia.settings.settings_path", return_value=settings_file):
+        async with app.run_test() as pilot:
+            await _wait_for_scan(app, pilot)
+
+            await pilot.press("comma")
+            await pilot.pause()
+            assert isinstance(app.screen, SettingsScreen)
+
+            await pilot.press("3")
+            await pilot.pause()
+
+        saved = load_settings(settings_file)
+        assert saved.info_hint_shown_at is None
+
+
+@pytest.mark.asyncio
+async def test_tui_settings_jobs_invalid_input_rejected(tmp_path):
+    """Non-integer typed into the jobs_default input → notify, no
+    settings change."""
+    from unittest.mock import patch
+
+    from absentia.settings import Settings, load_settings, save_settings
+    from absentia.tui.app import SettingsIntInputScreen
+
+    _write_corpus(tmp_path)
+    settings_file = tmp_path / "settings.json"
+    save_settings(Settings(jobs_default=8), path=settings_file)
+
+    app = AbsentiaApp(root=tmp_path, config=Config())
+    notifications: list[tuple] = []
+    orig_notify = app.notify
+
+    def captured_notify(*args, **kwargs):
+        notifications.append((args, kwargs))
+        return orig_notify(*args, **kwargs)
+    app.notify = captured_notify  # type: ignore[method-assign]
+
+    with patch("absentia.settings.settings_path", return_value=settings_file):
+        async with app.run_test() as pilot:
+            await _wait_for_scan(app, pilot)
+            await pilot.press("comma")
+            await pilot.pause()
+            await pilot.press("1")
+            await pilot.pause()
+            assert isinstance(app.screen, SettingsIntInputScreen)
+
+            await pilot.press(*"banana")
+            await pilot.press("enter")
+            await pilot.pause()
+
+        saved = load_settings(settings_file)
+        # Pre-existing value untouched.
+        assert saved.jobs_default == 8
+
+    msgs = " ".join(str(args[0]) for args, _kw in notifications)
+    assert "invalid integer" in msgs.lower()
+
+
+@pytest.mark.asyncio
 async def test_tui_explain_dismiss_without_s_does_not_suppress(tmp_path):
     """Cancelling Explain with Esc must not trigger the suppress flow."""
     from absentia.storage import Storage

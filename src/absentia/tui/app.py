@@ -238,6 +238,9 @@ class HelpScreen(ModalScreen[None]):
                 "                no need to close it first)\n"
                 "  x            export scan results (md/html/txt/\n"
                 "               json/csv/sarif) to default_export_path\n"
+                "  ,            open settings panel (jobs_default,\n"
+                "               default_export_path, intro hint,\n"
+                "               + open absentia.toml in $EDITOR)\n"
                 "  Ctrl+R       rescan now\n"
                 "  w            toggle watch (auto-rescan)\n\n"
                 "[b]Global[/]\n"
@@ -645,6 +648,274 @@ class ExportPathInputScreen(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+class SettingsIntInputScreen(ModalScreen[str | None]):
+    """Generic int-input modal used by SettingsScreen for jobs_default.
+
+    Returns the typed string verbatim (caller validates / parses)
+    or ``None`` on Esc / empty submit. Same canonical input
+    styling as every other absentia modal.
+    """
+
+    DEFAULT_CSS = """
+    SettingsIntInputScreen { align: center middle; }
+    #settings_int_dialog {
+        width: 60; height: 12;
+        background: $surface;
+        border: thick $primary;
+        padding: 1 2;
+    }
+    #settings_int_dialog Label { margin-bottom: 1; }
+    """ + _ABSENTIA_INPUT_CSS
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, prompt: str, initial: str = "") -> None:
+        super().__init__()
+        self._prompt = prompt
+        self._initial = initial
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="settings_int_dialog"):
+            yield Label(self._prompt)
+            yield Label(
+                "[dim]Positive integer · Enter saves · "
+                "Esc cancels · empty/0 = auto[/]"
+            )
+            yield Input(
+                value=self._initial,
+                placeholder="e.g. 4",
+                id="settings_int_input",
+            )
+
+    def on_mount(self) -> None:
+        self.query_one("#settings_int_input", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value.strip())
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class SettingsScreen(ModalScreen[None]):
+    """Edit machine-wide ``~/.absentia/settings.json`` from the TUI.
+
+    Three editable fields plus a hand-off to the user's editor for
+    the per-project ``absentia.toml`` (which is too structured to
+    edit cleanly in a TUI form — the user gets full power via
+    their preferred editor):
+
+      1) jobs_default          (int | None)
+      2) default_export_path   (str | None)
+      3) info_hint_shown_at    (str | None) — reset to None to
+                               see the first-run hint again
+
+      e) Open this project's absentia.toml in $EDITOR
+
+    Number keys map directly to the action-per-field convention
+    used by ExportFormatScreen / ExportLocationScreen so the TUI's
+    modal UX stays consistent.
+    """
+
+    DEFAULT_CSS = """
+    SettingsScreen { align: center middle; }
+    #settings_dialog {
+        width: 86; height: 22;
+        background: $surface;
+        border: thick $primary;
+        padding: 1 2;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Close"),
+        Binding("q", "dismiss", "Close"),
+        Binding("1", "edit_jobs", "Edit jobs"),
+        Binding("2", "edit_path", "Edit export path"),
+        Binding("3", "reset_hint", "Reset intro hint"),
+        Binding("e", "open_toml", "Open absentia.toml"),
+    ]
+
+    def __init__(self, root: Path) -> None:
+        super().__init__()
+        self._root = root
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="settings_dialog"):
+            yield Static(self._render_state(), id="settings_body")
+
+    def on_mount(self) -> None:
+        self._refresh()
+
+    def _render_state(self) -> str:
+        from ..settings import load_settings, settings_path
+        s = load_settings()
+        jobs = (
+            "[dim]auto (cpu/2)[/]"
+            if s.jobs_default is None
+            else f"[cyan]{s.jobs_default}[/]"
+        )
+        path = (
+            f"[cyan]{s.default_export_path}[/]"
+            if s.default_export_path else "[dim](unset)[/]"
+        )
+        hint = (
+            f"[dim]{s.info_hint_shown_at}[/]"
+            if s.info_hint_shown_at else "[dim](never shown)[/]"
+        )
+        toml_path = self._root / "absentia.toml"
+        toml_status = (
+            "[cyan]exists[/]" if toml_path.exists()
+            else "[yellow](no absentia.toml — run `absentia init`)[/]"
+        )
+        return (
+            "[b cyan]absentia settings[/]\n"
+            f"[dim]{settings_path()}[/]\n\n"
+            f"[b]1[/]) Default workers       {jobs}\n"
+            f"     [dim]Pin --jobs default for `absentia check`. "
+            f"Empty / 0 reverts to auto.[/]\n\n"
+            f"[b]2[/]) Default export path   {path}\n"
+            f"     [dim]Base dir for `x`-key + CLI export prompt. "
+            f"~/ supported.[/]\n\n"
+            f"[b]3[/]) Intro hint shown at   {hint}\n"
+            f"     [dim]Press 3 to reset; the next launch will "
+            f"show the hint again.[/]\n\n"
+            f"[b]e[/]) Open this project's [cyan]absentia.toml[/] "
+            f"in [b]$EDITOR[/]   {toml_status}\n\n"
+            "[dim]Esc / q to close[/]"
+        )
+
+    def _refresh(self) -> None:
+        try:
+            self.query_one(
+                "#settings_body", Static,
+            ).update(self._render_state())
+        except Exception:
+            pass
+
+    def action_edit_jobs(self) -> None:
+        from ..settings import load_settings
+        s = load_settings()
+        initial = "" if s.jobs_default is None else str(s.jobs_default)
+        self.app.push_screen(
+            SettingsIntInputScreen(
+                prompt="Default worker count:",
+                initial=initial,
+            ),
+            self._on_jobs_edited,
+        )
+
+    def _on_jobs_edited(self, raw: str | None) -> None:
+        if raw is None:
+            return
+        # Empty or zero → revert to None ("auto"); otherwise must be
+        # a positive integer.
+        if not raw or raw == "0":
+            value: int | None = None
+        else:
+            try:
+                parsed = int(raw)
+            except ValueError:
+                self.app.notify(
+                    f"Invalid integer: {raw!r}",
+                    severity="warning", timeout=6,
+                )
+                return
+            if parsed < 1:
+                value = None
+            else:
+                value = parsed
+        from dataclasses import replace
+        from ..settings import load_settings, save_settings
+        s = load_settings()
+        try:
+            save_settings(replace(s, jobs_default=value))
+        except OSError as exc:
+            self.app.notify(
+                f"Couldn't save settings: {exc}",
+                severity="error", timeout=8,
+            )
+            return
+        self._refresh()
+        label = "auto" if value is None else str(value)
+        self.app.notify(f"jobs_default = {label}", timeout=4)
+
+    def action_edit_path(self) -> None:
+        from ..settings import load_settings
+        s = load_settings()
+        initial = s.default_export_path or ""
+        self.app.push_screen(
+            ExportPathInputScreen(
+                prompt="Default export base path:",
+                initial=initial,
+            ),
+            self._on_path_edited,
+        )
+
+    def _on_path_edited(self, raw: str | None) -> None:
+        if raw is None or not raw:
+            return
+        try:
+            base = Path(raw).expanduser().resolve()
+        except (OSError, RuntimeError, ValueError) as exc:
+            self.app.notify(
+                f"Invalid path: {exc}",
+                severity="warning", timeout=8,
+            )
+            return
+        from dataclasses import replace
+        from ..settings import load_settings, save_settings
+        s = load_settings()
+        try:
+            save_settings(replace(s, default_export_path=str(base)))
+        except OSError as exc:
+            self.app.notify(
+                f"Couldn't save settings: {exc}",
+                severity="error", timeout=8,
+            )
+            return
+        self._refresh()
+        self.app.notify(f"default_export_path = {base}", timeout=4)
+
+    def action_reset_hint(self) -> None:
+        from dataclasses import replace
+        from ..settings import load_settings, save_settings
+        s = load_settings()
+        try:
+            save_settings(replace(s, info_hint_shown_at=None))
+        except OSError as exc:
+            self.app.notify(
+                f"Couldn't reset hint: {exc}",
+                severity="error", timeout=8,
+            )
+            return
+        self._refresh()
+        self.app.notify(
+            "Intro hint will fire on next launch.", timeout=4,
+        )
+
+    def action_open_toml(self) -> None:
+        toml_path = self._root / "absentia.toml"
+        if not toml_path.exists():
+            self.app.notify(
+                f"No absentia.toml in {self._root.name}. "
+                "Run `absentia init` first.",
+                severity="warning", timeout=8,
+            )
+            return
+        # Dismiss this modal first so $EDITOR has a clean terminal.
+        # The parent app's _open_in_editor handles the
+        # suspend / subprocess / FileNotFoundError dance.
+        self.dismiss()
+        # mypy: self.app is App, but only AbsentiaApp has the helper.
+        opener = getattr(self.app, "_open_in_editor", None)
+        if opener is not None:
+            opener(toml_path, 1)
+
+    def action_dismiss(self) -> None:  # type: ignore[override]
+        self.dismiss(None)
+
+
 class ExplainScreen(ModalScreen[str | None]):
     """Plain-text "why was this flagged?" modal for a gap.
 
@@ -797,6 +1068,7 @@ class AbsentiaApp(App[None]):
         Binding("s", "suppress", "Suppress"),
         Binding("e", "explain", "Explain"),
         Binding("x", "export", "Export"),
+        Binding("comma", "settings", "Settings"),
         Binding("f", "follow", "Follow"),
         Binding("escape", "back", "Back"),
         Binding("slash", "filter", "Filter"),
@@ -1584,6 +1856,17 @@ class AbsentiaApp(App[None]):
 
     def action_help(self) -> None:
         self.push_screen(HelpScreen())
+
+    def action_settings(self) -> None:
+        """Open the machine-wide settings panel.
+
+        Edits ``~/.absentia/settings.json`` (jobs_default,
+        default_export_path, info_hint_shown_at) and provides a
+        one-keystroke handoff to ``$EDITOR`` for the per-project
+        ``absentia.toml`` — the structured config that's better
+        edited in a real editor than a TUI form.
+        """
+        self.push_screen(SettingsScreen(self.root))
 
     def action_export(self) -> None:
         """Open the export-format picker.
