@@ -6,14 +6,17 @@ suppress one, then point absentia at your own code.
 
 ## Prerequisites
 
-The engine isn't on PyPI yet (still pre-1.0; the `absentia` name on
-PyPI today is a metadata-only v0.0.1 placeholder). Install from a
-local clone:
-
 ```bash
-git clone https://github.com/skbays03/absentia.git
-pipx install ./absentia           # or `pip install ./absentia` if you don't use pipx
+uv tool install absentia          # Astral toolchain, fastest
+# or
+pipx install absentia             # the long-standing standard
 ```
+
+See [the README's Install section](https://github.com/skbays03/absentia#install)
+for per-OS setup of `uv` / `pipx`, the venv form for using
+absentia as a library, and what to do about the
+`error: externally-managed-environment` PEP 668 message on
+modern Linux / WSL.
 
 After install, ``absentia --version`` should work from any directory.
 Requires Python 3.13+; works on macOS, Linux, and Windows.

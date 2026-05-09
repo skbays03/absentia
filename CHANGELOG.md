@@ -15,11 +15,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.1] - 2026-05-09
 
+Same-day patch release fixing a `--version` drift bug discovered
+minutes after v1.0.0 hit PyPI, plus install-experience improvements.
+
 ### Added
 
-### Changed
+- **`[project.urls]` for the PyPI sidebar.** Repository, Issues,
+  Changelog, Documentation, Release Notes — all surface as
+  clickable links on `https://pypi.org/project/absentia/`. v1.0.0
+  shipped with these empty (the prior config had them deferred
+  per DEFERRALS.md, predating the PyPI publish).
+
+- **`uv tool install absentia` documented as a co-recommended
+  install path.** README install section now leads with two
+  parallel options (`uv tool` and `pipx`), per-OS bootstrap
+  tables for both, and a callout for the PEP 668
+  `error: externally-managed-environment` that modern Debian /
+  Ubuntu / WSL / Fedora users hit on bare `pip install`. Plus the
+  venv form for using absentia as a library.
 
 ### Fixed
+
+- **`absentia --version` reported the wrong version.** v1.0.0
+  installed correctly (pip reported `absentia-1.0.0`) but
+  `absentia --version` printed `absentia 0.0.1` because
+  `src/absentia/__init__.py` had `__version__ = "0.0.1"`
+  hardcoded since the project's first commit. `scripts/release.sh`
+  bumps `pyproject.toml` but doesn't touch `__init__.py`, so the
+  two drifted on every release. Switched `__version__` to read
+  from `importlib.metadata` at import time — `pyproject.toml`
+  is now the single source of truth, no future drift possible.
+
+- **Build-system metadata mismatch caught the v1.0.0 first publish
+  attempt.** The PEP 639 SPDX-string license form
+  (`license = "Apache-2.0"`) requires Metadata 2.4 in the emitted
+  wheel, but the hatchling cibuildwheel v2.21 resolves under its
+  `packaging==24.1` constraint emits Metadata 2.3 — twine + PyPI
+  rejected v1.0.0's initial publish with
+  `InvalidDistribution: license-expression introduced in metadata
+  version 2.4, not 2.3`. Switched to the pre-PEP-639 table form
+  (`license = { text = "Apache-2.0" }`) which works on any
+  hatchling version. v1.0.0 was retagged + republished before any
+  user could pull the broken artifact. The long-term fix
+  (upgrading cibuildwheel + hatchling so 2.4 is emitted
+  consistently) is left for a follow-up.
 
 ## [1.0.0] - 2026-05-09
 

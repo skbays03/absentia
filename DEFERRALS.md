@@ -21,10 +21,20 @@ _None currently._
 ## Soft blockers (strongly expected before public marketing)
 
 ### Demo screenshot / GIF in README
-- **Status:** TUI is functional and the CLI now has per-stage progress UI worth recording. README still has a text-block placeholder.
-- **Why deferred:** Recording asset still needs to be produced.
-- **Resolution:** Record an animated demo (asciinema → SVG, or a short MP4/GIF) showing either: (a) the TUI at work in a real codebase, or (b) `absentia check` on a kernel-sized corpus showing the per-stage progress display + ✓ summary lines. Embed in the README directly under the tagline.
-- **Latest by:** Before any v1.0 push.
+- **Status:** TUI is functional and the CLI has per-stage progress
+  UI worth recording. README still has a text-block placeholder.
+  v1.0 shipped without one — the engine + docs were judged
+  shippable on their own merits.
+- **Why deferred:** Recording asset still needs to be produced;
+  not a v1.0 blocker now that v1.0 is live on PyPI.
+- **Resolution:** Record an animated demo (asciinema → SVG, or a
+  short MP4/GIF) showing either: (a) the TUI at work in a real
+  codebase, or (b) `absentia check` on a kernel-sized corpus
+  showing the per-stage progress display + ✓ summary lines. Embed
+  in the README directly under the tagline.
+- **Latest by:** Before broad marketing (HN / Reddit / Lobsters
+  launch posts) — the asset disproportionately matters in the
+  3-second skim of an HN front page.
 
 
 ### Public domain + docs site

@@ -103,6 +103,7 @@ SET_VERSION=""
 INTERACTIVE=true
 NO_VERIFY=false
 VALIDATE_MODE=false
+ALLOW_EMPTY_CHANGELOG=false
 
 for arg in "$@"; do
     case "$arg" in
@@ -112,6 +113,7 @@ for arg in "$@"; do
         --set=*)          SET_VERSION="${arg#--set=}"; INTERACTIVE=false ;;
         --no-verify)      NO_VERIFY=true ;;
         --validate)       VALIDATE_MODE=true; INTERACTIVE=false ;;
+        --allow-empty-changelog) ALLOW_EMPTY_CHANGELOG=true ;;
         --help|-h)
             echo ""
             echo -e "${BOLD}absentia Release Script${NC}"
@@ -134,7 +136,11 @@ for arg in "$@"; do
             echo "  failures the local pre-push hook can't reproduce."
             echo ""
             echo -e "${BOLD}Options:${NC}"
-            echo "  --no-verify             Skip git hooks (commit-msg, pre-push)"
+            echo "  --no-verify                 Skip git hooks (commit-msg, pre-push)"
+            echo "  --allow-empty-changelog     Proceed even if CHANGELOG.md's"
+            echo "                              [Unreleased] section is empty"
+            echo "                              (default: refuse — empty sections"
+            echo "                              silently degrade the historical record)"
             echo ""
             echo -e "  Current version: ${CYAN}$CURRENT_VERSION${NC}"
             echo ""
@@ -301,6 +307,45 @@ if [ "$VALIDATE_MODE" = true ]; then
     fi
 
     exit 0
+fi
+
+# ── Guard: refuse to cut if [Unreleased] is empty ────────────
+#
+# release.sh promotes `[Unreleased]` → `[X.Y.Z] - YYYY-MM-DD`.
+# It does NOT generate content; whatever's in [Unreleased]
+# becomes the new versioned section. An empty [Unreleased]
+# silently ships an empty changelog entry, which silently
+# silently degrades the historical record. Refuse to proceed
+# unless the user explicitly opts in via --allow-empty-changelog
+# (e.g. for a release.sh that's purely a build re-run with no
+# meaningful changes — rare).
+#
+# Detection: extract everything between `## [Unreleased]` and the
+# next `## [` heading; strip the section's own headers
+# (### Added / ### Changed / ### Fixed) and whitespace; if any
+# non-blank, non-section-heading content survives, [Unreleased]
+# is non-empty.
+if [ "$ALLOW_EMPTY_CHANGELOG" != true ] && [ -f "$CHANGELOG" ]; then
+    UNRELEASED_BODY=$(awk '
+        /^## \[Unreleased\]/{flag=1; next}
+        flag && /^## \[/ {flag=0}
+        flag {print}
+    ' "$CHANGELOG" | grep -vE '^\s*$|^### (Added|Changed|Fixed|Removed|Deprecated|Security)\s*$')
+    if [ -z "$UNRELEASED_BODY" ]; then
+        echo "" >&2
+        echo -e "  ${RED}✗ CHANGELOG.md's [Unreleased] section is empty.${NC}" >&2
+        echo "" >&2
+        echo "    Promoting it to [$NEW_VERSION] would ship an empty" >&2
+        echo "    historical record. Either:" >&2
+        echo "" >&2
+        echo "      1. Populate [Unreleased] with what changed since" >&2
+        echo "         the last release (Added / Changed / Fixed), or" >&2
+        echo "      2. Re-run with --allow-empty-changelog if you" >&2
+        echo "         really want an empty section (rare — a build" >&2
+        echo "         re-run with no user-visible changes)." >&2
+        echo "" >&2
+        exit 1
+    fi
 fi
 
 # ── Bump version in pyproject.toml ───────────────────────────
