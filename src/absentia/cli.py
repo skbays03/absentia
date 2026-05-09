@@ -829,6 +829,7 @@ def scan_corpus(
     extractors: dict | None = None,
     jobs: int | None = None,
     progress_callback: Any = None,
+    stage_callback: Any = None,
     interactive: bool = False,
     shape: Any = None,
     cold: Path | None = None,
@@ -847,14 +848,37 @@ def scan_corpus(
     processed during the scan. The TUI uses this to drive its own
     widgets. Mutually exclusive with ``interactive=True``.
 
+    ``stage_callback``, if provided, is called as
+    ``stage_callback(stage, event, **details)`` where ``stage`` is one
+    of ``"walk" | "parse" | "store" | "mine" | "finalize"`` and
+    ``event`` is ``"started"`` or ``"finished"``. ``details`` carries
+    stage-specific kwargs on the ``"finished"`` events: ``files`` /
+    ``bytes_`` for walk, ``entities`` for store, etc. Lets a non-
+    interactive caller (the TUI) mirror the per-stage progress
+    display the CLI shows, without piping through the stderr-bound
+    Spinner / ProgressBar widgets. Skipped when ``stage_callback``
+    is None. All exceptions in the callback are swallowed so a
+    buggy widget can never break the scan itself.
+
     ``interactive`` controls per-stage TTY progress UI. When True (set
     by ``cmd_check`` in interactive text mode), each pipeline stage
     (walk, parse, store, mine, finalize) gets its own indicator that
     finishes with a ✓ summary line + elapsed time — so the user can
     see which stage just took N seconds and a hang is immediately
     diagnosable. The TUI passes ``interactive=False`` and drives its
-    own widgets via ``progress_callback``.
+    own widgets via ``progress_callback`` + ``stage_callback``.
     """
+    def _stage(name: str, event: str, **details: Any) -> None:
+        """Forward a stage transition to the optional callback,
+        swallowing exceptions so a buggy caller widget can never
+        break the scan."""
+        if stage_callback is None:
+            return
+        try:
+            stage_callback(name, event, **details)
+        except Exception:
+            pass
+
     from datetime import datetime, timezone
 
     from .parallel import default_jobs
@@ -881,13 +905,16 @@ def scan_corpus(
 
     # ── Walk stage: count files up-front so the parse bar has a
     # total. Skipped when the caller is driving its own progress UI
-    # (TUI). Even at 65 k files this is sub-second on Mac and ~1–2 s
+    # (TUI) — unless the TUI passed a stage_callback, in which case
+    # we walk anyway so the loading panel has a real file count to
+    # show. Even at 65 k files this is sub-second on Mac and ~1–2 s
     # on the kernel; the spinner makes that wait visible.
     #
     # If the caller already walked the corpus (cmd_check shares one
     # walk between its estimate-preamble and this stage), we use
     # their result instead of walking again — on the kernel that
     # halves a ~3 s combined cost.
+    _stage("walk", "started")
     parse_bar = None
     if interactive:
         from .estimator import _format_size, walk_corpus
@@ -924,6 +951,22 @@ def scan_corpus(
         if shape.files > 0:
             parse_bar = ProgressBar(total=shape.files, label="Scanning")
             progress_callback = parse_bar.update
+    elif stage_callback is not None and shape is None:
+        # Non-interactive caller (TUI) wants per-stage progress —
+        # do an explicit walk so the loading panel knows the file
+        # count up front. Skipped when the caller already pre-walked.
+        from .estimator import walk_corpus
+        walk_started = time.perf_counter()
+        shape = walk_corpus(root, ext_to_extractor)
+        stage_durations["walk"] = time.perf_counter() - walk_started
+
+    walk_files = shape.files if shape is not None else 0
+    walk_bytes = shape.bytes if shape is not None else 0
+    _stage(
+        "walk", "finished",
+        files=walk_files, bytes_=walk_bytes,
+        duration_ms=stage_durations["walk"] * 1000,
+    )
 
     # Multi-worker progress UI: when interactive + jobs > 1, spin up
     # a multiprocessing.Manager() Queue + a daemon thread that drains
@@ -973,6 +1016,7 @@ def scan_corpus(
 
     with Storage(state_dir) as storage:
         run_id = storage.begin_run()
+        _stage("parse", "started", total=walk_files)
         parse_started = time.perf_counter()
         try:
             files_seen, files_unchanged, by_language_bytes = _scan_incremental(
@@ -998,8 +1042,14 @@ def scan_corpus(
                 except Exception:
                     pass
         stage_durations["parse"] = time.perf_counter() - parse_started
+        _stage(
+            "parse", "finished",
+            files=files_seen, unchanged=files_unchanged,
+            duration_ms=stage_durations["parse"] * 1000,
+        )
 
         # ── Storage-commit stage ──────────────────────────────────
+        _stage("store", "started")
         store_started = time.perf_counter()
         if interactive:
             store_spinner = Spinner(label="Loading entity store")
@@ -1017,6 +1067,11 @@ def scan_corpus(
             entities, feature_index = storage.load_all()
             storage.commit()
             stage_durations["store"] = time.perf_counter() - store_started
+        _stage(
+            "store", "finished",
+            entities=len(entities),
+            duration_ms=stage_durations["store"] * 1000,
+        )
 
         # Corpus-level feature enrichment: features that need to know
         # about the whole corpus (e.g. sibling_test, which checks
@@ -1181,6 +1236,7 @@ def scan_corpus(
                 with _active_lock:
                     _active_strategies.pop(label, None)
 
+        _stage("mine", "started", strategies=len(mining_tasks))
         mine_started = time.perf_counter()
         if interactive:
             mine_spinner = Spinner(label="Mining rules")
@@ -1278,8 +1334,14 @@ def scan_corpus(
                     rules.extend(rs)
                     gaps.extend(gs)
             stage_durations["mine"] = time.perf_counter() - mine_started
+        _stage(
+            "mine", "finished",
+            rules=len(rules), gaps=len(gaps),
+            duration_ms=stage_durations["mine"] * 1000,
+        )
 
         # ── Finalize stage: dedup, suppress, end_run ──────────────
+        _stage("finalize", "started")
         finalize_started = time.perf_counter()
         if interactive:
             final_spinner = Spinner(label="Finalizing")
@@ -1344,6 +1406,11 @@ def scan_corpus(
         )
 
         stage_durations["finalize"] = time.perf_counter() - finalize_started
+        _stage(
+            "finalize", "finished",
+            gaps=len(gaps), suppressed=suppressed_count,
+            duration_ms=stage_durations["finalize"] * 1000,
+        )
         if final_spinner is not None and final_ctx is not None:
             final_ctx.__exit__(None, None, None)
             suppress_note = (

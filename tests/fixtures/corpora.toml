@@ -16,16 +16,18 @@
 name = "absentia-self"
 path = "."           # always present (relative to repo root)
 language = "python"
-expected_gaps = 63        # unchanged with the localhost preview server
-                          # (start_export_server + serve_and_open +
-                          # nested _Handler class + log_message
-                          # override). Gap and rule counts unchanged
-                          # because the new entities sit alongside
-                          # similarly-shaped existing functions —
-                          # confidence percentages don't tip.
+expected_gaps = 64        # 63 → 64 with Phase 2 of the modernization
+                          # pass (TUI loading screen + worker-based
+                          # _do_scan + per-stage callbacks + the new
+                          # `x`-key export). 24 new entities —
+                          # LoadingScreen + ExportFormatScreen with
+                          # six action_pick_N methods + scan_corpus's
+                          # _stage helper + _on_export_format_chosen
+                          # + _scan_done / _scan_failed split — and
+                          # one rule's support count tipped one extra
+                          # gap into existence.
 expected_rules = 29       # unchanged
-expected_entities = 960   # 954 → 960; +6 from the localhost preview
-                          # server functions and helpers
+expected_entities = 984   # 960 → 984; +24 from Phase 2's TUI work
 optional = false
 
 [[corpus]]

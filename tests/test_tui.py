@@ -1,6 +1,8 @@
 """End-to-end TUI smoke tests via Textual's Pilot."""
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from absentia.config import Config
@@ -21,12 +23,35 @@ def _write_corpus(root):
     )
 
 
+async def _wait_for_scan(app, pilot, *, timeout: float = 5.0) -> None:
+    """Wait for the scan worker to complete + flush UI callbacks.
+
+    Phase 2 moved scan_corpus off the main thread (Textual worker)
+    so a single ``pilot.pause()`` no longer guarantees the scan is
+    done. The order matters:
+      1. Pause once so on_mount runs (it schedules the worker via
+         call_after_refresh — without this tick the worker isn't
+         even registered yet).
+      2. wait_for_complete blocks until every pending worker
+         finishes.
+      3. Two more pauses flush the ``call_from_thread`` posts that
+         landed during the worker's final cleanup (loading-screen
+         pop, table re-render).
+    """
+    await pilot.pause()
+    await asyncio.wait_for(
+        app.workers.wait_for_complete(), timeout=timeout,
+    )
+    await pilot.pause()
+    await pilot.pause()
+
+
 @pytest.mark.asyncio
 async def test_tui_mounts_and_runs_initial_scan(tmp_path):
     _write_corpus(tmp_path)
     app = AbsentiaApp(root=tmp_path, config=Config())
     async with app.run_test() as pilot:
-        await pilot.pause()
+        await _wait_for_scan(app, pilot)
         table = app.query_one("#main_table")
         # Synthetic corpus produces one gap (delete_user missing @audit).
         assert table.row_count == 1
@@ -37,11 +62,11 @@ async def test_tui_rescan_keeps_gap_count_stable(tmp_path):
     _write_corpus(tmp_path)
     app = AbsentiaApp(root=tmp_path, config=Config())
     async with app.run_test() as pilot:
-        await pilot.pause()
+        await _wait_for_scan(app, pilot)
         table = app.query_one("#main_table")
         first = table.row_count
         await pilot.press("ctrl+r")
-        await pilot.pause()
+        await _wait_for_scan(app, pilot)
         assert table.row_count == first
 
 
@@ -50,7 +75,7 @@ async def test_tui_subtitle_shows_scan_stats(tmp_path):
     _write_corpus(tmp_path)
     app = AbsentiaApp(root=tmp_path, config=Config())
     async with app.run_test() as pilot:
-        await pilot.pause()
+        await _wait_for_scan(app, pilot)
         assert "gaps" in app.sub_title
         assert "rules" in app.sub_title
         assert "entities" in app.sub_title
@@ -61,7 +86,7 @@ async def test_tui_view_switching_changes_subtitle_and_table(tmp_path):
     _write_corpus(tmp_path)
     app = AbsentiaApp(root=tmp_path, config=Config())
     async with app.run_test() as pilot:
-        await pilot.pause()
+        await _wait_for_scan(app, pilot)
         assert "[Gaps]" in app.sub_title
 
         await pilot.press("2")  # Rules
@@ -88,7 +113,7 @@ async def test_tui_follow_then_back(tmp_path):
     _write_corpus(tmp_path)
     app = AbsentiaApp(root=tmp_path, config=Config())
     async with app.run_test() as pilot:
-        await pilot.pause()
+        await _wait_for_scan(app, pilot)
         # Should start in Gaps view with at least one gap.
         assert app._view == "gaps"
         assert len(app._gaps) >= 1
@@ -175,7 +200,7 @@ async def test_tui_open_editor_callback_invoked_when_provided(tmp_path):
 
     app = AbsentiaApp(root=tmp_path, config=Config(), on_open_editor=fake_open)
     async with app.run_test() as pilot:
-        await pilot.pause()
+        await _wait_for_scan(app, pilot)
         # Trigger the open-editor action with a gap selected.
         await pilot.press("enter")
         await pilot.pause()
@@ -191,7 +216,7 @@ async def test_tui_watch_toggle_sets_timer(tmp_path):
     _write_corpus(tmp_path)
     app = AbsentiaApp(root=tmp_path, config=Config())
     async with app.run_test() as pilot:
-        await pilot.pause()
+        await _wait_for_scan(app, pilot)
         assert app._watch_timer is None
 
         await pilot.press("w")
@@ -214,7 +239,7 @@ async def test_tui_explain_chains_into_suppress(tmp_path):
     _write_corpus(tmp_path)
     app = AbsentiaApp(root=tmp_path, config=Config())
     async with app.run_test() as pilot:
-        await pilot.pause()
+        await _wait_for_scan(app, pilot)
         # Synthetic corpus produces exactly one gap; the table has it
         # selected by default.
         assert app.query_one("#main_table").row_count == 1
@@ -245,6 +270,79 @@ async def test_tui_explain_chains_into_suppress(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_tui_export_writes_file_to_default_path(tmp_path):
+    """Pressing `x` then a format key writes a real file under the
+    saved default_export_path. Validates the new TUI export flow
+    end-to-end."""
+    from unittest.mock import patch
+
+    from absentia.settings import Settings, save_settings
+    from absentia.tui.app import ExportFormatScreen
+
+    _write_corpus(tmp_path)
+    export_base = tmp_path / "exports"
+    settings_file = tmp_path / "settings.json"
+    save_settings(
+        Settings(default_export_path=str(export_base)),
+        path=settings_file,
+    )
+
+    app = AbsentiaApp(root=tmp_path, config=Config())
+    with patch("absentia.settings.settings_path", return_value=settings_file):
+        async with app.run_test() as pilot:
+            await _wait_for_scan(app, pilot)
+
+            await pilot.press("x")
+            await pilot.pause()
+            assert isinstance(app.screen, ExportFormatScreen)
+
+            # 1 = Markdown
+            await pilot.press("1")
+            await pilot.pause()
+
+    # File should exist under <export_base>/docs/absentia/<corpus>/
+    corpus_dir = export_base / "docs" / "absentia" / tmp_path.name
+    md_files = list(corpus_dir.glob("gaps-*.md"))
+    assert len(md_files) == 1
+    body = md_files[0].read_text()
+    assert "# absentia check" in body
+    assert "@audit" in body  # the demo gap is "missing @audit"
+
+
+@pytest.mark.asyncio
+async def test_tui_export_warns_when_no_default_path(tmp_path):
+    """Without a saved default_export_path, the export action must
+    notify the user instead of silently failing."""
+    from unittest.mock import patch
+
+    from absentia.tui.app import ExportFormatScreen
+
+    _write_corpus(tmp_path)
+    settings_file = tmp_path / "settings.json"  # never written
+
+    app = AbsentiaApp(root=tmp_path, config=Config())
+    notifications: list[tuple] = []
+    orig_notify = app.notify
+
+    def captured_notify(*args, **kwargs):
+        notifications.append((args, kwargs))
+        return orig_notify(*args, **kwargs)
+    app.notify = captured_notify  # type: ignore[method-assign]
+
+    with patch("absentia.settings.settings_path", return_value=settings_file):
+        async with app.run_test() as pilot:
+            await _wait_for_scan(app, pilot)
+            await pilot.press("x")
+            await pilot.pause()
+            assert isinstance(app.screen, ExportFormatScreen)
+            await pilot.press("1")  # markdown
+            await pilot.pause()
+
+    msgs = " ".join(args[0] for args, _kw in notifications)
+    assert "default export path" in msgs.lower()
+
+
+@pytest.mark.asyncio
 async def test_tui_explain_dismiss_without_s_does_not_suppress(tmp_path):
     """Cancelling Explain with Esc must not trigger the suppress flow."""
     from absentia.storage import Storage
@@ -253,7 +351,7 @@ async def test_tui_explain_dismiss_without_s_does_not_suppress(tmp_path):
     _write_corpus(tmp_path)
     app = AbsentiaApp(root=tmp_path, config=Config())
     async with app.run_test() as pilot:
-        await pilot.pause()
+        await _wait_for_scan(app, pilot)
 
         await pilot.press("e")
         await pilot.pause()

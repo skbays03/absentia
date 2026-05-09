@@ -204,6 +204,8 @@ class HelpScreen(ModalScreen[None]):
                 "  s            suppress selected gap\n"
                 "               (also works inside the e modal —\n"
                 "                no need to close it first)\n"
+                "  x            export scan results (md/html/txt/\n"
+                "               json/csv/sarif) to default_export_path\n"
                 "  Ctrl+R       rescan now\n"
                 "  w            toggle watch (auto-rescan)\n\n"
                 "[b]Global[/]\n"
@@ -212,6 +214,208 @@ class HelpScreen(ModalScreen[None]):
             )
 
     def action_dismiss(self) -> None:  # type: ignore[override]
+        self.dismiss(None)
+
+
+class LoadingScreen(ModalScreen[None]):
+    """Per-stage scan progress, mirroring the CLI's five-stage display.
+
+    Pushed onto the screen stack while ``scan_corpus`` runs in a
+    Textual worker thread; popped when the scan finishes (success or
+    failure). Shows the same ``walk → parse → store → mine →
+    finalize`` story the CLI's interactive text mode shows, so a
+    user who's seen one understands the other immediately.
+
+    Stage state per row:
+      ○ pending  (dim)        — not yet reached
+      ◐ active   (yellow)     — currently running
+      ✓ done     (green)      — finished, with summary detail
+
+    Parse stage shows a live ``done / total files (N%)`` counter
+    while running, populated by ``progress_callback`` reports from
+    the worker. Other stages are too fast to need granular progress
+    on real-world projects.
+
+    Cannot be dismissed manually — the scan owns the lifecycle.
+    """
+
+    DEFAULT_CSS = """
+    LoadingScreen { align: center middle; }
+    #loading_dialog {
+        width: 76; height: 12;
+        background: $surface;
+        border: thick $accent;
+        padding: 1 2;
+    }
+    #loading_title { margin-bottom: 1; }
+    """
+
+    # Empty BINDINGS: the user can't dismiss the loader; the scan
+    # tears it down when it finishes. Quitting still works because
+    # AbsentiaApp's `q` binding fires from the parent screen.
+    BINDINGS = []
+
+    _STAGES = ("walk", "parse", "store", "mine", "finalize")
+    _STAGE_LABELS = {
+        "walk":     "Walking corpus",
+        "parse":    "Scanning files",
+        "store":    "Loading store",
+        "mine":     "Mining rules",
+        "finalize": "Finalizing",
+    }
+
+    def __init__(self, root: Path) -> None:
+        super().__init__()
+        self._root = root
+        self._states: dict[str, str] = {s: "pending" for s in self._STAGES}
+        self._details: dict[str, str] = {s: "" for s in self._STAGES}
+        self._parse_done = 0
+        self._parse_total = 0
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="loading_dialog"):
+            yield Label(
+                f"absentia · scanning [b cyan]{self._root.name}[/]",
+                id="loading_title",
+            )
+            yield Static("", id="stage_list")
+
+    def on_mount(self) -> None:
+        self._refresh()
+
+    def update_stage(
+        self, stage: str, event: str, **details: object,
+    ) -> None:
+        """Apply a stage transition reported by the worker thread.
+
+        Always called via ``app.call_from_thread`` so it's safe to
+        touch Textual widget state. ``details`` carries the kwargs
+        passed by ``scan_corpus``'s ``stage_callback``.
+        """
+        if stage not in self._states:
+            return
+        if event == "started":
+            self._states[stage] = "active"
+            if stage == "parse":
+                total = details.get("total", 0)
+                if isinstance(total, int):
+                    self._parse_total = total
+        elif event == "finished":
+            self._states[stage] = "done"
+            self._details[stage] = self._format_summary(details)
+        self._refresh()
+
+    def update_parse_progress(self, done: int, total: int) -> None:
+        """Drive the live ``done/total`` counter on the parse row."""
+        self._parse_done = done
+        self._parse_total = total
+        if self._states["parse"] == "active":
+            self._refresh()
+
+    def _format_summary(self, details: dict) -> str:
+        from ..progress import _format_time
+        parts: list[str] = []
+        if "files" in details:
+            parts.append(f"{details['files']:,d} files")
+        if "entities" in details:
+            parts.append(f"{details['entities']:,d} entities")
+        if "rules" in details:
+            parts.append(f"{details['rules']:,d} rules")
+        if "gaps" in details and "rules" not in details:
+            parts.append(f"{details['gaps']:,d} gaps")
+        if "duration_ms" in details:
+            secs = float(details["duration_ms"]) / 1000
+            parts.append(_format_time(secs))
+        return " · ".join(parts)
+
+    def _refresh(self) -> None:
+        lines: list[str] = []
+        for stage in self._STAGES:
+            label = self._STAGE_LABELS[stage]
+            state = self._states[stage]
+            if state == "pending":
+                glyph = "[dim]○[/]"
+            elif state == "active":
+                glyph = "[yellow]◐[/]"
+            else:  # done
+                glyph = "[bright_green]✓[/]"
+
+            row = f" {glyph}  [b]{label}[/]"
+            if (
+                state == "active" and stage == "parse"
+                and self._parse_total > 0
+            ):
+                pct = int(100 * self._parse_done / self._parse_total)
+                row += (
+                    f"  [dim]{self._parse_done:,d}/"
+                    f"{self._parse_total:,d} files ({pct}%)[/]"
+                )
+            elif state == "done" and self._details[stage]:
+                row += f"  [dim]{self._details[stage]}[/]"
+            lines.append(row)
+        try:
+            self.query_one("#stage_list", Static).update("\n".join(lines))
+        except Exception:
+            # Screen has been popped; widget query will raise. Safe
+            # to ignore — late callbacks just no-op.
+            pass
+
+
+class ExportFormatScreen(ModalScreen[int | None]):
+    """Pick a post-scan export format from inside the TUI.
+
+    Returns the menu_id (1–6) for the chosen format, or ``None`` on
+    Esc / cancel. The parent app translates the id into a renderer
+    via ``export._FORMATS`` and writes the result to disk under the
+    saved ``default_export_path``.
+
+    Number keys map directly to formats so power users can fire and
+    forget — ``x → 1`` writes Markdown, ``x → 4`` writes JSON, etc.
+    """
+
+    DEFAULT_CSS = """
+    ExportFormatScreen { align: center middle; }
+    #export_dialog {
+        width: 50; height: 14;
+        background: $surface;
+        border: thick $primary;
+        padding: 1 2;
+    }
+    """
+
+    BINDINGS = [
+        Binding("1", "pick_1", "Markdown"),
+        Binding("2", "pick_2", "HTML"),
+        Binding("3", "pick_3", "Text"),
+        Binding("4", "pick_4", "JSON"),
+        Binding("5", "pick_5", "CSV"),
+        Binding("6", "pick_6", "SARIF"),
+        Binding("escape", "cancel", "Cancel"),
+        Binding("q", "cancel", "Cancel"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="export_dialog"):
+            yield Label("[b]Export scan results[/]")
+            yield Static(
+                "\n"
+                "  [b]1[/]) Markdown   [dim](.md)[/]\n"
+                "  [b]2[/]) HTML       [dim](.html)[/]\n"
+                "  [b]3[/]) Text       [dim](.txt)[/]\n"
+                "  [b]4[/]) JSON       [dim](.json)[/]\n"
+                "  [b]5[/]) CSV        [dim](.csv)[/]\n"
+                "  [b]6[/]) SARIF      [dim](.sarif.json)[/]\n\n"
+                "  [dim]Esc / q to cancel[/]"
+            )
+
+    def action_pick_1(self) -> None: self.dismiss(1)
+    def action_pick_2(self) -> None: self.dismiss(2)
+    def action_pick_3(self) -> None: self.dismiss(3)
+    def action_pick_4(self) -> None: self.dismiss(4)
+    def action_pick_5(self) -> None: self.dismiss(5)
+    def action_pick_6(self) -> None: self.dismiss(6)
+
+    def action_cancel(self) -> None:
         self.dismiss(None)
 
 
@@ -366,6 +570,7 @@ class AbsentiaApp(App[None]):
         Binding("4", "view_stats", "Stats"),
         Binding("s", "suppress", "Suppress"),
         Binding("e", "explain", "Explain"),
+        Binding("x", "export", "Export"),
         Binding("f", "follow", "Follow"),
         Binding("escape", "back", "Back"),
         Binding("slash", "filter", "Filter"),
@@ -471,28 +676,79 @@ class AbsentiaApp(App[None]):
     # ── Scan ──────────────────────────────────────────────────────────
 
     def _do_scan(self) -> None:
-        from ..cli import scan_corpus
+        """Push the loading screen + run the scan in a worker thread.
 
-        # jobs=1 inside the TUI is intentional: spawn-mode
-        # ProcessPoolExecutor (the macOS multiprocessing default) doesn't
-        # play nicely with Textual's running event loop — the spawn
-        # child's fd validation surfaces as `bad value(s) in
-        # fds_to_keep`. Mac users would hit this on any non-trivial
-        # corpus. Single-process scans avoid the issue entirely; the CLI
-        # path (`absentia check`) still gets full parallelism. Most TUI
-        # scans are incremental anyway, so should_parallelize would skip
-        # the pool even at higher jobs.
-        try:
-            result = scan_corpus(
-                root=self.root,
-                state_dir=self.root / ".absentia",
-                config=self.config,
-                jobs=1,
-            )
-        except Exception as exc:
-            self.notify(f"Scan failed: {exc}", severity="error", timeout=8)
-            return
+        Off-main-thread is required for two reasons:
+          1. The Textual event loop must keep painting (the loading
+             panel updates, the user can quit mid-scan, etc.).
+          2. ``scan_corpus`` is blocking on parse + mine and would
+             freeze the UI for the duration if run inline.
 
+        Stage and per-file progress are reported from the worker via
+        ``app.call_from_thread`` so widget state is mutated only on
+        the main thread (Textual's threading contract).
+        """
+        loading = LoadingScreen(self.root)
+        self.push_screen(loading)
+
+        def _worker() -> None:
+            from ..cli import scan_corpus
+
+            # Closure state for the parse-progress accumulator. The
+            # engine's progress_callback reports per-file increments
+            # (not (done, total) — its actual signature is
+            # ``(count_increment, item=None)``), so we sum here and
+            # forward the cumulative done + the total captured on
+            # the parse-stage start event.
+            parse_state = {"done": 0, "total": 0}
+
+            def stage_cb(stage: str, event: str, **details: object) -> None:
+                if stage == "parse" and event == "started":
+                    parse_state["done"] = 0
+                    total = details.get("total", 0)
+                    if isinstance(total, int):
+                        parse_state["total"] = total
+                # Trampoline back onto the main thread so the
+                # widget update is safe.
+                self.call_from_thread(
+                    loading.update_stage, stage, event, **details,
+                )
+
+            def parse_cb(increment: int, item: object = None) -> None:
+                parse_state["done"] += int(increment)
+                self.call_from_thread(
+                    loading.update_parse_progress,
+                    parse_state["done"], parse_state["total"],
+                )
+
+            # jobs=1 inside the TUI is intentional: spawn-mode
+            # ProcessPoolExecutor (the macOS multiprocessing default)
+            # doesn't play nicely with Textual's running event loop —
+            # the spawn child's fd validation surfaces as `bad value(s)
+            # in fds_to_keep`. Mac users would hit this on any non-
+            # trivial corpus. Single-process scans avoid the issue
+            # entirely; the CLI path (`absentia check`) still gets
+            # full parallelism. Most TUI scans are incremental anyway,
+            # so should_parallelize would skip the pool even at higher
+            # jobs.
+            try:
+                result = scan_corpus(
+                    root=self.root,
+                    state_dir=self.root / ".absentia",
+                    config=self.config,
+                    jobs=1,
+                    stage_callback=stage_cb,
+                    progress_callback=parse_cb,
+                )
+            except Exception as exc:
+                self.call_from_thread(self._scan_failed, exc)
+                return
+            self.call_from_thread(self._scan_done, result)
+
+        self.run_worker(_worker, thread=True, exclusive=True)
+
+    def _scan_done(self, result: dict) -> None:
+        """Main-thread callback when the worker finishes successfully."""
         self._gaps = result["gaps"]
         self._rules_by_id = result["rules_by_id"]
         self._rules = sorted(result["rules"], key=lambda r: -r.confidence)
@@ -501,8 +757,22 @@ class AbsentiaApp(App[None]):
         self._entities = result["entities"]
         self._feature_index = result["feature_index"]
         self._scan_stats = result["scan_stats"]
+        # Pop the loading screen IF it's still on top — a user who
+        # navigated into a modal during the scan would have stacked
+        # on top of it, in which case the LoadingScreen is buried
+        # and we leave the stack alone. (Edge case; in practice the
+        # user can't reach a modal while LoadingScreen is up because
+        # LoadingScreen has no dismiss bindings.)
+        if isinstance(self.screen, LoadingScreen):
+            self.pop_screen()
         self._render_current_view()
         self._update_subtitle()
+
+    def _scan_failed(self, exc: BaseException) -> None:
+        """Main-thread callback when the worker raises."""
+        if isinstance(self.screen, LoadingScreen):
+            self.pop_screen()
+        self.notify(f"Scan failed: {exc}", severity="error", timeout=8)
 
     # ── Subtitle / breadcrumb ────────────────────────────────────────
 
@@ -1017,6 +1287,85 @@ class AbsentiaApp(App[None]):
 
     def action_help(self) -> None:
         self.push_screen(HelpScreen())
+
+    def action_export(self) -> None:
+        """Open the export-format picker.
+
+        Mirrors the post-check CLI export prompt but TUI-native: a
+        modal lists the six formats, the user picks one, the file
+        is written under the saved ``default_export_path`` (with
+        the same ``<base>/docs/absentia/<corpus>/gaps-<UTC>.<ext>``
+        layout the CLI uses), and a notification confirms.
+
+        Falls through with a notification when:
+          - there's no scan result loaded yet (initial scan still
+            running, or it failed);
+          - no ``default_export_path`` is configured (the user
+            needs to set one via the CLI's export prompt first).
+        """
+        if not self._scan_stats:
+            self.notify("Scan still loading; try again in a moment.")
+            return
+        if not self._gaps and not self._rules:
+            self.notify(
+                "Nothing to export yet — no gaps or rules.",
+                severity="warning",
+            )
+            return
+        self.push_screen(ExportFormatScreen(), self._on_export_format_chosen)
+
+    def _on_export_format_chosen(self, fmt_idx: int | None) -> None:
+        """Receive the format choice from ExportFormatScreen and write."""
+        if fmt_idx is None:
+            return
+        from .. import export as exp_mod
+        from ..settings import load_settings
+
+        fmt = next(
+            (f for f in exp_mod._FORMATS if f[0] == fmt_idx), None,
+        )
+        if fmt is None:
+            self.notify(
+                "Unknown format choice.", severity="error",
+            )
+            return
+        _, fmt_name, fmt_ext, fmt_fn_name = fmt
+
+        settings = load_settings()
+        if settings.default_export_path is None:
+            self.notify(
+                "No default export path set. Run `absentia check` once "
+                "from the CLI and pick option 2 to set one, then come "
+                "back here.",
+                severity="warning",
+                timeout=10,
+            )
+            return
+
+        base = Path(settings.default_export_path).expanduser().resolve()
+        corpus_name = self.root.name or "scan"
+        out_path = exp_mod.build_export_path(base, corpus_name, fmt_ext)
+
+        try:
+            renderer = getattr(exp_mod, fmt_fn_name)
+            body = renderer(
+                root=self.root,
+                gaps=self._gaps,
+                rules_by_id=self._rules_by_id,
+                entities=self._entities,
+                scan_stats=self._scan_stats,
+            )
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(body, encoding="utf-8")
+        except OSError as exc:
+            self.notify(
+                f"Export failed: {exc}", severity="error", timeout=8,
+            )
+            return
+
+        self.notify(
+            f"Exported {fmt_name} to {out_path}", timeout=10,
+        )
 
     def action_open_in_editor(self) -> None:
         if self._view == "gaps":

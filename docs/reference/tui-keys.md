@@ -28,6 +28,7 @@ The same reference is available in-app via `?`.
 | `/` | Filter current view (substring or `kind=class` / `conf>=0.9`) |
 | `e` | Explain — why was this gap flagged? Pops a peek modal with the rule, conformer examples, and the divergence. Does **not** navigate. Press `s` inside the modal to chain straight into Suppress for the same gap. |
 | `s` | Suppress selected gap with a reason. Also works inside the `e` modal — no need to close it first. |
+| `x` | Export scan results to disk. Opens a modal listing the six formats (Markdown / HTML / Text / JSON / CSV / SARIF — same as the CLI's post-check prompt); pick one with a number key. Writes to `<default_export_path>/docs/absentia/<corpus>/gaps-<UTC-ts>.<ext>`. The default path comes from `~/.absentia/settings.json`; set it once via the CLI's export prompt before using `x` in the TUI. |
 | `Ctrl+R` | Rescan now |
 | `w` | Toggle watch mode (auto-rescan every 2s) |
 
