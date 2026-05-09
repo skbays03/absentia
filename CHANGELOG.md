@@ -7,6 +7,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Five mining strategies — gap-detector roadmap closed.**
+  Frequency, symmetry, call-pair, series, closure. Eight new gap
+  shapes shipped on top of the prior frequency / symmetry / series
+  base:
+  - `has_post_init` (Item A) — config-validation gap. Flags
+    dataclass-shaped classes in directories where most siblings
+    define `__post_init__` validation.
+  - `module` entity + `has_all_export` (Item B) — public-surface
+    gap. Every Python file emits a module-scope entity carrying
+    whether the file declares `__all__`. Mining over the directory
+    selector finds the module that forgot to advertise its API.
+  - `call_kwargs` (Item C) — logging / tracing-convention gap.
+    "Every endpoint passes `request_id=` to some call; this one
+    doesn't."
+  - `entry_point_registered` (Item D) — meta gap. Reads
+    `pyproject.toml`'s `[project.entry-points]`; flags classes that
+    sit in a directory full of registered plugins but aren't
+    themselves registered. Skips ABC subclasses.
+  - **Letter series** (Item E) — `part_a.md`, `part_b.md`,
+    `part_d.md` → flag missing `part_c.md`. Case- and width-
+    preserving.
+  - **Version-directory series** (Item F) — `api_v1/`, `api_v2/`,
+    `api_v4/` → flag missing `api_v3`. No new entity kind required;
+    walks file-path-implied directories.
+  - **Ordinal alphabets** (Item G) — `TestUserCRUD` with
+    `test_create / test_read / test_update` but no `test_delete` →
+    flag the missing slot. Synonym-aware (`read` / `get` / `list` /
+    `find` / `findAll` are the same slot) + class-name-hint gating
+    so lifecycle classes don't false-fire.
+  - **Closure pass — defined-but-never-used classes** (Item H).
+    Language-agnostic: the inverse-reference index is built from
+    `calls` / `parent_class` / `decorator` features that every
+    extractor already emits, plus a corpus-text identifier scan
+    catches references the feature index misses (TypeScript type
+    annotations, NestJS module-imports arrays, isinstance args).
+    Filters: skip private-named classes, skip test files, skip
+    entry-point-registered classes. Tokenize-once with
+    `Counter.update(filter)` keeps the kernel-scale closure pass
+    at ~16 s of pure regex work.
+
+  All five strategies emit the same `Rule` + `Gap` shape so the TUI,
+  suppression system, formatters, and cross-strategy dedup keep
+  working unchanged.
+
+- **TUI debug log + `absentia report` crash-recovery flow.** The
+  TUI journals every key press and action to `~/.absentia/tui.log`
+  (rotated at 1 MB) so post-mortem debugging has a reproducible
+  event trail. Catastrophic crashes prompt `File a GitHub issue
+  with this log? [y/N]` inline before re-raising — the new
+  `absentia report` subcommand composes a prefilled issue with
+  system info + the last 200 log lines and either fires
+  `gh issue create --web` or falls back to a `webbrowser.open` URL.
+  `absentia report --no-prompt` skips the standalone confirmation
+  for users who've already decided.
+
+- **TUI: collapsible info panels (`i` key).** The bottom-of-pane
+  detail + code preview now sit in a wrapper container docked to
+  the bottom of the table panel, so they stay flush with the
+  footer regardless of available height. Press `i` to collapse
+  the wrapper; the DataTable claims the freed rows and a one-line
+  hint shows the shortcut to bring them back. Toggle is sticky
+  for the session.
+
+### Changed
+
+- **PyPI publish migrated to OIDC Trusted Publishing.** Replaces
+  long-lived `PYPI_API_TOKEN` / `TEST_PYPI_API_TOKEN` repo secrets
+  with short-lived OIDC tokens issued by GitHub Actions and
+  verified by PyPI against pre-registered Trusted Publisher
+  entries (one for `pypi.org`, one for `test.pypi.org`, both bound
+  to this workflow's filename + repo identity). The action
+  auto-detects OIDC when `id-token: write` is granted at the
+  workflow level and no `password:` is supplied. There's no
+  long-lived credential left to leak from repo secrets — a
+  compromised repo can mint at most one publish using the
+  ephemeral token, not arbitrary future publishes.
+
+- **Performance numbers re-measured against the current code.**
+  The `~28 s warm / ~50 s cold` kernel headline drifted as
+  optimizations landed; re-ran a clean cold + warm scan and
+  updated the README + architecture-doc tables. Now `~24 s warm /
+  ~48 s cold` end-to-end at default jobs (5) on a 10-core M-series
+  MacBook, with stage breakdown `parse 8 / mine 12 / store 2`
+  warm, `parse 31 / mine 12 / store 3` cold. Mining-stage speedup
+  story tightened to `~25×` from the pre-mypyc 5-minute baseline.
+  Throughput section in the architecture doc extended to quote
+  both the single-process `~7,200 ent/s` and default-jobs
+  `~14,400 ent/s` figures (previously only the slower
+  single-process measurement appeared, understating real-world
+  parallel throughput).
+
+### Fixed
+
+- **`absentia report` GitHub repo path.** The first cut pointed at
+  a non-existent repo path (the local folder convention, not a
+  real GitHub org), so every crash report would 404 before
+  reaching the issue tracker. Repointed at the actual remote.
+
 ### Changed
 
 - **CI split: cheap gates per-push, heavy gates per-tag.** `ci.yml`
@@ -15,13 +115,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The full `pytest` matrix (3.13 + 3.14), `mypy`, and
   `mkdocs --strict` moved to the new `release-checks.yml` workflow,
   triggered on `push: tags: ['v*.*.*']` and `workflow_dispatch`.
-  Mirrors the Dev-Dashboard pattern of tag-only release builds.
   The local `scripts/local_ci.sh` (and the `.githooks/pre-push`
   hook that calls it) still runs the full set on the developer's
   machine before push, so heavy gates aren't bypassed — they're
   just deferred to the release boundary instead of duplicated per
-  push. Saves substantial GitHub Actions minutes for a solo-dev
-  workflow with a Mac → push → WSL pull cross-platform cycle.
+  push.
 
 - **Minimum Python is now 3.13** (was 3.11). No active downstream
   users yet, so the cost is zero and the cleanup is real:
@@ -109,8 +207,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dispatches `release-checks.yml` on the current branch via
   `gh workflow run` without bumping anything — useful for
   catching Python-3.14-specific failures the local pre-push
-  hook can't reproduce. Mirrors the Dev-Dashboard `build.sh`
-  style.
+  hook can't reproduce.
 
 - **`EXTRACTOR_FINGERPRINT` cache-invalidation salt.** The per-file
   content hash that decides "use cached extract or re-parse?" is
@@ -272,8 +369,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
-(Pre-optimization headline still cited; new measurements pending
-on Shawn's hardware. See `~/Desktop/lacuna_doc_todos.txt §2`.)
+(Pre-optimization headline still cited; see the `Performance` block
+above for the most recent end-to-end measurements.)
 
 ---
 

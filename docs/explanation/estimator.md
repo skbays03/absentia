@@ -9,7 +9,7 @@ you should expect the result to be.
 ## What the output means
 
 ```
-absentia est — cold-scan estimate for /Users/shawn/code/redis
+absentia est — cold-scan estimate for ~/code/redis
 
 Files               900   (12.2 MB)
 By language

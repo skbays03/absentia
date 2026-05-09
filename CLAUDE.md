@@ -40,9 +40,10 @@ a reversal seems warranted, surface the reasoning explicitly.
    never the core.
 2. **TUI is the primary UX.** Built with Textual. Batch CLI is the secondary
    scriptable mode. Number keys for view switching; lowercase for actions.
-3. **Standalone repo, not a Dev-Dashboard panel.** Lives at
-   `Transcending-Binary/projects/absentia/`. Designed for Dev-Dashboard (or any
-   other host) to embed via library import or `--json` shellout.
+3. **Standalone repo, not a host-app panel.** Designed for any host
+   (a developer dashboard, an editor extension, a CI bot) to embed
+   via library import or `--json` shellout. The engine has zero
+   coupling to the host.
 4. **Python + SQLite for the MVP.** Rust + alternate stores reserved for the
    enterprise tier. Don't pre-build that infrastructure.
 5. **Stable IDs everywhere.** Entities, rules, gaps, and groups all have
