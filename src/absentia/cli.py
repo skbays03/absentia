@@ -168,6 +168,21 @@ def main(argv: list[str] | None = None) -> int:
              "and exit. The same intro is one-line-hinted on first "
              "invocation in a TTY.",
     )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Worker count for the TUI's initial / re-scan. "
+             "Defaults to 1 — the TUI forces single-process scans "
+             "by default because spawn-mode multiprocessing can "
+             "trip Textual's event loop on macOS (`bad value(s) "
+             "in fds_to_keep`). Override with --jobs N if your "
+             "platform handles process spawn cleanly under "
+             "Textual; see the TUI keys reference for caveats. "
+             "Has no effect on `absentia check` (use that "
+             "subcommand's own --jobs instead).",
+    )
     sub = parser.add_subparsers(dest="cmd")
 
     init = sub.add_parser("init", help="Create absentia.toml + .absentia/ in the current dir.")
@@ -372,7 +387,7 @@ def main(argv: list[str] | None = None) -> int:
             from .tui import run_tui
             root = tui_path if tui_path is not None else Path(".").resolve()
             config = _load_config(root, None)
-            return run_tui(root, config)
+            return run_tui(root, config, jobs=args.jobs)
         parser.print_help()
         return 0
 

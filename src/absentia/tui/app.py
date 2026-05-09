@@ -112,8 +112,13 @@ _ABSENTIA_INPUT_CSS = """
 """
 
 
-class SuppressScreen(ModalScreen[tuple[str, str] | None]):
-    """Prompt for a suppression reason. Returns ``(short_id, reason)``.
+class SuppressScreen(ModalScreen[tuple[list[str], str] | None]):
+    """Prompt for a suppression reason. Returns
+    ``(list_of_short_ids, reason)``.
+
+    Single-row callers pass a one-element list. Bulk callers (gaps
+    view with multi-select active) pass N — the same reason gets
+    applied to every short_id on the list.
 
     Styled to match ExportPathInputScreen — visible bordered textbox
     with a boost background so the user clearly sees their typed
@@ -133,17 +138,14 @@ class SuppressScreen(ModalScreen[tuple[str, str] | None]):
 
     BINDINGS = [Binding("escape", "cancel", "Cancel")]
 
-    def __init__(self, gap_short_id: str, missing: str) -> None:
+    def __init__(self, short_ids: list[str], header: str) -> None:
         super().__init__()
-        self._gap_short_id = gap_short_id
-        self._missing = missing
+        self._short_ids = list(short_ids)
+        self._header = header
 
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
-            yield Label(
-                f"Suppress [bold cyan]{self._gap_short_id}[/]   "
-                f"({self._missing})"
-            )
+            yield Label(self._header)
             yield Label("Reason  (Enter saves, Esc cancels):")
             yield Input(placeholder="Why this gap is intentional…",
                         id="reason_input")
@@ -154,7 +156,7 @@ class SuppressScreen(ModalScreen[tuple[str, str] | None]):
     def on_input_submitted(self, event: Input.Submitted) -> None:
         reason = event.value.strip()
         if reason:
-            self.dismiss((self._gap_short_id, reason))
+            self.dismiss((self._short_ids, reason))
 
     def action_cancel(self) -> None:
         self.dismiss(None)
@@ -221,8 +223,8 @@ class HelpScreen(ModalScreen[None]):
             yield Static(
                 "[b cyan]Absentia keybindings[/]\n\n"
                 "[b]Views[/]\n"
-                "  1  Gaps      4  Stats\n"
-                "  2  Rules\n"
+                "  1  Gaps           4  Stats\n"
+                "  2  Rules          5  Suppressions\n"
                 "  3  Groups\n\n"
                 "[b]Navigation[/]\n"
                 "  j / ↓        next row\n"
@@ -238,6 +240,10 @@ class HelpScreen(ModalScreen[None]):
                 "                no need to close it first)\n"
                 "  S            cycle sort key for current view\n"
                 "               (gaps: conf↓ → conf↑ → file → entity)\n"
+                "  Space        toggle multi-select on the cursor\n"
+                "               row (gaps + suppressions views).\n"
+                "               s/r then operate on the whole set.\n"
+                "  r            remove suppression(s) on view 5\n"
                 "  x            export scan results (md/html/txt/\n"
                 "               json/csv/sarif) to default_export_path\n"
                 "  ,            open settings panel (jobs_default,\n"
@@ -307,7 +313,33 @@ class LoadingScreen(ModalScreen[None]):
     ]
 
     def action_stop_and_quit(self) -> None:
+        """Quit the app and guarantee process termination.
+
+        ``app.exit()`` alone schedules the Textual event loop to
+        wind down, but if the scan worker is mid-stage (especially
+        deep inside scan_corpus's tree-sitter calls), the daemon
+        thread can keep the process alive in the background — the
+        user gets their shell prompt back without the process
+        actually exiting, leaving an orphan that holds the SQLite
+        WAL until the kernel reaps it.
+
+        Belt-and-suspenders: schedule a hard ``os._exit(0)`` after a
+        short grace period so the process really dies even if
+        Textual's teardown gets stuck. flock-based StateLock is
+        kernel-released, so the lockfile is freed regardless;
+        SQLite's WAL recovers on next open. The "no partial state
+        saved" hint in the loading dialog already sets the
+        expectation that this is a clean abort, not a graceful
+        cancel.
+        """
+        import os
+        import threading
+
         self.app.exit()
+        # 500 ms gives Textual's normal teardown a chance to win the
+        # race; if it doesn't, force-exit. Daemon timer dies with
+        # the process (no leak if Textual exits cleanly first).
+        threading.Timer(0.5, lambda: os._exit(0)).start()
 
     _STAGES = ("walk", "parse", "store", "mine", "finalize")
     _STAGE_LABELS = {
@@ -1081,11 +1113,51 @@ class ExplainScreen(ModalScreen[str | None]):
 
 
 _VIEW_LABELS = {
-    "gaps":   "Gaps",
-    "rules":  "Rules",
-    "groups": "Groups",
-    "stats":  "Stats",
+    "gaps":         "Gaps",
+    "rules":        "Rules",
+    "groups":       "Groups",
+    "stats":        "Stats",
+    "suppressions": "Suppressions",
 }
+
+
+def _load_project_suppressions(root: Path) -> list[dict]:
+    """Read [[suppress]] blocks from ``absentia.toml`` for read-only
+    display in the Suppressions view.
+
+    Returns a list of dicts with the same shape the local DB
+    suppressions use, plus a ``"source": "project"`` discriminator.
+    Failures (missing file, parse errors) return an empty list —
+    project-wide suppressions are advisory until the engine wires
+    them up, so a malformed block shouldn't block the TUI.
+    """
+    toml_path = root / "absentia.toml"
+    if not toml_path.exists():
+        return []
+    # py 3.13+ minimum (per pyproject.toml requires-python), so
+    # tomllib is always available — no tomli fallback needed.
+    import tomllib
+    try:
+        with open(toml_path, "rb") as fh:
+            data = tomllib.load(fh)
+    except (OSError, ValueError):
+        return []
+    raw = data.get("suppress")
+    if not isinstance(raw, list):
+        return []
+    out: list[dict] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        out.append({
+            "source": "project",
+            "rule": entry.get("rule"),
+            "entity": entry.get("entity"),
+            "scope": entry.get("scope", "gap"),
+            "reason": entry.get("reason", ""),
+            "created": entry.get("created", ""),
+        })
+    return out
 
 
 class AbsentiaApp(App[None]):
@@ -1130,6 +1202,9 @@ class AbsentiaApp(App[None]):
         Binding("2", "view_rules", "Rules"),
         Binding("3", "view_groups", "Groups"),
         Binding("4", "view_stats", "Stats"),
+        Binding("5", "view_suppressions", "Suppressions"),
+        Binding("space", "toggle_select", "Select"),
+        Binding("r", "remove_suppression", "Remove suppression"),
         Binding("s", "suppress", "Suppress"),
         Binding("S", "cycle_sort", "Sort"),
         Binding("e", "explain", "Explain"),
@@ -1148,11 +1223,17 @@ class AbsentiaApp(App[None]):
         root: Path,
         config: Config,
         on_open_editor: OpenEditorCallback | None = None,
+        jobs: int | None = None,
     ) -> None:
         super().__init__()
         self.root = root
         self.config = config
         self._on_open_editor = on_open_editor
+        # User-requested worker count for TUI scans (top-level
+        # `--jobs N`). None → fall back to 1, the safe default for
+        # macOS spawn-mode multiprocessing under Textual's event
+        # loop. See the comment in _do_scan.
+        self._jobs: int = jobs if jobs is not None and jobs > 0 else 1
         self._gaps: list[Gap] = []
         self._rules: list[Rule] = []
         self._rules_by_id: dict[str, Rule] = {}
@@ -1162,8 +1243,26 @@ class AbsentiaApp(App[None]):
         self._feature_index: dict = {}
         self._scan_stats: dict = {}
         self._view: str = "gaps"
-        self._filter: dict[str, str] = {"gaps": "", "rules": "", "groups": ""}
+        self._filter: dict[str, str] = {
+            "gaps": "", "rules": "", "groups": "", "suppressions": "",
+        }
         self._nav_stack: list[tuple[str, str]] = []
+        # Multi-select state — per view, set of row keys (short_id
+        # for gaps / suppressions). `space` toggles. `s` (gaps view)
+        # / `r` (suppressions view) operate on the selection if
+        # non-empty, otherwise on the cursor row. Cleared on view
+        # switch or rescan to avoid stale references.
+        self._selected: dict[str, set[str]] = {
+            "gaps": set(), "suppressions": set(),
+        }
+        # Cached project-wide suppressions parsed from absentia.toml.
+        # Read once per scan; refreshed when the user re-runs after
+        # editing the TOML in $EDITOR.
+        self._project_suppressions: list[dict] = []
+        # Cached snapshot of state.db local suppressions for the
+        # Suppressions view. Same lifecycle as scan results — written
+        # by _scan_done and read by the suppressions render path.
+        self._local_suppressions: dict[str, dict] = {}
         from textual.timer import Timer
         self._watch_timer: Timer | None = None
         # Stashes the (menu_id, name, ext, fn_name) tuple while the
@@ -1326,22 +1425,21 @@ class AbsentiaApp(App[None]):
                     parse_state["done"], parse_state["total"],
                 )
 
-            # jobs=1 inside the TUI is intentional: spawn-mode
+            # Default jobs=1 inside the TUI: spawn-mode
             # ProcessPoolExecutor (the macOS multiprocessing default)
             # doesn't play nicely with Textual's running event loop —
             # the spawn child's fd validation surfaces as `bad value(s)
-            # in fds_to_keep`. Mac users would hit this on any non-
-            # trivial corpus. Single-process scans avoid the issue
-            # entirely; the CLI path (`absentia check`) still gets
-            # full parallelism. Most TUI scans are incremental anyway,
-            # so should_parallelize would skip the pool even at higher
-            # jobs.
+            # in fds_to_keep` on any non-trivial corpus. Single-process
+            # scans avoid the issue. Users who know their platform
+            # handles process spawn cleanly under Textual can opt into
+            # parallelism via top-level `--jobs N`; the CLI path
+            # (`absentia check`) gets full parallelism unconditionally.
             try:
                 result = scan_corpus(
                     root=self.root,
                     state_dir=self.root / ".absentia",
                     config=self.config,
-                    jobs=1,
+                    jobs=self._jobs,
                     stage_callback=stage_cb,
                     progress_callback=parse_cb,
                 )
@@ -1362,6 +1460,16 @@ class AbsentiaApp(App[None]):
         self._entities = result["entities"]
         self._feature_index = result["feature_index"]
         self._scan_stats = result["scan_stats"]
+        # Refresh the suppressions caches for the Suppressions view.
+        # Local: read straight from the state DB. Project: re-parse
+        # absentia.toml (the user may have edited it between scans
+        # via the Settings panel's $EDITOR handoff).
+        self._refresh_suppressions_cache()
+        # Stale multi-select sets across views need clearing — the
+        # gap a user marked may have been suppressed mid-scan, the
+        # suppression they marked may have been removed elsewhere.
+        for view_sel in self._selected.values():
+            view_sel.clear()
         # Pop the loading screen IF it's still on top — a user who
         # navigated into a modal during the scan would have stacked
         # on top of it, in which case the LoadingScreen is buried
@@ -1372,6 +1480,16 @@ class AbsentiaApp(App[None]):
             self.pop_screen()
         self._render_current_view()
         self._update_subtitle()
+
+    def _refresh_suppressions_cache(self) -> None:
+        """Re-pull local + project suppressions. Called after each
+        scan and after every add / remove from the TUI."""
+        try:
+            with Storage(self.root / ".absentia") as storage:
+                self._local_suppressions = storage.load_suppressions()
+        except (StorageVersionError, StateLockError):
+            self._local_suppressions = {}
+        self._project_suppressions = _load_project_suppressions(self.root)
 
     def _scan_failed(self, exc: BaseException) -> None:
         """Main-thread callback when the worker raises."""
@@ -1434,6 +1552,8 @@ class AbsentiaApp(App[None]):
             self._render_rules_table(table)
         elif self._view == "groups":
             self._render_groups_table(table)
+        elif self._view == "suppressions":
+            self._render_suppressions_table(table)
 
     # ── Gaps view ─────────────────────────────────────────────────────
 
@@ -1486,14 +1606,24 @@ class AbsentiaApp(App[None]):
         from rich.text import Text
 
         table.add_columns(
-            "●", "Location", "Entity", "Missing", "Conf", "ID",
+            "▣", "●", "Location", "Entity", "Missing", "Conf", "ID",
         )
         gaps = self._filtered_gaps()
         flt = self._filter.get("gaps", "")
+        sel_set = self._selected.get("gaps", set())
         for gap in gaps:
             rule = self._rules_by_id[gap.rule_id]
             entity = self._entities[gap.entity_id]
             short = entity.qualified_name.split("::", 1)[-1]
+
+            # Multi-select marker — bright yellow ▣ when the row is
+            # in the selection bucket, dim · otherwise. Same glyph
+            # convention the suppressions view uses.
+            mark = (
+                Text("▣", style="bright_yellow")
+                if gap.short_id in sel_set
+                else Text("·", style="dim")
+            )
 
             # Severity dot — color encodes confidence at a glance,
             # matching the CLI table's leftmost column.
@@ -1529,7 +1659,7 @@ class AbsentiaApp(App[None]):
             )
 
             table.add_row(
-                dot, location, entity_cell, missing_cell,
+                mark, dot, location, entity_cell, missing_cell,
                 conf_cell, id_cell,
                 key=gap.short_id,
             )
@@ -1740,6 +1870,243 @@ class AbsentiaApp(App[None]):
             f"[b]f[/] to follow to first member · [b]Esc[/] back"
         )
 
+    # ── Suppressions view ────────────────────────────────────────────
+
+    def _filtered_suppressions(self) -> list[dict]:
+        """Merge local + project suppressions into a single sortable
+        list of dicts with unified shape for the DataTable.
+
+        Each row: ``{key, source, label, target, reason, created}``
+        where ``key`` is the row id (short_id for local, a synthetic
+        ``project::N`` for read-only project entries), and ``source``
+        is ``"local"`` or ``"project"``.
+        """
+        rows: list[dict] = []
+
+        # Local — from state.db. Map gap.short_id back to the entity
+        # name when the suppressed gap is still in the current scan
+        # (it usually isn't — the suppression hides it from results).
+        # Fall back to the stored full_id when the entity isn't in
+        # the current corpus.
+        for short_id, info in self._local_suppressions.items():
+            full_id = info.get("full_id") or ""
+            target = ""
+            # full_id format: "<rule_id>::<entity_id>". Pull the
+            # entity tail for display.
+            if "::" in str(full_id):
+                target = str(full_id).split("::", 1)[1]
+            rows.append({
+                "key":     short_id,
+                "source":  "local",
+                "label":   short_id,
+                "target":  target or full_id,
+                "reason":  info.get("reason") or "",
+                "created": info.get("created_at") or "",
+            })
+
+        # Project — read-only entries from absentia.toml. Engine
+        # doesn't enforce them today (advisory until wired up); the
+        # row is shown so users can review what's committed without
+        # leaving the TUI.
+        for i, entry in enumerate(self._project_suppressions):
+            target_parts = []
+            if entry.get("entity"):
+                target_parts.append(str(entry["entity"]))
+            if entry.get("rule"):
+                target_parts.append(f"({entry['rule']})")
+            rows.append({
+                "key":     f"project::{i}",
+                "source":  "project",
+                "label":   f"project#{i + 1}",
+                "target":  " ".join(target_parts),
+                "reason":  entry.get("reason") or "",
+                "created": entry.get("created") or "",
+            })
+
+        # Filter using the existing `/`-search infrastructure.
+        f = self._filter.get("suppressions", "").lower()
+        if f:
+            rows = [
+                r for r in rows
+                if f in (
+                    f"{r['label']} {r['target']} {r['reason']} "
+                    f"{r['source']}"
+                ).lower()
+            ]
+        return rows
+
+    def _render_suppressions_table(self, table: DataTable) -> None:
+        """Render the merged local + project suppression list."""
+        from rich.text import Text
+
+        table.add_columns(
+            "▣", "Source", "ID", "Target", "Reason", "Created",
+        )
+        rows = self._filtered_suppressions()
+        flt = self._filter.get("suppressions", "")
+        sel_set = self._selected.get("suppressions", set())
+
+        for row in rows:
+            key = row["key"]
+            mark = (
+                Text("▣", style="bright_yellow")
+                if key in sel_set else Text("·", style="dim")
+            )
+            source_style = (
+                "cyan" if row["source"] == "local" else "magenta"
+            )
+            source_cell = Text(row["source"], style=source_style)
+            label_cell = Text.from_markup(
+                f"[dim]{_highlight_match(row['label'], flt)}[/]"
+            )
+            target_cell = Text.from_markup(
+                _highlight_match(row["target"], flt) or "[dim]—[/]"
+            )
+            reason_cell = Text.from_markup(
+                _highlight_match(row["reason"] or "[dim](no reason)[/]", flt)
+                if row["reason"] else "[dim](no reason)[/]"
+            )
+            created_cell = Text(
+                row["created"][:19] if row["created"] else "—",
+                style="dim",
+            )
+            table.add_row(
+                mark,
+                source_cell,
+                label_cell,
+                target_cell,
+                reason_cell,
+                created_cell,
+                key=key,
+            )
+
+        if rows:
+            self._render_suppression_detail(rows[0])
+        else:
+            self._set_detail(
+                "[b]No suppressions yet.[/]\n\n"
+                "Press [b]s[/] on a gap (in the Gaps view) to add "
+                "one.\n"
+                "Project-wide entries live in "
+                "[cyan]absentia.toml[/]'s [b][[suppress]][/] blocks "
+                "and show up here once added; press [b],[/] then "
+                "[b]e[/] to open the file."
+            )
+
+    def _render_suppression_detail(self, row: dict) -> None:
+        """Detail-pane card for the highlighted suppression."""
+        source = row["source"]
+        target = row["target"] or "—"
+        reason = row["reason"] or "[dim](no reason recorded)[/]"
+        created = row["created"] or "—"
+        if source == "local":
+            actions = (
+                "[b]r[/] remove · [b]Space[/] toggle multi-select · "
+                "[b]r[/] (with selection) bulk-remove"
+            )
+        else:
+            actions = (
+                "[dim]Read-only — edit via [b],[/]"
+                "[dim] settings → [b]e[/]"
+                "[dim] open absentia.toml.[/]"
+            )
+        self._set_detail(
+            f"[b cyan]{row['label']}[/]   [dim]({source})[/]\n\n"
+            f"[b]Target[/]   {target}\n"
+            f"[b]Reason[/]   {reason}\n"
+            f"[b]Created[/]  {created}\n\n"
+            f"{actions}"
+        )
+
+    # ── Multi-select + bulk operations ───────────────────────────────
+
+    def action_toggle_select(self) -> None:
+        """Space toggles row selection on Gaps + Suppressions views.
+
+        Adds a visual ▣ marker in the leftmost column of selected
+        rows. Subsequent ``s`` (gaps) / ``r`` (suppressions) operate
+        on the whole selection if non-empty, else fall back to the
+        cursor row. No-op on Rules / Groups / Stats — those views
+        don't have actions that benefit from bulk selection.
+        """
+        if self._view not in ("gaps", "suppressions"):
+            return
+        sel = self._selected_id()
+        if sel is None:
+            return
+        bucket = self._selected.setdefault(self._view, set())
+        if sel in bucket:
+            bucket.discard(sel)
+        else:
+            bucket.add(sel)
+        self._render_table()
+
+    def action_remove_suppression(self) -> None:
+        """Remove the selected suppression(s) and rescan.
+
+        Multi-select aware: if any rows are checked via Space, all of
+        them are removed in one batch (project-source rows are
+        skipped with a notification — they're read-only here).
+        Otherwise the cursor row is removed.
+        """
+        if self._view != "suppressions":
+            self.notify(
+                "Switch to the Suppressions view (5) first.",
+                severity="warning",
+            )
+            return
+
+        bucket = self._selected.get("suppressions", set())
+        targets: list[str] = list(bucket) if bucket else []
+        if not targets:
+            sel = self._selected_id()
+            if sel is None:
+                return
+            targets = [sel]
+
+        # Project-source rows are read-only here; skip them and
+        # surface a single hint so the user knows why.
+        local_keys: list[str] = []
+        skipped_project = 0
+        for k in targets:
+            if k.startswith("project::"):
+                skipped_project += 1
+            else:
+                local_keys.append(k)
+
+        if not local_keys:
+            self.notify(
+                "Project-wide suppressions are read-only here. "
+                "Edit absentia.toml via , → e.",
+                severity="warning", timeout=8,
+            )
+            return
+
+        try:
+            with Storage(self.root / ".absentia") as storage:
+                for short_id in local_keys:
+                    storage.remove_suppression(short_id)
+        except (StorageVersionError, StateLockError) as exc:
+            self.notify(
+                f"Couldn't remove: {exc}",
+                severity="error", timeout=8,
+            )
+            return
+
+        # Clear selection + rescan so the unsuppressed gap reappears
+        # in the gaps view.
+        bucket.clear()
+        msg_parts = [f"Removed {len(local_keys)} suppression"]
+        if len(local_keys) != 1:
+            msg_parts[0] += "s"
+        if skipped_project:
+            msg_parts.append(
+                f"(skipped {skipped_project} project entry"
+                f"{'ies' if skipped_project != 1 else 'y'})"
+            )
+        self.notify(" ".join(msg_parts))
+        self._do_scan()
+
     # ── Stats view ────────────────────────────────────────────────────
 
     def _render_stats(self) -> None:
@@ -1937,6 +2304,11 @@ class AbsentiaApp(App[None]):
             group = self._groups_by_id.get(rk)
             if group is not None:
                 self._render_group_detail(group)
+        elif self._view == "suppressions":
+            for row in self._filtered_suppressions():
+                if row["key"] == rk:
+                    self._render_suppression_detail(row)
+                    return
 
     def _render_gap_detail(self, gap: Gap) -> None:
         rule = self._rules_by_id[gap.rule_id]
@@ -1969,6 +2341,9 @@ class AbsentiaApp(App[None]):
     def action_view_rules(self) -> None:   self._switch_view("rules")
     def action_view_groups(self) -> None:  self._switch_view("groups")
     def action_view_stats(self) -> None:   self._switch_view("stats")
+
+    def action_view_suppressions(self) -> None:
+        self._switch_view("suppressions")
 
     # ── Cross-view follow + breadcrumb ───────────────────────────────
 
@@ -2070,36 +2445,77 @@ class AbsentiaApp(App[None]):
             self.action_suppress()
 
     def action_suppress(self) -> None:
+        """Suppress the cursor row, or every selected row if any.
+
+        Multi-select aware: pressing Space on one or more gap rows
+        marks them; ``s`` then pops a single SuppressScreen asking
+        for one shared reason. The reason is applied to every
+        marked gap. With no selection, the cursor row is suppressed
+        (existing single-row behavior).
+        """
         if self._view != "gaps":
             self.notify("Suppress only applies to gaps.")
             return
-        sel = self._selected_id()
-        if sel is None:
-            return
-        gap = next((g for g in self._gaps if g.short_id == sel), None)
-        if gap is None:
-            return
-        rule = self._rules_by_id[gap.rule_id]
+        bucket = self._selected.get("gaps", set())
+        targets: list[str] = list(bucket) if bucket else []
+        if not targets:
+            sel = self._selected_id()
+            if sel is None:
+                return
+            targets = [sel]
+
+        # Resolve to (short_id, full_id) pairs and assemble the
+        # modal header. For single-row, use the existing
+        # "Suppress g-XXXX (missing FOO)" form so the keystroke
+        # behavior is unchanged when the user hasn't multi-selected.
+        if len(targets) == 1:
+            short = targets[0]
+            gap = next((g for g in self._gaps if g.short_id == short), None)
+            if gap is None:
+                return
+            rule = self._rules_by_id[gap.rule_id]
+            header = (
+                f"Suppress [bold cyan]{short}[/]   "
+                f"(missing {rule.feature_value})"
+            )
+        else:
+            header = (
+                f"Suppress [bold]{len(targets)}[/] gaps   "
+                f"[dim](one shared reason)[/]"
+            )
         self.push_screen(
-            SuppressScreen(gap.short_id, f"missing {rule.feature_value}"),
+            SuppressScreen(targets, header),
             self._suppress_done,
         )
 
-    def _suppress_done(self, result: tuple[str, str] | None) -> None:
+    def _suppress_done(
+        self, result: tuple[list[str], str] | None,
+    ) -> None:
         if result is None:
             return
-        short_id, reason = result
-        gap = next((g for g in self._gaps if g.short_id == short_id), None)
-        full_id = gap.id if gap else None
+        short_ids, reason = result
         try:
             with Storage(self.root / ".absentia") as storage:
-                storage.add_suppression(
-                    short_id=short_id, full_id=full_id, reason=reason,
-                )
+                for sid in short_ids:
+                    gap = next(
+                        (g for g in self._gaps if g.short_id == sid), None,
+                    )
+                    full_id = gap.id if gap else None
+                    storage.add_suppression(
+                        short_id=sid, full_id=full_id, reason=reason,
+                    )
         except StorageVersionError as exc:
-            self.notify(f"Storage error: {exc}", severity="error")
+            self.notify(
+                f"Storage error: {exc}", severity="error", timeout=8,
+            )
             return
-        self.notify(f"Suppressed {short_id}")
+        # Selection consumed — clear it so the next keystroke isn't
+        # surprised by leftover marks.
+        self._selected.get("gaps", set()).clear()
+        n = len(short_ids)
+        self.notify(
+            f"Suppressed {n} gap{'s' if n != 1 else ''}", timeout=4,
+        )
         self._do_scan()
 
     def action_rescan(self) -> None:
@@ -2410,6 +2826,7 @@ def run_tui(
     root: Path,
     config: Config,
     on_open_editor: OpenEditorCallback | None = None,
+    jobs: int | None = None,
 ) -> int:
     """Acquire the state lock and run the TUI.
 
@@ -2417,12 +2834,18 @@ def run_tui(
     Enter / open-in-editor actions to their own editor surface
     (e.g. a Dev-Dashboard ``code_editor`` panel) instead of spawning
     ``$EDITOR`` via subprocess.
+
+    ``jobs`` overrides the default single-process scan inside the
+    TUI. Passed through to ``AbsentiaApp._do_scan`` → ``scan_corpus``.
+    Defaults to ``None`` which the app interprets as "use 1" — see
+    the comment in ``_do_scan`` for the macOS spawn-mode caveat.
     """
     state_dir = root / ".absentia"
     try:
         with StateLock(state_dir / "lockfile"):
             AbsentiaApp(
-                root=root, config=config, on_open_editor=on_open_editor,
+                root=root, config=config,
+                on_open_editor=on_open_editor, jobs=jobs,
             ).run()
     except StateLockError as exc:
         print(f"absentia: {exc}", file=__import__("sys").stderr)

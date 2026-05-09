@@ -16,21 +16,21 @@
 name = "absentia-self"
 path = "."           # always present (relative to repo root)
 language = "python"
-expected_gaps = 73        # unchanged with Phase 4 (preview pane,
-                          # capital-S sort cycle, animated CLI-style
-                          # spinner, LoadingScreen escape hatch).
-                          # 11 new helpers / methods, but they
-                          # didn't tip any rule support — gap count
-                          # stays put.
-expected_rules = 36       # 37 → 36; one rule's support tipped
-                          # under min_confidence with the new
-                          # entities and dropped (gaps for that
-                          # rule got re-attributed to other rules
-                          # so the total count is unchanged).
-expected_entities = 1041  # 1030 → 1041; +11 from Phase 4 work
-                          # (LoadingScreen.action_stop_and_quit /
-                          # _tick_spinner, AbsentiaApp's preview
-                          # methods + sort helpers + cycle action)
+expected_gaps = 75        # 73 → 75 with the suppression management
+                          # pass (Suppressions view as 5th tab,
+                          # multi-select via Space, bulk suppress on
+                          # gaps, bulk remove on suppressions, project
+                          # absentia.toml block parsing, --jobs N for
+                          # the TUI, hard-exit fallback on the
+                          # LoadingScreen escape hatch).
+expected_rules = 38       # 36 → 38; the new helpers + handler
+                          # methods (_filtered_suppressions,
+                          # _render_suppressions_table,
+                          # action_remove_suppression,
+                          # action_toggle_select, etc.) tipped two
+                          # additional rules over min_confidence.
+expected_entities = 1053  # 1041 → 1053; +12 entities from the
+                          # suppression management work.
 optional = false
 
 [[corpus]]

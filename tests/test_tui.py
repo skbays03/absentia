@@ -541,6 +541,147 @@ async def test_tui_capital_s_cycles_sort_key(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_tui_suppressions_view_lists_local_entries(tmp_path):
+    """After suppressing a gap from the Gaps view, switching to view
+    5 (Suppressions) shows the new entry sourced from state.db."""
+    _write_corpus(tmp_path)
+    app = AbsentiaApp(root=tmp_path, config=Config())
+    async with app.run_test() as pilot:
+        await _wait_for_scan(app, pilot)
+
+        # Suppress the demo gap.
+        await pilot.press("s")
+        await pilot.pause()
+        await pilot.press(*"audit endpoint")
+        await pilot.press("enter")
+        await _wait_for_scan(app, pilot)  # rescan after suppress
+
+        # Switch to Suppressions view.
+        await pilot.press("5")
+        await pilot.pause()
+        assert app._view == "suppressions"
+
+        rows = app._filtered_suppressions()
+        assert len(rows) == 1
+        assert rows[0]["source"] == "local"
+        assert rows[0]["reason"] == "audit endpoint"
+
+
+@pytest.mark.asyncio
+async def test_tui_suppressions_view_remove_unsuppresses(tmp_path):
+    """Pressing r on a local suppression row removes it from the
+    state DB and rescans so the gap reappears."""
+    from absentia.storage import Storage
+
+    _write_corpus(tmp_path)
+    app = AbsentiaApp(root=tmp_path, config=Config())
+    async with app.run_test() as pilot:
+        await _wait_for_scan(app, pilot)
+        gap_count_before = len(app._gaps)
+
+        # Suppress + verify hidden.
+        await pilot.press("s")
+        await pilot.pause()
+        await pilot.press(*"intentional")
+        await pilot.press("enter")
+        await _wait_for_scan(app, pilot)
+        assert len(app._gaps) == gap_count_before - 1
+
+        # Open Suppressions view + remove.
+        await pilot.press("5")
+        await pilot.pause()
+        await pilot.press("r")
+        await _wait_for_scan(app, pilot)
+
+    # Suppression cleared from DB; gap restored to the gaps list.
+    with Storage(tmp_path / ".absentia") as storage:
+        assert storage.load_suppressions() == {}
+    assert len(app._gaps) == gap_count_before
+
+
+@pytest.mark.asyncio
+async def test_tui_suppressions_view_loads_project_toml(tmp_path):
+    """[[suppress]] blocks in absentia.toml surface as read-only
+    rows in the Suppressions view alongside local DB entries."""
+    _write_corpus(tmp_path)
+    # Append a project-wide suppression to the absentia.toml init.
+    (tmp_path / "absentia.toml").write_text(
+        '[scan]\ninclude = ["."]\nlanguages = ["python"]\n\n'
+        '[[suppress]]\n'
+        'rule    = "r-deadbeef"\n'
+        'entity  = "src/api/legacy.py::oldfn"\n'
+        'scope   = "gap"\n'
+        'reason  = "legacy code; pending rewrite"\n'
+        'created = "2026-01-01"\n'
+    )
+    (tmp_path / ".absentia").mkdir(exist_ok=True)
+
+    app = AbsentiaApp(root=tmp_path, config=Config())
+    async with app.run_test() as pilot:
+        await _wait_for_scan(app, pilot)
+        await pilot.press("5")
+        await pilot.pause()
+
+        rows = app._filtered_suppressions()
+        sources = {r["source"] for r in rows}
+        assert "project" in sources
+
+        proj = next(r for r in rows if r["source"] == "project")
+        assert proj["reason"] == "legacy code; pending rewrite"
+        assert "oldfn" in proj["target"]
+
+
+@pytest.mark.asyncio
+async def test_tui_multi_select_bulk_suppress(tmp_path):
+    """Space toggles selection on multiple gap rows; subsequent s
+    pops a single SuppressScreen and applies the typed reason to
+    all selected gaps."""
+    # Build a corpus with at least two gaps so bulk-suppress has
+    # something to operate on. 8 @audit'd + 2 plain in api/ →
+    # 8/10 = 80% conformance hits the default min_confidence
+    # threshold and surfaces 2 gaps.
+    api = tmp_path / "api"
+    api.mkdir()
+    (tmp_path / "decorators.py").write_text(
+        "def audit(fn):\n    return fn\n"
+    )
+    (api / "users.py").write_text(
+        "from decorators import audit\n\n"
+        + "".join(
+            f"@audit\ndef good_{i}(): pass\n\n" for i in range(8)
+        )
+        + "def gap_a(): pass\n\ndef gap_b(): pass\n"
+    )
+
+    app = AbsentiaApp(root=tmp_path, config=Config())
+    async with app.run_test() as pilot:
+        await _wait_for_scan(app, pilot)
+        if len(app._gaps) < 2:
+            pytest.skip("synthetic corpus produced < 2 gaps")
+
+        # Select two rows.
+        await pilot.press("space")
+        await pilot.pause()
+        await pilot.press("down")
+        await pilot.press("space")
+        await pilot.pause()
+        assert len(app._selected["gaps"]) == 2
+
+        # Bulk suppress.
+        await pilot.press("s")
+        await pilot.pause()
+        await pilot.press(*"shared reason")
+        await pilot.press("enter")
+        await _wait_for_scan(app, pilot)
+
+    from absentia.storage import Storage
+    with Storage(tmp_path / ".absentia") as storage:
+        sups = storage.load_suppressions()
+    assert len(sups) == 2
+    assert all(s["reason"] == "shared reason" for s in sups.values())
+
+
+@pytest.mark.asyncio
 async def test_tui_settings_edit_jobs_default(tmp_path):
     """`,` opens settings → 1 sets jobs_default → integer persists."""
     from unittest.mock import patch
