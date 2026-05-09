@@ -202,6 +202,8 @@ class HelpScreen(ModalScreen[None]):
                 "  /            filter current view\n"
                 "  e            explain why selected gap was flagged\n"
                 "  s            suppress selected gap\n"
+                "               (also works inside the e modal —\n"
+                "                no need to close it first)\n"
                 "  Ctrl+R       rescan now\n"
                 "  w            toggle watch (auto-rescan)\n\n"
                 "[b]Global[/]\n"
@@ -213,13 +215,18 @@ class HelpScreen(ModalScreen[None]):
         self.dismiss(None)
 
 
-class ExplainScreen(ModalScreen[None]):
+class ExplainScreen(ModalScreen[str | None]):
     """Plain-text "why was this flagged?" modal for a gap.
 
     Different from the f / follow action: follow navigates to the
     rule view (you change context); explain pops a peek that shows
     the rule sentence, support, conformers, and divergence — then
     returns you to your spot in the gaps list when dismissed.
+
+    Returns:
+      ``"suppress"``  — user pressed ``s`` to chain into the
+                        suppression flow for the same gap.
+      ``None``        — closed without action.
     """
 
     DEFAULT_CSS = """
@@ -236,6 +243,7 @@ class ExplainScreen(ModalScreen[None]):
         Binding("escape", "dismiss", "Close"),
         Binding("e", "dismiss", "Close"),
         Binding("q", "dismiss", "Close"),
+        Binding("s", "request_suppress", "Suppress"),
     ]
 
     def __init__(
@@ -297,13 +305,23 @@ class ExplainScreen(ModalScreen[None]):
             f"[b]Diverges[/]  [b red]{short}[/]   ← this gap\n\n"
             "[dim]Most members of this group exhibit the pattern; this\n"
             "one doesn't. To follow the convention, edit the file. To\n"
-            "accept the divergence, press [/][b]s[/][dim] to record a\n"
-            "suppression reason.[/]\n\n"
-            "[dim]e / Esc to close · f to drill into the rule view[/]"
+            "accept the divergence, press [/][b]s[/][dim] right here\n"
+            "to record a suppression reason without closing first.[/]\n\n"
+            "[dim]s to suppress · e / Esc to close[/]"
         )
 
     def action_dismiss(self) -> None:  # type: ignore[override]
         self.dismiss(None)
+
+    def action_request_suppress(self) -> None:
+        """Hand off to the parent's suppress flow for this same gap.
+
+        The dismiss-with-sentinel pattern keeps Storage I/O out of
+        the modal — the parent app already owns the StateLock + the
+        rescan-after-suppress logic, so funnelling through the
+        existing handler keeps both code paths in sync.
+        """
+        self.dismiss("suppress")
 
 
 # ── Main App ─────────────────────────────────────────────────────────
@@ -928,14 +946,27 @@ class AbsentiaApp(App[None]):
         if rule is None or entity is None:
             return
         group = self._groups_by_id.get(rule.group_id)
-        self.push_screen(ExplainScreen(
-            gap=gap,
-            rule=rule,
-            entity=entity,
-            group=group,
-            feature_index=self._feature_index,
-            min_confidence=self.config.mining.min_confidence,
-        ))
+        self.push_screen(
+            ExplainScreen(
+                gap=gap,
+                rule=rule,
+                entity=entity,
+                group=group,
+                feature_index=self._feature_index,
+                min_confidence=self.config.mining.min_confidence,
+            ),
+            self._explain_done,
+        )
+
+    def _explain_done(self, result: str | None) -> None:
+        """Handle the Explain modal's exit signal.
+
+        ``"suppress"`` means the user pressed ``s`` inside the modal —
+        chain into the existing suppress flow for the still-selected
+        gap. Falls through silently otherwise.
+        """
+        if result == "suppress":
+            self.action_suppress()
 
     def action_suppress(self) -> None:
         if self._view != "gaps":

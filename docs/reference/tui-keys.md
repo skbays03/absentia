@@ -26,8 +26,8 @@ The same reference is available in-app via `?`.
 | Key | Action |
 |---|---|
 | `/` | Filter current view (substring or `kind=class` / `conf>=0.9`) |
-| `e` | Explain — why was this gap flagged? Pops a peek modal with the rule, conformer examples, and the divergence. Does **not** navigate. |
-| `s` | Suppress selected gap with a reason |
+| `e` | Explain — why was this gap flagged? Pops a peek modal with the rule, conformer examples, and the divergence. Does **not** navigate. Press `s` inside the modal to chain straight into Suppress for the same gap. |
+| `s` | Suppress selected gap with a reason. Also works inside the `e` modal — no need to close it first. |
 | `Ctrl+R` | Rescan now |
 | `w` | Toggle watch mode (auto-rescan every 2s) |
 

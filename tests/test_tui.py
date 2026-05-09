@@ -201,3 +201,69 @@ async def test_tui_watch_toggle_sets_timer(tmp_path):
         await pilot.press("w")
         await pilot.pause()
         assert app._watch_timer is None
+
+
+@pytest.mark.asyncio
+async def test_tui_explain_chains_into_suppress(tmp_path):
+    """Pressing `s` inside the Explain modal closes it and opens
+    the Suppress prompt for the same gap, without the user having
+    to dismiss Explain first."""
+    from absentia.storage import Storage
+    from absentia.tui.app import ExplainScreen, SuppressScreen
+
+    _write_corpus(tmp_path)
+    app = AbsentiaApp(root=tmp_path, config=Config())
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        # Synthetic corpus produces exactly one gap; the table has it
+        # selected by default.
+        assert app.query_one("#main_table").row_count == 1
+
+        # Open Explain.
+        await pilot.press("e")
+        await pilot.pause()
+        assert isinstance(app.screen, ExplainScreen)
+
+        # Press `s` inside Explain — should dismiss the explain modal
+        # and push the suppress modal in its place.
+        await pilot.press("s")
+        await pilot.pause()
+        assert isinstance(app.screen, SuppressScreen)
+
+        # Type a reason + Enter; suppression should land in the DB.
+        await pilot.press(*"audit endpoint itself")
+        await pilot.press("enter")
+        await pilot.pause()
+
+    # After the pilot exits the Storage write should be visible in
+    # the per-project state DB.
+    with Storage(tmp_path / ".absentia") as storage:
+        suppressions = storage.load_suppressions()
+    assert len(suppressions) == 1
+    only = next(iter(suppressions.values()))
+    assert only["reason"] == "audit endpoint itself"
+
+
+@pytest.mark.asyncio
+async def test_tui_explain_dismiss_without_s_does_not_suppress(tmp_path):
+    """Cancelling Explain with Esc must not trigger the suppress flow."""
+    from absentia.storage import Storage
+    from absentia.tui.app import ExplainScreen
+
+    _write_corpus(tmp_path)
+    app = AbsentiaApp(root=tmp_path, config=Config())
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        await pilot.press("e")
+        await pilot.pause()
+        assert isinstance(app.screen, ExplainScreen)
+
+        await pilot.press("escape")
+        await pilot.pause()
+        # Back to the main app screen; no suppress modal pushed.
+        assert not isinstance(app.screen, ExplainScreen)
+
+    with Storage(tmp_path / ".absentia") as storage:
+        suppressions = storage.load_suppressions()
+    assert suppressions == {}
