@@ -72,6 +72,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hint shows the shortcut to bring them back. Toggle is sticky
   for the session.
 
+- **TUI: footer split into visible + hidden binding tiers.** 22
+  bindings had grown past what any terminal narrower than ~200
+  columns could render in a single footer line. Visible set is now
+  10 entries (view switchers, Quit, Explain, Suppress, Filter,
+  Help); the other 12 stay fully keyboard-routable but hidden via
+  Textual's `show=False`. Discovery surface unchanged — `?` Help
+  and `Ctrl+P` Command palette list every binding.
+
+- **CI: sdist build + install smoke-test on every push.** New
+  `sdist-build` job in `ci.yml` builds the source distribution,
+  inspects its contents, installs it in a clean venv, and imports
+  the package — catches packaging breakage (missing files, wrong
+  build-system entries, stale package-data globs) pre-merge
+  instead of at release-cut time.
+
+- **Repo: CODE_OF_CONDUCT.md added.** Contributor Covenant 2.1,
+  enforcement contact filled in.
+
+- **Wheels matrix: dropped macos-13 (Intel) row.** GitHub Actions'
+  Intel Mac runner pool is being phased out; live availability is
+  poor enough that jobs routinely sit in the queue 10+ minutes
+  before pickup. Apple stopped selling Intel Macs in mid-2023.
+  Intel-Mac users get the sdist fallback (compiles via mypyc at
+  install time) — same coverage neighborhood as cryptography,
+  lxml, and numpy ditched macos-13 in 2025.
+
+- **Color palette: 3 of 6 language-color collisions cleared.**
+  Added a `WHITE` ANSI constant; reassigned `swift` → YELLOW,
+  `ruby` → BRIGHT_GREEN, `kotlin` → WHITE so they no longer
+  collide with javascript / java / php respectively. Three
+  acceptable collisions remain (typescript+tsx family, c+cpp
+  family, scala+csharp coincidence).
+
 ### Changed
 
 - **PyPI publish migrated to OIDC Trusted Publishing.** Replaces
@@ -106,6 +139,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a non-existent repo path (the local folder convention, not a
   real GitHub org), so every crash report would 404 before
   reaching the issue tracker. Repointed at the actual remote.
+
+- **JavaScript extractor walks IIFE bodies.** Pre-ES-modules JS
+  routinely encapsulates module state via the revealing-module /
+  IIFE pattern (`const App = (() => { function init() {} })()`).
+  The extractor previously treated these as unanalyzable
+  `call_expression` bindings and skipped every encapsulated
+  function. Smoke-tested 19 → 177 entities (9.3×) on a
+  representative IIFE-heavy frontend.
+
+- **Ruby extractor recurses into nested classes / modules.**
+  `module Foo; class Bar; def baz` chains used to emit only the
+  outer module — Sinatra's `lib/sinatra/base.rb` (68 KB) yielded
+  1 entity instead of 144. Recursive body-walker now extracts
+  the full nesting tree plus singleton methods (`def self.foo`).
+
+- **Lua extractor handles table-of-functions modules.**
+  `M.foo = function() end` and `local foo = function() end` are
+  the dominant patterns in plenary.nvim and most Neovim plugins;
+  the prior extractor only walked `function_declaration` nodes
+  and missed these entirely. plenary.nvim now extracts 372 →
+  580 entities (+56%, density 696 → 1085 ents/MB).
+
+- **Build-system PEP 639 schema-fork mitigation.** Removed the
+  explicit `license-files = ["LICENSE", "NOTICE"]` array from
+  `pyproject.toml` — newer hatchling versions accept the array
+  form but cibuildwheel's bundled constraints pin packaging
+  to a version below where the array form was finalized, so
+  isolated wheel builds reject the field. Default discovery
+  globs (LICENSE\*, NOTICE\*) cover the same files without
+  the version-skew failure mode.
+
+- **`scripts/release.sh` portability fixes.** BSD `sed` (macOS)
+  silently accepted but didn't act on the GNU-only `0,/.../`
+  address form, so version bumps appeared to succeed and then
+  failed verification. Replaced with a portable awk pass.
+  Separately, the auto-generated commit message now carries
+  the `Authored-by:` trailer the repo's commit-msg hook
+  requires; rollback on hook rejection unstages files in
+  addition to discarding working-tree changes.
 
 ### Changed
 

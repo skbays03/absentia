@@ -78,20 +78,24 @@ this one doesn't."
 
 ### Built-in feature kinds
 
-Frequency mining iterates **seven** feature kinds — each runs as
+Frequency mining iterates **eleven** feature kinds — each runs as
 its own strategy in the mining loop, which is why
-`absentia check`'s mining stage can show seven sub-progress lines
+`absentia check`'s mining stage can show many sub-progress lines
 on a multi-worker run:
 
 | Feature kind | What it captures | Source |
 |---|---|---|
 | `decorator` | Which decorators / annotations / attributes an entity carries | extractor |
 | `calls` | Which functions an entity calls (used for call-pair detection too) | extractor |
+| `call_kwargs` | Keyword-argument names used in any call inside the entity body — surfaces logging / tracing conventions like "every endpoint passes `request_id=`" | extractor |
 | `parent_class` | Class / protocol / trait an entity extends | extractor |
 | `sibling_test` | Whether a matching test entity exists elsewhere in the corpus | enrichment |
 | `has_docstring` | Whether the entity carries a docstring | extractor |
 | `has_return_type` | Whether the function/method declares a return type | extractor |
 | `has_param_types` | Whether the function/method's parameters carry type annotations | extractor |
+| `has_post_init` | Whether a class defines `__post_init__` validation (Python dataclass-style config-validation gap) | extractor |
+| `has_all_export` | Whether a Python module declares `__all__` at module scope | extractor |
+| `entry_point_registered` | Whether a class is registered as a plugin in `pyproject.toml`'s `[project.entry-points]` | enrichment |
 
 Each kind feeds the same arithmetic in *Stage 3: mine* below;
 they differ only in what gets counted. New kinds plug in via the

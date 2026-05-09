@@ -173,7 +173,135 @@ with `j` / `k`, and:
 
 If you set `$EDITOR` to your editor of choice, `Enter` jumps you
 straight there. See the [TUI keybindings reference](../reference/tui-keys.md)
-for the full list.
+for the full list, and the section below for how to set `$EDITOR`
+on your OS.
+
+### Setting `$EDITOR` for "Open in editor"
+
+Absentia reads the standard `$EDITOR` environment variable when you
+press `Enter` in the TUI (or use the settings panel's "Open
+absentia.toml" action). It's a long-standing Unix convention; most
+editors and IDEs ship a CLI launcher that works out of the box.
+
+**macOS and Linux** — add the export to your shell rc file so it
+sticks across sessions:
+
+```bash
+# ~/.zshrc  (zsh, the macOS default)
+# ~/.bashrc (bash on Linux)
+export EDITOR='code --wait'         # Visual Studio Code
+export EDITOR='vim'                 # Vim
+export EDITOR='nvim'                # Neovim
+export EDITOR='subl --wait'         # Sublime Text
+export EDITOR='emacsclient -nw'     # Emacs (running daemon)
+export EDITOR='idea'                # IntelliJ / PyCharm / WebStorm /
+                                    # GoLand / RustRover / Rider /
+                                    # Android Studio (use the app's
+                                    # CLI launcher — same idea)
+export EDITOR='zed --wait'          # Zed
+```
+
+For `fish`:
+
+```fish
+# ~/.config/fish/config.fish
+set -gx EDITOR code --wait
+```
+
+After editing the rc file, open a new terminal (or run
+`source ~/.zshrc` etc.) so the change takes effect.
+
+**Windows (PowerShell)** — for the current session:
+
+```powershell
+$env:EDITOR = 'code --wait'
+```
+
+To persist across sessions, set the user-level environment variable
+once via the Windows UI:
+
+```
+Settings → System → About → Advanced system settings →
+Environment Variables → User variables → New →
+Name: EDITOR
+Value: code --wait
+```
+
+Or via PowerShell (run once):
+
+```powershell
+[Environment]::SetEnvironmentVariable('EDITOR', 'code --wait', 'User')
+```
+
+### Finding your editor's CLI launcher
+
+GUI editors don't always put a launcher on `$PATH` automatically.
+If `which code` (macOS/Linux) or `where.exe code` (Windows) returns
+nothing, you'll need to install the launcher yourself. Per editor:
+
+| Editor | macOS / Linux | Windows |
+|---|---|---|
+| **VS Code** | `Cmd/Ctrl+Shift+P` → *Shell Command: Install 'code' command in PATH* | bundled with the installer; tick "Add to PATH" during setup or run `code` from a fresh terminal after install |
+| **VS Code Insiders** | same menu, command becomes `code-insiders` | same — installer adds `code-insiders` |
+| **Cursor** | `Cmd/Ctrl+Shift+P` → *Shell Command: Install 'cursor' command in PATH* | bundled |
+| **Windsurf** | menu → *Install 'windsurf' command in PATH* | bundled |
+| **Zed** | `Cmd+Shift+P` → *install cli* | not yet on Windows |
+| **Sublime Text** | macOS: `ln -s "/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl" /usr/local/bin/subl` <br> Linux: usually `subl` is auto-installed by the .deb / .rpm | added to PATH by the installer |
+| **JetBrains IDEs** (IntelliJ, PyCharm, WebStorm, GoLand, Rider, RustRover, Android Studio) | `Tools → Create Command-line Launcher…` from inside the IDE — generates a `idea` / `pycharm` / `webstorm` / etc. launcher in `/usr/local/bin/` | newer versions add a launcher under `Toolbox → Settings → Tools → Generate shell scripts` |
+| **Vim / Neovim / nano / emacs / pico** | always pre-installed on macOS and most Linux distros | install via `winget install vim.vim` (or similar) |
+| **Helix** (`hx`) | `brew install helix` (macOS) / package manager | `winget install Helix.Helix` |
+| **Micro** | `brew install micro` / package manager | `winget install zyedidia.micro` |
+| **TextMate** (`mate`) | `ln -s "/Applications/TextMate.app/Contents/Resources/mate" /usr/local/bin/mate` | TextMate is macOS-only |
+
+To check whether your launcher works, just run it from a terminal:
+
+```bash
+code --version       # should print VS Code version
+cursor --version
+nvim --version
+```
+
+If the command prints something, `$EDITOR='<command>'` will work.
+
+### Verifying `$EDITOR` is set
+
+```bash
+# macOS / Linux
+echo $EDITOR
+
+# Windows PowerShell
+echo $env:EDITOR
+```
+
+If the output is empty, the variable isn't set — re-source your rc
+file (or open a new terminal) and check again.
+
+### Using a different editor in the TUI than your shell default
+
+`$EDITOR` is read at TUI startup, so you can override it just for
+this run without touching your shell rc:
+
+```bash
+# macOS / Linux
+EDITOR='code --wait' absentia
+
+# Windows PowerShell
+$env:EDITOR='code --wait'; absentia
+```
+
+### Fallback behavior
+
+If `$EDITOR` is unset, `Enter` falls back to `vi` (universal on
+Unix-like systems; not pre-installed on Windows). Setting `$EDITOR`
+explicitly is strongly recommended — especially on Windows, where
+the `vi` fallback usually fails with "Editor not found in $PATH"
+and you'll want a real editor configured.
+
+Absentia recognizes the line-jump syntax of every common editor —
+`vi`/`vim`/`nvim`/`nano`/`emacs` (`+<line> <file>`),
+`code`/`cursor`/`windsurf` (`--goto <file>:<line>`),
+`subl`/`hx`/`helix`/`micro`/`atom` (`<file>:<line>`), `mate`
+(`-l <line> <file>`), with the vi-family form as the catch-all.
 
 ## Step 6 — try absentia on your own project
 

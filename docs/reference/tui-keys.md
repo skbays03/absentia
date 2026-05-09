@@ -18,7 +18,7 @@ The same reference is available in-app via `?`.
 |---|---|
 | `j` / `↓` | Next row (inherited from Textual's DataTable defaults) |
 | `k` / `↑` | Previous row (inherited from Textual's DataTable defaults) |
-| `Enter` | Open selected entity in `$EDITOR` |
+| `Enter` | Open selected entity in `$EDITOR` (see the [tutorial's `$EDITOR` setup section](../tutorial/quickstart.md#setting-editor-for-open-in-editor) for cross-OS configuration). |
 | `f` | Follow link to related view (gap → rule → group) |
 | `Esc` | Back (pops navigation stack) |
 

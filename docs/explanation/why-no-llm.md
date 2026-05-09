@@ -70,7 +70,7 @@ explanation is generated separately, you have two things to trust.
 ### Sub-100ms interactions
 
 Absentia's TUI scans medium codebases in seconds and the Linux
-kernel in tens of seconds (~50 s cold, ~28 s warm at default
+kernel in tens of seconds (~48 s cold, ~24 s warm at default
 jobs on a 10-core M-series MacBook). Once a scan finishes, every
 keystroke in the UI — filtering, navigating, suppressing,
 switching views — is sub-100ms because the data is already in

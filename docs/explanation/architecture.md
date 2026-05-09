@@ -97,21 +97,23 @@ cache).
 | Rust | [BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep) | 103 | 2,694 | 60 | 291 | 0.27s |
 | Go | [urfave/cli](https://github.com/urfave/cli) | 66 | 914 | 24 | 35 | 0.18s |
 | Java | [google/gson](https://github.com/google/gson) | 262 | 2,509 | 84 | 280 | 0.30s |
-| Ruby | [sinatra/sinatra](https://github.com/sinatra/sinatra) | 147 | 204 | 0 | 0 | 0.17s |
+| Ruby | [sinatra/sinatra](https://github.com/sinatra/sinatra) | 147 | 865 | 3 | 4 | 0.09s |
 | C# | [serilog/serilog](https://github.com/serilog/serilog) | 214 | 985 | 51 | 43 | 0.22s |
 | C++ | [nlohmann/json](https://github.com/nlohmann/json) | 491 | 1,856 | 144 | 197 | 0.78s |
 | PHP | [slimphp/Slim](https://github.com/slimphp/Slim) | 125 | 852 | 73 | 90 | 0.18s |
 | Kotlin | [Kotlin/kotlinx.coroutines](https://github.com/Kotlin/kotlinx.coroutines) | 1,106 | 7,277 | 369 | 345 | 0.67s |
 | Scala | [playframework/playframework](https://github.com/playframework/playframework) | 1,526 | 8,556 | 418 | 366 | 0.98s |
-| Lua | [nvim-lua/plenary.nvim](https://github.com/nvim-lua/plenary.nvim) | 114 | 373 | 2 | 3 | 0.16s |
+| Lua | [nvim-lua/plenary.nvim](https://github.com/nvim-lua/plenary.nvim) | 114 | 580 | 2 | 3 | 0.06s |
 | Bash | [Bash-it/bash-it](https://github.com/Bash-it/bash-it) | 336 | 861 | 16 | 28 | 0.18s |
 | Swift | [Alamofire/Alamofire](https://github.com/Alamofire/Alamofire) | 108 | 1,656 | 94 | 204 | 0.33s |
 
-> *Measured 2026-05-07 on a 10-core M-series MacBook at commit
-> `a48c4c7`, jobs=1, shallow-cloned (`--depth 1`) via*
-> `scripts/scan_remote.py`. *Re-running on different hardware will
-> shift wall-clock proportionally; `absentia est` calibrates per
-> machine.*
+> *Most rows measured 2026-05-07 on a 10-core M-series MacBook
+> at commit `a48c4c7`, jobs=1, shallow-cloned (`--depth 1`) via*
+> `scripts/scan_remote.py`. *The Ruby and Lua rows were
+> re-measured 2026-05-09 after extractor fixes for nested
+> classes/modules (Ruby) and table-of-functions modules (Lua).
+> Re-running on different hardware will shift wall-clock
+> proportionally;* `absentia est` *calibrates per machine.*
 
 **Headline numbers** (absentia against the Linux kernel — 65,004 files
 / 686,923 entities across ~30 million lines of C, on a 10-core

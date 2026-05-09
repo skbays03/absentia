@@ -61,7 +61,8 @@ absentia /tmp/linux       # TUI in /tmp/linux
 
 The path shorthand only fires when the argument is a real,
 existing directory and not a known subcommand (`init`, `check`,
-`est`, `suppress`). Otherwise argparse handles dispatch normally.
+`est`, `suppress`, `report`). Otherwise argparse handles dispatch
+normally.
 
 The TUI scans with `--jobs 1` regardless of your `--jobs-default`
 setting. Spawn-mode `ProcessPoolExecutor` (the macOS multiprocessing
@@ -314,3 +315,40 @@ chosen): `Export Failed!` in red on stderr.
 
 Cancel at any prompt with `n`, blank Enter, or Ctrl-C — no file
 is written.
+
+## `absentia report`
+
+Compose a GitHub bug report from the TUI debug log + system info.
+The TUI journals every key press and action to `~/.absentia/tui.log`
+(rotated at 1 MB) so post-mortem debugging has a reproducible
+event trail. When the TUI crashes catastrophically it prompts
+`File a GitHub issue with this log? [y/N]` inline before
+re-raising — answering yes chains directly into this subcommand
+with `--no-prompt` to skip the standalone confirmation.
+
+`absentia report` can also be run on its own when something went
+wrong earlier and you want to file a bug after the fact:
+
+```
+absentia report
+```
+
+What it does:
+
+1. Reads the last 200 lines of `~/.absentia/tui.log`.
+2. Reads the most recent rows of `~/.absentia/runs.jsonl`.
+3. Detects the absentia version (via `importlib.metadata`).
+4. Composes a GitHub issue with title, system info, log excerpt.
+5. Prompts `[y/N]` showing what would be sent.
+6. On yes: tries `gh issue create --web` if `gh` is on PATH; falls
+   back to `webbrowser.open` with a prefilled issue URL.
+
+### Flags
+
+- `--no-prompt` — skip the `[y/N]` confirmation. The crash-recovery
+  flow uses this internally; for ad-hoc invocation, omitting it is
+  safer.
+
+The repository is hardcoded to `skbays03/absentia`. The issue body
+is shown in your browser before the actual GitHub submit, so
+nothing is sent until you click through the second time too.
