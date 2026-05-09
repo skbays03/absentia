@@ -449,6 +449,8 @@ class HelpScreen(ModalScreen[None]):
                 "  ,            open settings panel (jobs_default,\n"
                 "               default_export_path, intro hint,\n"
                 "               + open absentia.toml in $EDITOR)\n"
+                "  i            collapse / expand bottom info panels\n"
+                "               (detail + code preview)\n"
                 "  Ctrl+R       rescan now\n"
                 "  w            toggle watch (auto-rescan)\n\n"
                 "[b]Global[/]\n"
@@ -1401,29 +1403,40 @@ class AbsentiaApp(App[None]):
     }
     """
 
+    # Footer-visibility split: 22 bindings is more than any terminal
+    # narrower than ~200 cols can show without truncation. The visible
+    # set is the user's primary vocabulary — view switching + the most
+    # common actions (explain, suppress, filter, quit, help). Everything
+    # else stays fully functional but is hidden from the footer; users
+    # discover the hidden bindings via `?` Help and `Ctrl+P` Command
+    # palette, both of which list every binding with its keystroke.
     BINDINGS = [
+        # Visible — primary vocabulary.
         Binding("q", "quit", "Quit"),
-        Binding("ctrl+r", "rescan", "Rescan"),
         Binding("1", "view_gaps", "Gaps"),
         Binding("2", "view_rules", "Rules"),
         Binding("3", "view_groups", "Groups"),
         Binding("4", "view_stats", "Stats"),
         Binding("5", "view_suppressions", "Suppressions"),
-        Binding("space", "toggle_select", "Select"),
-        Binding("r", "remove_suppression", "Remove suppression"),
-        Binding("s", "suppress", "Suppress"),
-        Binding("S", "cycle_sort", "Sort"),
         Binding("e", "explain", "Explain"),
-        Binding("x", "export", "Export"),
-        Binding("comma", "settings", "Settings"),
-        Binding("f", "follow", "Follow"),
-        Binding("escape", "back", "Back"),
-        Binding("slash", "filter", "Filter"),
-        Binding("w", "toggle_watch", "Watch"),
-        Binding("question_mark", "help", "Help"),
-        Binding("enter", "open_in_editor", "Open"),
-        Binding("ctrl+p", "command_palette", "Command palette"),
-        Binding("i", "toggle_info_panels", "Toggle info"),
+        Binding("s", "suppress", "Suppress"),
+        Binding("slash", "filter", "Filter", key_display="/"),
+        Binding("question_mark", "help", "Help", key_display="?"),
+
+        # Hidden — second-tier / power-user. Still keyboard-routable;
+        # just kept out of the footer to avoid truncation.
+        Binding("ctrl+r", "rescan", "Rescan", show=False),
+        Binding("space", "toggle_select", "Select", show=False),
+        Binding("r", "remove_suppression", "Remove suppression", show=False),
+        Binding("S", "cycle_sort", "Sort", show=False),
+        Binding("x", "export", "Export", show=False),
+        Binding("comma", "settings", "Settings", show=False),
+        Binding("f", "follow", "Follow", show=False),
+        Binding("escape", "back", "Back", show=False),
+        Binding("w", "toggle_watch", "Watch", show=False),
+        Binding("enter", "open_in_editor", "Open", show=False),
+        Binding("ctrl+p", "command_palette", "Command palette", show=False),
+        Binding("i", "toggle_info_panels", "Toggle info", show=False),
     ]
 
     def __init__(
