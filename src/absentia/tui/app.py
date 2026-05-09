@@ -694,20 +694,20 @@ _TUI_LANG_COLORS: dict[str, str] = {
     "python":     "bright_blue",
     "javascript": "bright_yellow",
     "typescript": "blue",
-    "tsx":        "blue",
+    "tsx":        "blue",           # intentional share with typescript
     "rust":       "bright_red",
     "go":         "bright_cyan",
     "java":       "red",
-    "ruby":       "red",
+    "ruby":       "bright_green",   # was red — collided with java
     "csharp":     "bright_magenta",
     "c":          "bright_white",
-    "cpp":        "bright_white",
+    "cpp":        "bright_white",   # intentional share with c (C-family)
     "php":        "magenta",
-    "kotlin":     "magenta",
-    "scala":      "bright_magenta",
-    "lua":        "blue",
+    "kotlin":     "white",          # was magenta — collided with php
+    "scala":      "bright_magenta", # still shares with csharp
+    "lua":        "blue",           # still shares with typescript / tsx
     "bash":       "green",
-    "swift":      "bright_yellow",
+    "swift":      "yellow",         # was bright_yellow — collided with javascript
 }
 
 # File extension → language tag. Mirrors the extractor entry-point

@@ -49,6 +49,7 @@ YELLOW         = "\033[33m" if _USE_COLOR else ""
 BLUE           = "\033[34m" if _USE_COLOR else ""
 MAGENTA        = "\033[35m" if _USE_COLOR else ""
 CYAN           = "\033[36m" if _USE_COLOR else ""
+WHITE          = "\033[37m" if _USE_COLOR else ""
 BRIGHT_RED     = "\033[91m" if _USE_COLOR else ""
 BRIGHT_GREEN   = "\033[92m" if _USE_COLOR else ""
 BRIGHT_YELLOW  = "\033[93m" if _USE_COLOR else ""
@@ -67,20 +68,20 @@ _LANG_COLORS: dict[str, str] = {
     "python":     BRIGHT_BLUE,
     "javascript": BRIGHT_YELLOW,
     "typescript": BLUE,
-    "tsx":        BLUE,
+    "tsx":        BLUE,           # intentional share with typescript
     "rust":       BRIGHT_RED,
     "go":         BRIGHT_CYAN,
     "java":       RED,
-    "ruby":       RED,
+    "ruby":       BRIGHT_GREEN,   # was RED — collided with java
     "csharp":     BRIGHT_MAGENTA,
     "c":          BRIGHT_WHITE,
-    "cpp":        BRIGHT_WHITE,
+    "cpp":        BRIGHT_WHITE,   # intentional share with c (C-family)
     "php":        MAGENTA,
-    "kotlin":     MAGENTA,
-    "scala":      BRIGHT_MAGENTA,
-    "lua":        BLUE,
+    "kotlin":     WHITE,          # was MAGENTA — collided with php
+    "scala":      BRIGHT_MAGENTA, # still shares with csharp
+    "lua":        BLUE,           # still shares with typescript / tsx
     "bash":       GREEN,
-    "swift":      BRIGHT_YELLOW,
+    "swift":      YELLOW,         # was BRIGHT_YELLOW — collided with javascript
 }
 
 
@@ -92,7 +93,7 @@ def lang_color(language: str) -> str:
 
 __all__ = [
     "RESET", "BOLD", "DIM",
-    "RED", "GREEN", "YELLOW", "BLUE", "MAGENTA", "CYAN",
+    "RED", "GREEN", "YELLOW", "BLUE", "MAGENTA", "CYAN", "WHITE",
     "BRIGHT_RED", "BRIGHT_GREEN", "BRIGHT_YELLOW",
     "BRIGHT_BLUE", "BRIGHT_MAGENTA", "BRIGHT_CYAN", "BRIGHT_WHITE",
     "lang_color",
